@@ -1,0 +1,217 @@
+/* nycvisualizer — app-local styles. Rides on the vendored arcanum.css tokens
+   (--ark-accent, --ark-accent-soft, --ark-on-accent, surface/border/text vars).
+   Leaflet's own CSS is bundled via `import "leaflet/dist/leaflet.css"` in the map component. */
+
+:root {
+  --nyc-map-h: calc(100vh - 210px);
+}
+
+/* ---------- Landing / hub ---------- */
+.nyc-hero {
+  padding: 2.4rem 0 1.4rem;
+}
+.nyc-hero h1 {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 1.1;
+  margin: 0 0 0.6rem;
+}
+.nyc-hero p.lede {
+  font-size: 1.1rem;
+  max-width: 60ch;
+  opacity: 0.9;
+  margin: 0 0 1.2rem;
+}
+.nyc-hero .nyc-hero-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
+
+.nyc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 1.6rem 0;
+}
+.nyc-card {
+  display: block;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+  text-decoration: none;
+  color: inherit;
+  background: var(--ark-surface, #fff);
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.nyc-card:hover {
+  border-color: var(--ark-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+}
+.nyc-card h3 { margin: 0 0 0.35rem; display: flex; align-items: center; gap: 0.5rem; }
+.nyc-card p { margin: 0; opacity: 0.85; font-size: 0.95rem; }
+.nyc-card .nyc-pill {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.12rem 0.5rem; border-radius: 999px; font-weight: 600;
+}
+.nyc-pill.live { background: #dcfce7; color: #166534; }
+.nyc-pill.building { background: var(--ark-accent-soft, #dbeafe); color: var(--ark-accent, #2563eb); }
+@media (prefers-color-scheme: dark) {
+  .nyc-pill.live { background: #14311f; color: #7ee2a8; }
+}
+
+.nyc-section { margin: 2rem 0; }
+.nyc-section h2 { font-size: 1.4rem; margin: 0 0 0.8rem; }
+
+/* ---------- Map shell ---------- */
+.nyc-map-wrap {
+  position: relative;
+  height: var(--nyc-map-h);
+  min-height: 420px;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.nyc-map { position: absolute; inset: 0; }
+
+.nyc-map-controls {
+  position: absolute;
+  top: 10px; left: 10px;
+  z-index: 1000;
+  background: var(--ark-surface, #fff);
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  max-width: min(80vw, 320px);
+  font-size: 0.9rem;
+}
+.nyc-map-controls label { display: block; font-weight: 600; margin-bottom: 0.3rem; font-size: 0.8rem; }
+.nyc-map-controls select, .nyc-map-controls input {
+  width: 100%; padding: 0.35rem 0.4rem; border-radius: 7px;
+  border: 1px solid var(--ark-border, #d4d8dd); background: var(--ark-bg, #fff); color: inherit;
+}
+.nyc-map-controls .row { margin-bottom: 0.5rem; }
+.nyc-map-controls .muted { opacity: 0.7; font-size: 0.78rem; }
+
+.nyc-asof {
+  position: absolute;
+  bottom: 10px; left: 10px;
+  z-index: 1000;
+  background: rgba(17, 24, 39, 0.82);
+  color: #fff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.nyc-asof .dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #34d399; margin-right: 6px; vertical-align: middle;
+}
+.nyc-asof.stale .dot { background: #fbbf24; }
+.nyc-asof.error .dot { background: #f87171; }
+
+.nyc-alerts {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 1000;
+  max-width: min(70vw, 340px);
+  max-height: 40%;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.nyc-alert {
+  background: #fef3c7; color: #713f12;
+  border-left: 4px solid #f59e0b;
+  padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.8rem;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+}
+@media (prefers-color-scheme: dark) {
+  .nyc-alert { background: #3a2e0c; color: #fde68a; }
+}
+
+.nyc-legend {
+  position: absolute; bottom: 10px; right: 10px; z-index: 1000;
+  background: var(--ark-surface, #fff);
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 8px; padding: 0.5rem 0.6rem; font-size: 0.76rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.nyc-legend .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+.nyc-legend .attr { margin-top: 0.4rem; opacity: 0.65; font-size: 0.68rem; }
+
+/* vehicle marker */
+.nyc-veh {
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+/* subway line-bullet marker (divIcon) */
+.nyc-bullet {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font: 700 10px/1 system-ui, sans-serif;
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.55);
+  letter-spacing: -0.02em;
+}
+/* estimated (interpolated) position — visually distinct: faded + dashed ring */
+.nyc-bullet.est {
+  opacity: 0.72;
+  border-style: dashed;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+}
+.nyc-bullet-wrap { background: none; border: none; }
+
+/* ---------- Roadmap / in-construction panel (D1 honesty) ---------- */
+.nyc-roadmap {
+  border: 1px dashed var(--ark-accent, #2563eb);
+  background: var(--ark-accent-soft, #dbeafe);
+  border-radius: 12px;
+  padding: 1.4rem 1.5rem;
+  margin: 1.4rem 0;
+}
+@media (prefers-color-scheme: dark) {
+  .nyc-roadmap { background: rgba(37, 99, 235, 0.12); }
+}
+.nyc-roadmap h3 { margin: 0 0 0.4rem; }
+.nyc-roadmap ol { margin: 0.6rem 0 0; padding-left: 1.2rem; }
+.nyc-roadmap li { margin: 0.3rem 0; }
+.nyc-roadmap .status { font-weight: 700; color: var(--ark-accent, #2563eb); }
+
+.nyc-note {
+  font-size: 0.85rem; opacity: 0.8; border-left: 3px solid var(--ark-border, #d4d8dd);
+  padding-left: 0.8rem; margin: 1rem 0;
+}
+
+.nyc-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1rem 0; }
+.nyc-table th, .nyc-table td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--ark-border, #e5e7eb); }
+.nyc-table th { font-weight: 600; }
+.nyc-table-wrap { overflow-x: auto; }
+
+/* ---------- pre-rendered prose (methodology docs; no literal markdown ships) ---------- */
+.nyc-prose { max-width: 76ch; line-height: 1.62; }
+.nyc-prose h1 { font-size: 1.45rem; margin: 1.2rem 0 0.6rem; }
+.nyc-prose h2 { font-size: 1.2rem; margin: 1.4rem 0 0.5rem; }
+.nyc-prose h3 { font-size: 1.02rem; margin: 1.1rem 0 0.4rem; }
+.nyc-prose p, .nyc-prose li { font-size: 0.95rem; }
+.nyc-prose code {
+  background: var(--ark-accent-soft, #dbeafe);
+  padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.85em;
+}
+.nyc-prose pre {
+  border: 1px solid var(--ark-border, #d4d8dd); border-radius: 10px;
+  padding: 0.8rem 1rem; overflow-x: auto; font-size: 0.82rem;
+}
+.nyc-prose pre code { background: none; padding: 0; }
+.nyc-prose table { border-collapse: collapse; font-size: 0.86rem; margin: 0.8rem 0; display: block; overflow-x: auto; }
+.nyc-prose th, .nyc-prose td { border: 1px solid var(--ark-border, #e5e7eb); padding: 0.35rem 0.55rem; text-align: left; }
+.nyc-prose blockquote {
+  border-left: 3px solid var(--ark-accent, #2563eb); margin: 0.8rem 0; padding-left: 0.9rem; opacity: 0.9;
+}
+.nyc-prose hr { border: none; border-top: 1px solid var(--ark-border, #e5e7eb); margin: 1.4rem 0; }
+
+@media (max-width: 640px) {
+  :root { --nyc-map-h: calc(100vh - 170px); }
+  .nyc-map-controls { max-width: 62vw; font-size: 0.82rem; padding: 0.45rem 0.5rem; }
+  .nyc-alerts { max-width: 60vw; }
+}

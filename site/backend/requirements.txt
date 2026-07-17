@@ -1,0 +1,8 @@
+# nycvisualizer backend (FastAPI). Server-side only; holds the API keys.
+fastapi>=0.111
+uvicorn[standard]>=0.30
+duckdb>=1.0
+httpx>=0.27
+python-dotenv>=1.0
+gtfs-realtime-bindings>=1.0.0
+protobuf>=4.25

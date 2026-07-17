@@ -1,0 +1,42 @@
+<h1>FINDINGS — NYC Sidewalk Coverage, Equity, Condition &amp; Accessibility (B5.1)</h1>
+<p><strong>Best-Answers brief</strong> — each claim carries its caveat and pointer. Method detail:
+<code>Technical/NYCPlatform/analysis/sidewalk/METHODS.md</code>. All measurement EPSG:2263 ftUS;
+sidewalk geometry is the DCP planimetric layer (2022 aerial flight).</p>
+<hr />
+<p><strong>1. 85% of NYC's pedestrian street segments have sidewalks on both sides; only 3% have none.</strong>
+Of 96,553 CSCL pedestrian roadway segments: 82,074 both sides, 11,630 one side, 2,849 none.
+<em>Caveat:</em> side test uses the segment chord — curved segments can be side-misassigned; planimetric = 2022 vintage.
+<em>Pointer:</em> <code>01_coverage_segments.parquet</code>, <code>01_coverage_borough_summary.xlsx</code>, <code>fig01_coverage_by_borough.png</code>.</p>
+<p><strong>2. Sidewalk absence is a Staten Island and Queens phenomenon: 62% of no-sidewalk segments are in those two boroughs.</strong>
+<code>none</code> counts: Staten Island 907 (6.2% of its segments), Queens 867, Bronx 553, Brooklyn 355, Manhattan 167 (1.9%).
+<em>Caveat:</em> some <code>none</code> segments are legitimately sidewalk-free (parkland edges, private/paper streets).
+<em>Pointer:</em> <code>01_coverage_segments.parquet</code> filtered <code>coverage_class='none'</code>.</p>
+<p><strong>3. Manhattan sidewalks are the city's widest (median ~12.9 ft per segment); Staten Island's the narrowest (~8.4 ft); citywide median ~10.1 ft.</strong>
+<em>Caveat:</em> widths are a 2<em>Area/Perimeter proxy for the medial-axis method (Meli Harvey 2020, sidewalkwidths.nyc) — validation vs max-inscribed width: r = 0.47, proxy ~0.69x inscribed; treat as a relative signal, weakest on plazas and corner-wrapping polygons.
+</em>Pointer:* <code>02_width_segments.parquet</code>, <code>fig02_width_by_borough.png</code>, <code>fig02_width_validation.png</code>.</p>
+<p><strong>4. The equity gradient is a crowding story, not a coverage story: the poorest fifth of blocks has the HIGHEST sidewalk coverage per frontage foot (12.3 vs ~9.4-10.4) but the LEAST sidewalk per person (47 sqft/capita vs 76 in Q4).</strong>
+Low-income areas are denser and better-covered per foot of street, but each resident shares far less sidewalk.
+<em>Caveat:</em> block-group income imputed to blocks; per-capita uses nighttime (residential) population — Manhattan CBD daytime crowding is understated.
+<em>Pointer:</em> <code>03_block_equity.xlsx</code> (income_quintiles sheet), <code>fig03_percapita_by_quintile.png</code>; block-level r(income, coverage) = -0.11.</p>
+<p><strong>5. 81 populated census blocks (&gt;=50 residents; 6,980 people total) have ZERO mapped sidewalk area</strong> — led by a 310-person block in Concourse (Bronx), and clusters in Breezy Point/Broad Channel (Queens), Todt Hill/Annadale (Staten Island), and Brighton Beach (Brooklyn).
+<em>Caveat:</em> some are gated/private-street communities (Breezy Point) or tower-in-park blocks where paths aren't planimetric "sidewalk"; zero mapped != zero walkable.
+<em>Pointer:</em> <code>03_block_equity.xlsx</code> (zero_sidewalk_gaps sheet).</p>
+<p><strong>6. The remote condition signal is real: 311 sidewalk-complaint density and DOT field-violation density correlate at r = 0.87 across the city's 71 community-district areas.</strong>
+The composite condition index (311 + violations + tree damage) ranks Park Slope/Carroll Gardens (BK06), Bed-Stuy (BK03), Upper East Side (MN08), Bensonhurst (BK11), Bushwick (BK04) as worst.
+<em>Caveat:</em> 311 reflects reporting propensity as well as condition; violations are a 1990s-&gt; stock with data-entry date outliers; tree damage flags are 2015-vintage.
+<em>Pointer:</em> <code>04_condition_cdta.xlsx</code>, <code>fig04_311_vs_dot_validation.png</code>, <code>fig04_worst_condition_cds.png</code>.</p>
+<p><strong>7. Street trees are a first-order sidewalk-condition driver: in the worst community districts ~37-44% of rated street trees carry sidewalk-damage flags, and 36.3% of violation properties later show a DOT repair record.</strong>
+<em>Caveat:</em> the violation-&gt;repair link is via DOT's internal property id (<code>bblid</code>), which is NOT a Buildings BBL — property-level joins outside DOT's own tables are impossible.
+<em>Pointer:</em> <code>04_condition_cdta.parquet</code> (tree_damage_pct), validation sheet in <code>04_condition_nta.xlsx</code>.</p>
+<p><strong>8. 87.5% of NYC's 48,717 street intersections have at least one pedestrian ramp within 50 ft — but 6,086 do not, concentrated in Staten Island (77.1% coverage) and the Bronx (83.8%) vs ~91% in Manhattan/Brooklyn.</strong>
+<em>Caveat:</em> "has a ramp" != "all corners ramped"; 50-ft radius slightly under-counts at very wide intersections.
+<em>Pointer:</em> <code>05_accessibility_intersections.parquet</code>, <code>fig05_ada_gap_map.png</code>.</p>
+<p><strong>9. Of ramps that exist and are measured, 25.9% fail the ADA 8.33% running-slope maximum (54,966 of 212,194); Staten Island is worst (33.1% of its ramps steep).</strong>
+So the accessibility gap is roughly one part missing ramps, three parts substandard ramps.
+<em>Caveat:</em> slope values &gt;=100 are sentinels and excluded; survey vintage varies by DOT collection cycle.
+<em>Pointer:</em> <code>05_accessibility_intersections.xlsx</code> (ada_slope + borough sheets).</p>
+<p><strong>10. Lowest-coverage populated NTAs are the auto-oriented periphery: New Springville-Willowbrook (SI), Todt Hill (SI), Riverdale-Spuyten Duyvil (BX), Tottenville-Charleston (SI), Annadale-Woodrow (SI) — all under 5.3 sqft of sidewalk per frontage foot vs ~10 citywide.</strong>
+<em>Caveat:</em> frontage proxy = block perimeter; park/shoreline edges bias these ratios down somewhat.
+<em>Pointer:</em> <code>03_nta_coverage.parquet</code>, <code>fig03_coverage_vs_income.png</code>.</p>
+<hr />
+<p><em>Data-quality discoveries logged for the platform:</em> (a) <code>sidewalk_violations.bblid</code>/<code>sidewalk_built.bblid</code> is an internal DOT id, not a BBL — 0% PLUTO join; borough is recoverable from <code>onfrtocode</code> street codes (96.9% CD-geolocatable). (b) <code>qol_sr311_sidewalk</code> is 81% <code>Noise - Street/Sidewalk</code> — any condition use must exclude it. (c) <code>geo_ramps.RAMP_RUNNING_SLOPE_TOTAL</code> uses 999-style sentinels. (d) CSCL <code>Street Width</code> null on 8,610 segments (default 30 ft applied). (e) 2015 tree census <code>nta</code> codes are 2010-vintage NTAs — spatial join used instead.</p>

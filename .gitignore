@@ -1,0 +1,43 @@
+# ---- Secrets — never commit ----
+.env
+*.env
+!.env.example
+
+# ---- Data lake / large regenerable artifacts (rebuild from public sources) ----
+# The pipeline downloads + derives these; they are NOT part of the repo.
+pipeline/data/
+pipeline/realtime/archive/
+pipeline/realtime/derived/
+pipeline/realtime/logs/
+pipeline/realtime/*.lock
+pipeline/**/POLLER_STATUS.json
+outputs/
+_scratch/
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.rdb
+
+# Keep the deliberate, self-hosted committed assets (they override the rules above):
+!site/frontend/public/basemap/nyc-basemap.pmtiles   # ~36 MB NYC vector basemap (no CDN)
+# The Sidewalk Explorer web layers under site/frontend/public/layers/*.geojson are
+# intentionally committed (small, simplified) and are not matched by any rule above.
+
+# ---- Node / frontend build ----
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
