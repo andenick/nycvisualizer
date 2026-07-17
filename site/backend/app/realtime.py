@@ -7,6 +7,7 @@ short-TTL cache.
 """
 from __future__ import annotations
 
+import html
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,12 @@ from typing import Any
 import duckdb
 
 from . import config
+
+
+def _clean_text(s: str) -> str:
+    """Decode HTML entities the upstream MTA feed sometimes ships as literal text
+    (e.g. ``&#x200c;`` zero-width non-joiners) so they don't render verbatim."""
+    return html.unescape(s or "")
 
 _live_cache: dict[str, Any] = {"ts": 0.0, "data": None}
 
@@ -156,8 +163,8 @@ def get_alerts() -> dict[str, Any]:
                     alerts.append(
                         {
                             "id": str(row.get("id", i)),
-                            "header": str(row.get(hdr, "")),
-                            "description": str(row.get("description_text", row.get("description", ""))),
+                            "header": _clean_text(str(row.get(hdr, ""))),
+                            "description": _clean_text(str(row.get("description_text", row.get("description", "")))),
                             "routes": [x for x in str(row.get("route_ids", row.get("routes", ""))).split(",") if x and x != "nan"],
                         }
                     )
@@ -183,7 +190,7 @@ def get_alerts() -> dict[str, Any]:
                 header = a.header_text.translation[0].text if a.header_text.translation else ""
                 desc = a.description_text.translation[0].text if a.description_text.translation else ""
                 routes = sorted({inf.route_id for inf in a.informed_entity if inf.route_id})
-                alerts.append({"id": ent.id, "header": header, "description": desc, "routes": routes})
+                alerts.append({"id": ent.id, "header": _clean_text(header), "description": _clean_text(desc), "routes": routes})
             return {"source": "live", "as_of": int(time.time()), "alerts": alerts[:50]}
         except Exception:
             pass

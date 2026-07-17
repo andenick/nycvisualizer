@@ -1,0 +1,27 @@
+# NYC Visualizer
+
+> Where can you go, and can you walk there? — NYC transit service and pedestrian
+> infrastructure at the finest measurable grain, live. The home of all NYC work at
+> Heterodata: a portfolio hub whose first spokes are a live bus/subway map and a
+> sidewalk explorer, built entirely on authentic NYC Open Data, MTA, DCP, and Census
+> sources. An Arcanum Research project.
+
+## Pages
+
+- [Live Transit Map](https://nycvisualizer.com/bus): Every MTA bus and subway/SIR train in the five boroughs, refreshed ~every 30s from the MTA GTFS-RT feeds via a server-side poller. Buses carry GPS positions; subway positions between stations are honest interpolated estimates, labeled as such. Filter by bus route; tap a station for its live arrivals board.
+- [Sidewalk Explorer](https://nycvisualizer.com/sidewalks): Four real layers over the DCP planimetric sidewalk network — per-segment coverage class (96,553 CSCL segments), the Stop Accessibility Index for all 13,621 bus stops, neighborhood coverage equity, and the ADA ramp-gap map.
+- [Data](https://nycvisualizer.com/data): Source catalog (68 acquired datasets) plus analysis downloads. Geospatial layers ship GeoJSON + GeoParquet; tabular data ships CSV / XLSX / Parquet (never plain JSON).
+- [Code](https://nycvisualizer.com/code): Open-source monorepo (pipeline + site); reproducible DuckDB queries in Python and R.
+- [Methodology](https://nycvisualizer.com/methodology): Findings as a claim · caveat · pointer brief, with honest limits (route-level APC ridership, Euclidean 400m walksheds, 2×Area/Perimeter width proxy r=0.47, 311 condition signal excludes the noise-complaint majority class).
+- [About](https://nycvisualizer.com/about): Hub-and-spokes framing, data sources and credit, ecosystem links.
+
+## Data & provenance
+
+- Sources: NYC Open Data (two Socrata portals), the MTA (GTFS static + realtime, BusTime, hourly ridership, segment speeds), NYC City Planning BYTES (PLUTO, NTA), U.S. Census Bureau (PL 94-171, ACS, LODES, TIGER). Basemap: OpenStreetMap via Protomaps, self-hosted.
+- Repository: https://github.com/andenick/nycvisualizer (MIT for code; data under NYC Open Data / MTA terms).
+- Honesty: real data only. Estimated positions and proxy measures are labeled; unbuilt views show an honestly-labeled roadmap. Not affiliated with the MTA or the City of New York.
+
+## Ecosystem
+
+- [Heterodata (hub)](https://heterodata.org)
+- [Architect — nickanderson.us](https://nickanderson.us)
