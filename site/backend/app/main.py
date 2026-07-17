@@ -143,7 +143,7 @@ async def downloads_inventory() -> JSONResponse:
     return JSONResponse(downloads.inventory())
 
 
-@app.get("/api/downloads/{key}")
+@app.api_route("/api/downloads/{key}", methods=["GET", "HEAD"])
 async def download_file(key: str):
     from fastapi.responses import FileResponse
 
