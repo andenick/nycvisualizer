@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use nycvisualizer, please cite it as below."
+title: "nycvisualizer: NYC granular mapping platform (live transit map + sidewalk coverage / Stop Accessibility analyses)"
+abstract: >-
+  A hyper-granular geospatial platform for New York City combining a live transit
+  map (bus GPS + estimated subway positions from MTA GTFS-RT feeds) with
+  pedestrian-infrastructure analyses (sidewalk coverage and width, block-level
+  coverage-vs-population equity, an ADA ramp-gap map, and a per-bus-stop Stop
+  Accessibility Index) derived from NYC Open Data and MTA feeds.
+type: software
+authors:
+  - family-names: Anderson
+    given-names: Nick
+repository-code: "https://github.com/andenick/nycvisualizer"
+url: "https://nycvisualizer.com"
+license: MIT
+keywords:
+  - New York City
+  - open data
+  - GTFS
+  - transit
+  - sidewalks
+  - accessibility
+  - geospatial
+  - DuckDB
+  - Leaflet
+date-released: 2026-07-17
+version: "0.1.0"

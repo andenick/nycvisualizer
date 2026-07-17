@@ -1,0 +1,6 @@
+/* Arcanum Site Kit v1.2 — theme: nycvisualizer (NYC Visualizer)
+   Link AFTER arcanum.css. The ONLY visual override the site needs.
+   Accent #2563eb / soft #dbeafe — matches ecosystem.json + SITE_SPEC.
+   --ark-on-accent: white (accent is dark enough for white text). */
+:root{--ark-accent:#2563eb;--ark-accent-soft:#1e2a44;--ark-on-accent:#ffffff;}
+@media (prefers-color-scheme: light){:root{--ark-accent:#2563eb;--ark-accent-soft:#dbeafe;--ark-on-accent:#ffffff;}}

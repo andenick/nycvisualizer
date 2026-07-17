@@ -1,0 +1,119 @@
+<h1>Bus Service &amp; Ridership — METHODS (Jane NYC-Platform, B5.2)</h1>
+<p>All analyses are scripted and reproducible against <code>jane_geo.duckdb</code>
+(regenerable query layer over the parquet lake). Run order:</p>
+<pre><code>PYTHONIOENCODING=utf-8 python 01_route_demand.py
+PYTHONIOENCODING=utf-8 python 02_segment_speeds.py
+PYTHONIOENCODING=utf-8 python 03_service_supply.py
+PYTHONIOENCODING=utf-8 python 04_realtime_headways.py   # RERUNNABLE
+</code></pre>
+<p>Outputs (Parquet + one-sheet XLSX per file, standardized) → <code>Outputs/NYCPlatform/bus/</code>;
+headline PNG charts → <code>Outputs/NYCPlatform/bus/charts/</code>.
+Shared helpers (connection, borough-from-route-prefix, writers) in <code>common.py</code>.</p>
+<h2>Data sources (dataset IDs)</h2>
+<table>
+<thead>
+<tr>
+<th>Analysis</th>
+<th>View/table</th>
+<th>Socrata / source id</th>
+<th>Grain</th>
+<th>Rows</th>
+<th>Coverage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>01 demand</td>
+<td><code>transit_ridership_bus_hourly</code></td>
+<td><code>kv7t-n8in</code> (2020-24) + <code>gxb3-akrn</code> (2025→)</td>
+<td>route × payment × fare-class × hour</td>
+<td>583.8M</td>
+<td>2020-01-01 … 2026-07-07</td>
+</tr>
+<tr>
+<td>02 speed</td>
+<td><code>transit_segment_speeds</code></td>
+<td><code>58t6-89vi</code> (2023-24) + <code>kufs-yh3x</code> (2025→)</td>
+<td>timepoint-segment × hour × DOW</td>
+<td>19.9M</td>
+<td>2023-01-01 … 2026-05-01</td>
+</tr>
+<tr>
+<td>02 ACE</td>
+<td><code>transit_ace_routes</code>, <code>transit_ace_violations</code></td>
+<td><code>ki2b-sg5y</code>, <code>kh8p-hcbm</code></td>
+<td>route program dates; per-violation</td>
+<td>85; 5.9M</td>
+<td>2019-10 … 2026-06</td>
+</tr>
+<tr>
+<td>03 supply</td>
+<td><code>transit_gtfs_trips/_stop_times/_routes/_stops</code></td>
+<td>MTA GTFS static (6 bus feeds)</td>
+<td>trip / stop-time / route / stop</td>
+<td>8.7M stop-times</td>
+<td>current pick</td>
+</tr>
+<tr>
+<td>04 realtime</td>
+<td><code>rt_bus_vehicle_positions</code></td>
+<td>BusTime GTFS-RT (live poller archive)</td>
+<td>vehicle position frame</td>
+<td>grows</td>
+<td>see runtime stamp</td>
+</tr>
+</tbody>
+</table>
+<h2>Key formulas</h2>
+<ul>
+<li><strong>Trip-weighted speed</strong> (02): <code>Σ(average_road_speed·bus_trip_count) / Σ(bus_trip_count)</code> — weights each
+  segment observation by the number of bus trips it summarizes, so busy segments dominate.</li>
+<li><strong>Scheduled headway by period</strong> (03): <code>period_span_minutes / trips_starting_in_period</code> per route×direction.
+  Periods: AM_peak 06–09 (240 m), Midday 10–15 (360 m), PM_peak 16–19 (240 m), Evening 20–23 (240 m),
+  Night else (360 m). A trip's start = min <code>departure_time</code> across its stops (parsed to seconds; GTFS
+  times &gt;24:00 bucketed mod 24).</li>
+<li><strong>Boardings per trip</strong> (03, demand×supply): avg-weekday route boardings (trailing from 2025-07-01, ISO
+  DOW ≤ 5) ÷ representative-weekday scheduled trips. High = crowded/under-served; low = over-served.</li>
+<li><strong>Observed headway</strong> (04): gap between consecutive vehicle <em>passages</em> at a (route,direction,stop);
+  a passage = first RT frame where a vehicle's reported <code>stop_id</code> changes (lag over vehicle by time).</li>
+<li><strong>Bunching index</strong> (04): headway CV = <code>stddev(headway)/mean(headway)</code> per route; CV≈0 regular, CV&gt;0.5 bunched.</li>
+</ul>
+<h2>Design decisions &amp; data-quality discoveries</h2>
+<ol>
+<li><strong>Bus APC is ROUTE-LEVEL, not stop-level.</strong> <code>transit_ridership_bus_hourly</code> schema is
+   <code>transit_timestamp, bus_route, payment_method, fare_class_category, ridership, transfers</code> — <strong>no
+   stop and no direction column.</strong> The master plan's "stop-level hourly boardings" (B5.2 item 3) does
+   not match the delivered dataset. All demand here is per route. Genuine stop-level service exists only
+   on the <strong>supply</strong> side (GTFS <code>stop_times</code>, script 03).</li>
+<li><strong>Borough from route prefix.</strong> Ridership has no borough; derived by MTA route-prefix regex
+   (SIM/BXM/QM/BM/BX then M/B/Q/S/X + digit; see <code>common.py::BOROUGH_CASE</code>). Express routes attributed
+   to home borough. A residual <code>Other/MTA Bus Co.</code> bucket (D/F/J/L/T prefixes, 21 routes, ~28k lifetime
+   boardings) is negligible.</li>
+<li><strong>GTFS feeds overlap in <code>routes.txt</code> but not in trips.</strong> Each of the 5 borough feeds + MTA Bus Co
+   carries the <em>full</em> routes list, but a route's <strong>trips live in exactly one feed</strong> (verified:
+   B62→brooklyn, M15→manhattan). So grouping trips by <code>route_short_name</code> does <strong>not</strong> double-count.</li>
+<li><strong>Representative weekday.</strong> MTA ships many weekday <code>service_id</code>s; the prefixes (MQ/MV/OF/GH/EN/QV/CA…)
+   are <strong>garage codes sharing one pick</strong> (<code>_C6-</code>), i.e. complementary across garages. Script 03 unions
+   all <code>%Weekday%</code> service_ids <strong>excluding <code>Weekday-SDon</code></strong> (the school-open variant that duplicates base
+   weekday trips) → 54,273 trips, a coherent single school-closed weekday.</li>
+<li><strong>Local + SBS combined for the demand join.</strong> Route names normalized (strip <code>-SBS</code>/<code>+</code>, non-alnum,
+   upper) so GTFS <code>M15</code>+<code>M15-SBS</code> and ridership <code>M15</code>+<code>M15+</code> combine to one corridor. This slightly
+   inflates a corridor's supply vs a single branded route; noted where it matters.</li>
+<li><strong>Segment-speed layover artifacts.</strong> Terminal/layover "segments" (null next-timepoint, ~0-distance)
+   yield spurious ~0.06 mph speeds; the slowest-segment league table filters <code>road_distance ≥ 0.1 mi</code>
+   and non-null endpoints.</li>
+</ol>
+<h2>ACE before/after caveats (02)</h2>
+<p>Descriptive pre/post trip-weighted peak speed on each ACE route's own segments in the ±120-day windows
+around <code>implementation_date</code> (only routes going live 2023-05…2025-12, so both windows fall inside speed
+coverage; ≥500 trips each side). <strong>This is NOT causal.</strong> Confounders: seasonality, post-COVID ridership
+recovery, concurrent street redesigns/SBS rollouts, route changes, and the fact that ACE targets
+blocked-bus-lane/double-park delay rather than through-traffic. Read the ±0 mph aggregate result as
+"no clean speed signal at this crude resolution," not "ACE doesn't work."</p>
+<h2>Realtime archive depth (04) — honest stamp</h2>
+<p>Script 04 is <strong>rerunnable</strong> and prints/writes (<code>04_archive_stamp.txt</code>) the exact window it computed over.
+At authoring the archive was only <strong>~1.9 hours deep</strong> (2026-07-17 05:51–07:43 America/New_York, AM-peak
+edge; 209k frames / 4,219 vehicles / 341 routes). <strong>These headway/bunching/adherence numbers are
+PRELIMINARY</strong> — illustrative of method, not stable reliability findings. They strengthen as the poller
+archive accumulates; re-run the script to refresh. The passage approximation (stop_id transition) leads
+true arrival slightly and is not a fare-gate count.</p>

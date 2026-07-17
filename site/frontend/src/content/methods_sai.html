@@ -1,0 +1,202 @@
+<h1>Stop Accessibility Index (SAI) — Methods</h1>
+<p><strong>Analysis:</strong> B5.2 item 4 (cross-flagship signature) + B5.3 municipal context
+<strong>Scripts:</strong> <code>Technical/NYCPlatform/analysis/sai/01–06_*.py</code> · <strong>Outputs:</strong> <code>Outputs/NYCPlatform/sai/</code>
+<strong>Source DB:</strong> <code>jane_geo.duckdb</code> (DuckDB 1.4 + spatial) · <strong>Distance/area CRS:</strong> EPSG:2263 (NY State Plane Long Island, ftUS) throughout.
+<strong>Generated:</strong> 2026-07-17.</p>
+<p>The SAI scores <strong>every one of the 13,621 in-effect NYC local-bus stops</strong> on how walkable, safe, comfortable,
+and well-served its immediate pedestrian environment is. No public dataset publishes a per-stop pedestrian-access
+index of this kind; this is the site's headline original contribution.</p>
+<blockquote>
+<p><strong>Universal honesty caveat.</strong> Every figure traces to a query in these scripts. Where a signal cannot be
+honestly derived from the data (DOT violations, network walksheds, stop-level boardings), that is stated
+plainly below rather than approximated.</p>
+</blockquote>
+<hr />
+<h2>0. Stop universe</h2>
+<p><code>transit_bus_stops</code> holds 22,951 route×stop×direction rows; <strong>13,621 distinct <code>stop_id</code></strong> are in-effect physical
+stops (<code>in_effect = true</code> for all). We collapse to one row per <code>stop_id</code> (<code>01_walksheds.py</code>), keeping: a
+representative EPSG:2263 point, <code>stop_name</code>, route count, comma-joined route short-names, an SBS flag
+(<code>route_short_name ILIKE '%SBS%'</code>), and CBD flag. <strong>Borough is assigned by physical location</strong> — the point-in-polygon
+containing 2020-Census block's <code>boroname</code> — not by route-name prefix, so a stop sits in the borough it is actually in.</p>
+<h2>1. Walkshed — population &amp; jobs served (<code>01_walksheds.py</code>)</h2>
+<ul>
+<li><strong>Walkshed = a Euclidean 400 m (1312.34 ftUS) buffer</strong> around the stop point. 400 m ≈ a 5-minute walk, the
+  standard transit catchment.</li>
+<li><strong>⚠ Euclidean, not network.</strong> A straight-line buffer is the <em>honest baseline</em> but an <em>upper bound</em>: real walking
+  follows the street grid and is blocked by rivers, rail cuts, and superblocks. A true network walkshed would
+  typically <strong>shrink these catchments ~20–30%</strong>, and the population/jobs figures with them. We publish the
+  Euclidean number and label it as a ceiling; a network-walkshed refinement is future work (needs a routable
+  sidewalk/street graph).</li>
+<li><strong>Population within</strong> = area-weighted apportionment of 2020-Census block population:
+  <code>pop_400m = Σ_blocks [ block_pop × area(buffer ∩ block) / area(block) ]</code>, using <code>pop_census_blocks.geom_2263</code>
+  ∩ the buffer and <code>pop_block_pop.total_pop</code>. A bbox pre-filter makes the spatial join a fast range join before
+  the exact <code>ST_Intersection</code>.</li>
+<li><strong>Jobs within</strong> = the same apportionment applied to <strong>LODES8 2023 WAC</strong> total jobs (<code>pop_lodes_wac.C000</code>,
+  joined <code>w_geocode = block geoid</code>). Jobs are a workplace-density proxy for non-residential trip demand.</li>
+</ul>
+<h2>2. Stop environment (<code>02_stop_environment.py</code>)</h2>
+<p>Point-layer counts use <code>scipy.cKDTree</code> radius queries (exact Euclidean in ftUS — fast and index-backed); polygon
+area uses DuckDB <code>ST_Intersection</code> with a bbox pre-filter.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Definition</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sidewalk_sqft_400m</code></td>
+<td>planimetric sidewalk-polygon area inside the 400 m walkshed</td>
+<td><code>geo_sidewalk_polys</code></td>
+</tr>
+<tr>
+<td><code>sidewalk_sqft_100ft</code></td>
+<td>sidewalk area within 100 ft (immediate)</td>
+<td><code>geo_sidewalk_polys</code></td>
+</tr>
+<tr>
+<td><code>ramps_150ft</code></td>
+<td>pedestrian ramps within 150 ft (ADA access at nearby corners)</td>
+<td><code>geo_ramps</code></td>
+</tr>
+<tr>
+<td><code>shelter_100ft</code></td>
+<td>bus-stop shelters within 100 ft (≥1 ⇒ sheltered)</td>
+<td><code>geo_shelters</code></td>
+</tr>
+<tr>
+<td><code>seats_250ft</code></td>
+<td>City benches + Seating-Locations assets within 250 ft</td>
+<td><code>geo_benches</code> + <code>geo_seating</code></td>
+</tr>
+<tr>
+<td><code>complaints_400m</code></td>
+<td>311 sidewalk/curb-condition service requests (2020+) within 400 m</td>
+<td><code>qol_sr311_sidewalk</code></td>
+</tr>
+<tr>
+<td><code>ped_crashes_400m</code></td>
+<td>MVC crashes injuring/killing a pedestrian (2020+) within 400 m</td>
+<td><code>qol_crashes</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>311 condition signal:</strong> <code>qol_sr311_sidewalk</code> (Sidewalk/Curb Condition families). We use <strong>all statuses from
+  2020 on</strong>, not just "open": only ~12.7k of 1.37M citywide are still open — too sparse for a per-stop signal —
+  so cumulative complaint density (99.3% geocoded via 2263 state-plane coords) is the honest condition proxy.
+  Higher complaints ⇒ worse condition ⇒ the subscore is <strong>inverted</strong>.</li>
+<li><strong>Pedestrian crashes:</strong> crash-level flags (<code>number_of_pedestrians_injured/killed &gt; 0</code>) carry the point geometry,
+  so a crash-level join is used (person-level <code>qol_crashes_persons</code> has no geometry and adds nothing joinable here).
+  Window 2020+ aligns with the 311 window. 51,186 ped-injury crashes with valid NYC geometry.</li>
+<li><strong>⚠ DOT sidewalk violations excluded from the per-stop score.</strong> <code>sidewalk_violations</code> (6kbp-uz6m) has <strong>no
+  geometry and no usable BBL</strong> (its <code>bblid</code> is a 6-digit internal id, not a 10-digit PLUTO BBL), so it cannot be
+  attributed at stop granularity without geocoding street names. Rather than fabricate a location, we drop it from
+  the SAI and report violations only at <strong>borough / community-board</strong> level as context (<code>05_context</code> set).
+  The 311 layer carries the spatially-precise condition signal.</li>
+</ul>
+<h2>3. Service intensity (<code>03_service.py</code>)</h2>
+<p>Stop-level <strong>scheduled supply is available from GTFS</strong> <code>transit_gtfs_stop_times</code> (unlike the APC ridership giant,
+which is route×hour with <strong>no stop column</strong> — so <em>boardings</em> are not available per stop; see §5).</p>
+<ul>
+<li>Windows: <strong>AM peak 07:00–09:59 (3 h), midday 10:00–15:59 (6 h), evening 19:00–21:59 (3 h)</strong>; <code>tph_* = trips ÷ window hours</code>.</li>
+<li><strong>Weekday-variant de-duplication (critical):</strong> MTA GTFS carries several weekday <code>service_id</code>s per route (base vs
+  school-open "SDon" picks, date-range picks), each representing <em>one</em> weekday's schedule; counting all of them
+  double-counts service (observed 2× inflation on BX19, 4 variants at a sample stop). We therefore pick, <strong>per
+  (feed, route_id), the single weekday <code>service_id</code> with the most trips</strong> as the representative weekday schedule and
+  count only its trips. A stop's total sums across the routes serving it (distinct physical buses). After-midnight
+  GTFS hours ≥24 are wrapped mod 24.</li>
+<li>13,370 / 13,621 stops (98.2%) match a GTFS bus <code>stop_id</code>; the 251 unmatched get service = 0 (flagged <code>gtfs_matched=false</code>).</li>
+</ul>
+<h2>4. Composite index (<code>04_sai.py</code>)</h2>
+<p>Seven subscores, each <strong>percentile-ranked 0–100 across all 13,621 stops</strong> (percentile, not min-max: raw inputs are
+heavily right-skewed and min-max would be dominated by a handful of Midtown outliers). Inverted subscores flip so
+<strong>higher = better access</strong> everywhere.</p>
+<table>
+<thead>
+<tr>
+<th>Subscore</th>
+<th>Raw input</th>
+<th>Direction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>walkshed_population</code></td>
+<td><code>pop_400m</code></td>
+<td>higher better</td>
+</tr>
+<tr>
+<td><code>sidewalk_provision</code></td>
+<td><code>sidewalk_sqft_400m</code></td>
+<td>higher better</td>
+</tr>
+<tr>
+<td><code>ada_ramp_access</code></td>
+<td><code>ramps_150ft</code></td>
+<td>higher better</td>
+</tr>
+<tr>
+<td><code>comfort</code></td>
+<td><code>shelter_100ft × 2 + seats_250ft</code></td>
+<td>higher better</td>
+</tr>
+<tr>
+<td><code>condition</code></td>
+<td><code>complaints_400m</code></td>
+<td><strong>inverted</strong></td>
+</tr>
+<tr>
+<td><code>safety</code></td>
+<td><code>ped_crashes_400m</code></td>
+<td><strong>inverted</strong></td>
+</tr>
+<tr>
+<td><code>service_intensity</code></td>
+<td><code>trips_daytime</code> (weekday 05–21)</td>
+<td>higher better</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Composite <code>sai</code> = weighted mean</strong> with default weights (documented in <code>sai_weights.json</code>):</p>
+<pre><code>walkshed_population 0.25 · sidewalk_provision 0.20 · ada_ramp_access 0.15 ·
+comfort 0.10 · condition 0.10 · safety 0.10 · service_intensity 0.10   (Σ = 1.00)
+</code></pre>
+<p>Rationale: an <em>access-equity</em> reading — how many people the stop serves and whether they can physically walk to it
+come first; comfort/condition/safety/service are secondary modifiers.</p>
+<p><strong>Sensitivity:</strong> <code>sai_equal_weight</code> uses 1/7 each. The two rank stops almost identically (<strong>Pearson r = 0.85</strong>),
+so the borough gradient and the best/worst tails are <strong>not artifacts of the weighting</strong> — see FINDINGS.</p>
+<p><strong>Caveats on the composite.</strong> (a) Subscores are <em>within-NYC ranks</em>, so SAI is relative, not absolute — a score of 50
+means "typical NYC stop", not "half-accessible". (b) Percentile normalization means the citywide mean of every
+subscore is 50 by construction. (c) Amenity layers are <strong>planimetric vintages</strong> (sidewalk/ramp/shelter snapshots),
+not continuously updated; a newly built ramp or removed shelter may lag. (d) Ramp <em>presence</em> is scored, not ramp
+<em>compliance</em> (slope/condition fields exist in <code>geo_ramps</code> but are not graded here).</p>
+<h2>5. What the SAI deliberately does <strong>not</strong> claim</h2>
+<ul>
+<li><strong>Not boardings-based.</strong> The demand proxy is population + jobs in the walkshed, <strong>not</strong> actual ridership: the
+  hourly APC ridership dataset is route×hour with no stop/direction column (recorded in the DB PROVENANCE), so
+  stop-level boardings do not exist in this data. SAI measures <em>access supply and environment</em>, not realized demand.</li>
+<li><strong>Not a network walkshed</strong> (see §1) — Euclidean upper bound.</li>
+<li><strong>Not a violations-weighted condition</strong> (see §2) — 311-only, spatially honest.</li>
+</ul>
+<h2>6. Municipal context (<code>05_context.py</code>, B5.3)</h2>
+<ul>
+<li><strong>Population-density gradient:</strong> residents ÷ land-area (<code>ST_Area(geom_2263)</code>→sq mi) per 2020 block, with WGS84
+  centroids for a graduated map; borough rollup.</li>
+<li><strong>Subway O-D flows:</strong> <code>transit_od_matrix</code> (jsu2-fbtj, 2024) aggregated to top origin→destination station-complex
+  pairs by <code>estimated_average_ridership</code>, overall and for the 08:00 peak hour.</li>
+<li><strong>Crash exposure on high-demand corridors:</strong> DOT <code>ped_mobility_demand</code> (Rank 1 = highest demand … 5 = lowest) ×
+  ped-injury crashes (2020+): ped crashes within 100 ft of each segment, aggregated to an exposure gradient by rank
+  and the 50 worst individual segments.</li>
+</ul>
+<h2>Reproduce</h2>
+<pre><code>cd Technical/NYCPlatform/analysis/sai
+PYTHONIOENCODING=utf-8 python 01_walksheds.py      # ~50 s
+PYTHONIOENCODING=utf-8 python 02_stop_environment.py  # ~160 s
+PYTHONIOENCODING=utf-8 python 03_service.py        # ~5 s
+PYTHONIOENCODING=utf-8 python 04_sai.py            # ~12 s
+PYTHONIOENCODING=utf-8 python 05_context.py        # ~150 s
+PYTHONIOENCODING=utf-8 python 06_charts.py         # ~15 s
+</code></pre>

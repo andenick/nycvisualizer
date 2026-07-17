@@ -1,0 +1,65 @@
+<h1>Bus Service &amp; Ridership — Best-Answers Brief (Jane NYC-Platform, B5.2)</h1>
+<p>Flagship #1. Each claim carries a caveat and a pointer to the exact output/query.
+All figures trace to a query on <code>jane_geo.duckdb</code>; nothing is fabricated.</p>
+<blockquote>
+<p><strong>Two standing data flags</strong> (apply to every claim below):
+<strong>(A) Bus APC ridership is ROUTE-LEVEL only</strong> — <code>transit_ridership_bus_hourly</code> has no stop/direction
+column, so all <em>demand</em> is per route (genuine stop-level data exists only on the GTFS <em>supply</em> side).
+<strong>(B) Realtime headway/bunching/adherence (Claim 8) are PRELIMINARY</strong> — computed over only ~1.9 h of
+live archive; they strengthen as the poller accumulates. See <code>04_archive_stamp.txt</code>.</p>
+</blockquote>
+<hr />
+<p><strong>1. Queens is the ridership heavyweight; five routes each cleared ~30M lifetime boardings.</strong>
+Of 2.4B route-hours of boardings (2020-01→2026-07), Queens routes carry 34.4%, Brooklyn 24.9%,
+Manhattan 19.8%, Bronx 15.9%, Staten Island 5.0%. The busiest single routes are <strong>M15+ (38.2M), Q58
+(36.0M), B6 (34.0M), Q44+ (27.5M), Bx12+ (27.5M)</strong>.
+<em>Caveat:</em> borough is derived from route-name prefix (express routes → home borough); lifetime totals
+mix pandemic-suppressed 2020 with recovery years. <em>Pointer:</em> <code>01_borough_aggregates</code>, <code>01_route_top25_boardings</code>.</p>
+<p><strong>2. Bus ridership fully recovered and set a post-2020 high in 2025 — 176% of 2020.</strong>
+Annual boardings rose 234M (2020) → 412M (2025), an index of 176 vs 2020; 2026 is partial (to Jul 7).
+<em>Caveat:</em> 2020 is a pandemic-depressed base, not a pre-COVID benchmark; the dataset starts 2020 so no
+true pre-pandemic comparison is available here (use <code>transit_daily_ridership</code>'s pre-pandemic-% for that).
+<em>Pointer:</em> <code>01_recovery_yearly</code>, <code>01_recovery_monthly</code>, chart <code>01_recovery_monthly.png</code>.</p>
+<p><strong>3. OMNY has all but replaced MetroCard on buses — 1.1% of boardings in 2020, 98.6% in 2026.</strong>
+OMNY share by year: 2020 1.1% → 2022 20.3% → 2024 40.8% → 2025 71.7% → 2026 98.6%. "OMNY - Full Fare"
+is now the single largest fare class (29.8% of all lifetime boardings).
+<em>Caveat:</em> fare-class labels are the agency's; "Fair Fare"/student/senior categories are small but policy-relevant.
+<em>Pointer:</em> <code>01_fare_payment_by_year</code>, <code>01_fare_class_mix</code>, chart <code>01_fare_mix.png</code>.</p>
+<p><strong>4. Demand is sharply double-peaked; the 7–8 AM hour is the system's busiest.</strong>
+Weekday boardings peak at 07:00 (182M lifetime in that hour) and 08:00 (166M), with a broad PM peak at
+16:00–17:00. Weekend demand is a flat midday hump roughly a fifth of weekday peak.
+<em>Caveat:</em> hour is boarding timestamp, route-aggregated. <em>Pointer:</em> <code>01_hourly_profile_system</code>, chart <code>01_hourly_profile.png</code>.</p>
+<p><strong>5. NYC buses crawl — Manhattan crosstown/Lexington corridors are the slowest in the city.</strong>
+Trip-weighted weekday-peak speeds: the 20 slowest <strong>segments</strong> are all ~2.7–3.5 mph on Lexington Ave
+(M101/M103) and Queens Blvd/Main St; the slowest <strong>routes</strong> are <strong>M57 (4.6), M42 (4.7), M31 (4.8),
+M125 (4.8) mph</strong>. Boroughwide weekday means: Manhattan 6.2, Brooklyn 7.3, Bronx 7.6, Queens 8.8,
+Staten Island 12.6 mph.
+<em>Caveat:</em> speeds are MTA timepoint-segment averages (2023-2026); layover/terminal artifacts filtered out.
+<em>Pointer:</em> <code>02_slowest_segments_peak</code>, <code>02_route_peak_speed</code>, <code>02_speed_by_borough_hour</code>, charts <code>02_*</code>.</p>
+<p><strong>6. ACE camera enforcement shows NO clean average speed gain at this resolution (23 routes faster / 27 slower, mean ≈ 0.0 mph).</strong>
+Across 50 ACE routes with valid ±120-day windows, the descriptive pre/post trip-weighted peak-speed
+change averaged <strong>−0.01 mph</strong> (best Bx12+ +0.62; worst Bx20 −0.36).
+<em>Caveat — read carefully:</em> this is <strong>descriptive, heavily confounded, and NOT causal</strong> (seasonality,
+COVID recovery, concurrent redesigns; ACE targets blocked-lane delay, not through-speed). Interpret as
+"no clean speed signal at crude segment resolution," not "enforcement is ineffective." A proper
+difference-in-differences vs matched control routes is the right follow-up.
+<em>Pointer:</em> <code>02_ace_before_after</code>, chart <code>02_ace_before_after.png</code>.</p>
+<p><strong>7. Supply vs demand flags the crowding pressure points: M15-SBS, M11, Q25, B1, Q44-SBS carry the most riders per scheduled trip.</strong>
+On a representative weekday (54,273 scheduled trips), boardings-per-trip is highest on <strong>M15-SBS (56.4),
+M11 (46.0), Q25 (45.8), B1 (44.6), Q44-SBS (44.1)</strong> — the "under-served / most-crowded" tail. Systemwide
+scheduled supply peaks at 08:00 (4,087 trip starts); median AM-peak scheduled headway is ~11 min.
+<em>Caveat:</em> demand is route-level APC, supply is GTFS scheduled (not delivered); local+SBS corridors are
+combined for the join, so branded-route load is slightly diluted. <em>Pointer:</em> <code>03_most_crowded_routes</code>,
+<code>03_demand_vs_supply</code>, <code>03_scheduled_headways_by_period</code>, chart <code>03_most_crowded.png</code>.</p>
+<p><strong>8. [PRELIMINARY] Early-AM observed headways track the schedule on the median but bunching is already visible.</strong>
+Over ~1.9 h of live archive (2026-07-17 05:51–07:43 ET, AM-peak edge; 341 routes, 117.6k passages), the
+median route's observed headway missed schedule by just <strong>+0.8 min</strong>, but the median bunching CV was
+<strong>0.70</strong> with the worst routes (Q49, Q111, BxM7, Q43, B6) at CV &gt; 1.0 — i.e. highly irregular spacing.
+<em>Caveat:</em> <strong>~2 hours of data — illustrative only, not a stable reliability finding.</strong> Passages are
+approximated from <code>stop_id</code> transitions (leads true arrival). Re-run <code>04_realtime_headways.py</code> as the
+archive deepens. <em>Pointer:</em> <code>04_observed_headways_route</code>, <code>04_adherence_vs_scheduled</code>, <code>04_archive_stamp.txt</code>,
+chart <code>04_bunching_index.png</code>.</p>
+<hr />
+<h3>Suggested headline for the site</h3>
+<p>"New York's buses carry 2.4 billion rides that move at a jogger's pace — and OMNY just quietly finished
+off the MetroCard." (Claims 1–3, 5.)</p>

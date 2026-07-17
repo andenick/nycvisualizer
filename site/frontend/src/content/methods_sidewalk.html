@@ -1,0 +1,53 @@
+<h1>B5.1 Sidewalk Coverage Analysis — Methods</h1>
+<p><strong>Suite:</strong> <code>Technical/NYCPlatform/analysis/sidewalk/01..05_*.py</code> · <strong>Outputs:</strong> <code>Projects/Jane/Outputs/NYCPlatform/sidewalk/</code>
+<strong>Engine:</strong> DuckDB 1.4.0 + <code>spatial</code>, read-only against <code>Technical/NYCPlatform/db/jane_geo.duckdb</code>
+<strong>CRS discipline:</strong> every measurement (<code>ST_Area</code>, <code>ST_Length</code>, <code>ST_Perimeter</code>, buffers, distances) uses <code>geom_2263</code> — EPSG:2263, NY State Plane Long Island, <strong>US survey feet</strong>. No measurement is ever taken in 4326.</p>
+<h2>Universe definition (all scripts)</h2>
+<p>Street segments = CSCL (<code>geo_cscl</code>, DCP <code>inkn-q76z</code>) filtered to <code>RW_TYPE='1'</code> (ordinary roadway; excludes highways, bridges, tunnels, paths) <strong>and</strong> <code>NONPED IS NULL</code> (excludes <code>V</code> vehicle-only and <code>D</code> non-pedestrian-designated segments): <strong>96,553 segments</strong> citywide. Sidewalk geometry = planimetric sidewalk polygons (<code>geo_sidewalk_polys</code>, <code>52n9-sdep</code>; 50,865 merged MULTIPOLYGONs).</p>
+<h2>01 — Coverage classes (<code>none / one_side / both_sides</code>)</h2>
+<ol>
+<li>Each segment is buffered by <code>(street_width/2 + 18 ft)</code> (street width from CSCL <code>Street Width</code>; default 30 ft when null/0 — 8,610 segments). 18 ft of reach beyond the curb line captures the sidewalk band without crossing into the next block's sidewalk on typical streets.</li>
+<li>Every sidewalk polygon intersecting the buffer is assigned to the segment's LEFT or RIGHT via a cross-product side test: the sign of <code>(P1−P0) × (C−P0)</code> where P0/P1 are the merged centerline's endpoints and C is the <strong>nearest point of the polygon to the centerline</strong> (<code>ST_EndPoint(ST_ShortestLine(seg, poly))</code>).</li>
+<li><code>both_sides</code> = sidewalk found on both signs; <code>one_side</code> = exactly one; <code>none</code> = no polygon within reach.</li>
+</ol>
+<p><strong>Caveats:</strong> (a) The side test uses the segment's straight chord for orientation; on strongly curved segments a polygon near an inflection can be side-misassigned — this can flip <code>one_side</code>↔<code>both_sides</code> on a small number of curved segments, it cannot create coverage where none exists. (b) The reach band at intersections can pick up the cross-street's sidewalk corner; corner polygons are shared geometry, so this inflates <code>one_side</code>→<code>both_sides</code> only when a corner quadrant wraps. (c) Planimetric vintage: the sidewalk layer derives from the NYC 2022 aerial flight; CSCL is continuously updated — new streets may show <code>none</code> spuriously.</p>
+<h2>02 — Width derivation (approximation; cite Meli Harvey 2020)</h2>
+<p>Reference method: sidewalkwidths.nyc (Meli Harvey, 2020; <code>github.com/meliharvey/sidewalkwidths-nyc</code>) computes a true <strong>medial axis</strong> (skeleton) of each sidewalk polygon and measures clearance along it. We deliberately use a cheaper proxy and validate it:</p>
+<ul>
+<li><strong>Proxy:</strong> <code>w = 2·Area/Perimeter</code> per polygon. For a corridor of width W (Area≈WL, Perimeter≈2L) this recovers W exactly; it is the right first-order statistic for strip-like sidewalk geometry.</li>
+<li><strong>Per-segment width</strong> = median (and min, p90) of the proxies of polygons in the segment's search band (same band as 01), with proxies outside 2–120 ft discarded as non-corridor artifacts.</li>
+<li><strong>Validation</strong> (<code>fig02_width_validation.png</code>): against a <strong>max-inscribed width</strong> computed by 18-step binary search on the negative buffer (<code>ST_Buffer(poly, −r)</code> empty ⇔ 2r &gt; max width) on a 300-polygon reservoir sample (seed 42): Pearson r = <strong>0.47</strong>, median proxy/inscribed ratio = <strong>0.69</strong>.</li>
+</ul>
+<p><strong>Honest limits:</strong> the proxy and the inscribed width measure different things (typical vs widest point), so 0.69 is expected, not an error; but r = 0.47 means per-polygon noise is substantial. The proxy is biased LOW for L-shaped corner-wrapping polygons (perimeter inflated) and unreliable on plaza-like blobs (not corridors at all — Manhattan plazas are the worst case). Treat per-segment medians as a <strong>relative</strong> width signal (borough/NTA comparisons, narrow-vs-wide screening), not as engineering-grade clearance. A true medial-axis pass is the upgrade path.</p>
+<h2>03 — Block equity</h2>
+<p>DCP census-block polygons follow <strong>street centerlines</strong>, so each block polygon contains its own half of the street right-of-way including its sidewalks. Per block: <code>sidewalk_area = Σ ST_Area(block ∩ sidewalk polys)</code>; <strong>frontage proxy</strong> = block polygon perimeter (centerline-bounded ⇒ perimeter ≈ street frontage); <code>coverage_ratio = area/perimeter</code> (ft of average sidewalk width per frontage foot, both sides combined); population = 2020 Census P1_001N via <code>pop_block_pop</code> (GEOID15, 100% join); income = ACS 2023 5-yr B19013 at block group (GEOID12 = first 12 chars of block GEOID; −666666666 → null). NTA assignment by block-centroid point-in-polygon. Quintiles are block-level, population-weighted within quintile.</p>
+<p><strong>Caveats:</strong> shoreline/park-edge blocks have perimeter that is not street frontage (ratio biased low there); Census blocks with pop&gt;0 but no DCP block geometry (396 of 37,984) are excluded by the geometry join; block-group income applied to blocks assumes within-BG homogeneity.</p>
+<h2>04 — Condition overlay</h2>
+<ul>
+<li><strong>311</strong>: <code>qol_sr311_sidewalk</code> <strong>excluding <code>Noise - Street/Sidewalk</code></strong> (1,116,022 rows = 81% of the view — a noise signal, not a condition signal; kept out). Remaining 265,213 condition complaints (Sidewalk Condition / Root-Sewer-Sidewalk / Curb Condition / DEP Sidewalk Condition, 2010→): 99.6% carry state-plane x/y (already 2263) → point-in-NTA and CDTA.</li>
+<li><strong>DOT violations</strong> (<code>6kbp-uz6m</code>, 313,297): <strong>no geometry; <code>bblid</code> is an internal id, NOT a BBL</strong> (0% join to MapPLUTO). Borough decoded from the first digit of <code>onfrtocode</code> (NYC street-code triplet: boro+5-digit ×3), fallback to the contract suffix letter (M/X/K/Q/S); borough + <code>cb</code> → community district → CDTA. 96.9% geolocated to CD; <strong>CD is the finest honest geography for violations.</strong></li>
+<li><strong>Trees</strong>: 2015 Street Tree Census <code>sidewalk</code> flag (Damage/NoDamage; 31,616 unrated excluded), x_sp/y_sp (2263) point-in-polygon. Note vintage: 2015.</li>
+<li><strong>Normalization:</strong> complaints/violations <strong>per sidewalk-edge-mile</strong>: edge-miles = Σ <code>seg_len × (has_left + has_right)</code> from 01, segments assigned to NTA/CDTA by centerline centroid.</li>
+<li><strong>Composite (CDTA only):</strong> mean of z-scores of the three signals. NTA table carries 311 + trees only.</li>
+<li><strong>Validation:</strong> cross-CD (n=71 CDTAs incl. joint-interest areas) Pearson r between 311 density and DOT violation density = <strong>0.87</strong> (Spearman 0.88) — the remote signal tracks field inspections tightly. Property-level: 36.3% of violation <code>bblid</code>s later appear in <code>sidewalk_built</code> repair records.</li>
+</ul>
+<p><strong>Caveats:</strong> 311 density conflates condition with propensity-to-report (demographics-correlated); violation issuance dates span 1930–2028 (data-entry outliers) and are treated as a stock, not a flow; tree-damage flags are 2015-vintage; CD-level violations cannot be pushed to NTA without an allocation assumption (not done).</p>
+<h2>05 — Accessibility (ramps at intersections)</h2>
+<p>Intersection nodes derived from the CSCL network itself: endpoints of merged pedestrian-roadway segments snapped to a 1-ft grid (CSCL is topologically noded); node <strong>degree ≥ 3</strong> ⇒ intersection (48,717); degree-2 midblock pseudo-nodes (8,323) and degree-1 dead ends (5,215) excluded. Ramp test: ≥ 1 DOT pedestrian ramp (<code>ufzp-rrqu</code>, 217,679 points) within <strong>50 ft</strong> of the node. ADA slope screen: <code>RAMP_RUNNING_SLOPE_TOTAL &gt; 8.33%</code> fails; values ≥ 100 are sentinels (999 observed) and excluded (212,194 measured).</p>
+<p><strong>Caveats:</strong> 50 ft catches typical corner ramps but slightly under-counts at very wide intersections; a "has ramp" intersection may still lack ramps on <em>all</em> corners (corner-level completeness would need corner geometry, e.g. <code>CornerID</code> clustering — upgrade path); dead-end/cul-de-sac pedestrian access is out of scope; ramp survey vintage per DOT collection cycles.</p>
+<h2>Reproduction</h2>
+<pre><code>cd Technical/NYCPlatform/analysis/sidewalk
+PYTHONIOENCODING=utf-8 python 01_coverage_classes.py   # ~2 min
+PYTHONIOENCODING=utf-8 python 02_width_derivation.py   # ~35 s
+PYTHONIOENCODING=utf-8 python 03_block_equity.py       # ~30 s
+PYTHONIOENCODING=utf-8 python 04_condition.py          # ~1 min (needs 01 output)
+PYTHONIOENCODING=utf-8 python 05_accessibility.py      # ~2 min
+</code></pre>
+<h2>Sources</h2>
+<ul>
+<li>DCP Planimetric Database (sidewalk <code>52n9-sdep</code>, roadbed, curbs — 2022 flight), CSCL <code>inkn-q76z</code>, LION.</li>
+<li>DOT: Pedestrian Ramps <code>ufzp-rrqu</code>, Sidewalk Management violations <code>6kbp-uz6m</code> / built <code>ugc8-s3f6</code>, Pedestrian Mobility Plan <code>fwpa-qxaf</code>.</li>
+<li>NYC 311 <code>erm2-nwe9</code>; 2015 Street Tree Census <code>uvpi-gqnh</code>.</li>
+<li>Census 2020 PL blocks + ACS 2023 5-yr (B19013, B01003); DCP 2020 NTAs/CDTAs.</li>
+<li>Harvey, M. (2020). <em>Sidewalk Widths NYC</em> — sidewalkwidths.nyc; github.com/meliharvey/sidewalkwidths-nyc (medial-axis method we approximate in 02).</li>
+</ul>

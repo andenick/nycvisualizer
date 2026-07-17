@@ -1,0 +1,682 @@
+[
+{
+"name": "Building Footprints (NYC)",
+"category": "landuse",
+"id": "",
+"portal": "NYC Open Data (OTI) \u2014 public domain / open",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 855704897,
+"license": "NYC Open Data (OTI) \u2014 public domain / open"
+},
+{
+"name": "LEHD LODES8 New York \u2014 OD (main+aux), RAC (S000), WAC (S000), crosswalk",
+"category": "landuse",
+"id": "",
+"portal": "U.S. Census Bureau LEHD \u2014 public domain",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 64774234,
+"license": "U.S. Census Bureau LEHD \u2014 public domain"
+},
+{
+"name": "MapPLUTO 26v1 (shoreline-clipped) \u2014 File Geodatabase",
+"category": "landuse",
+"id": "",
+"portal": "NYC DCP \u2014 open, informational; attribute per DCP terms",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 154443498,
+"license": "NYC DCP \u2014 open, informational; attribute per DCP terms"
+},
+{
+"name": "PLUTO 26v1 (Primary Land Use Tax Lot Output) \u2014 tabular CSV",
+"category": "landuse",
+"id": "",
+"portal": "NYC DCP \u2014 open, informational; attribute per DCP terms",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 71878568,
+"license": "NYC DCP \u2014 open, informational; attribute per DCP terms"
+},
+{
+"name": "TIGER/Line 2024 \u2014 Census Blocks (tabblock20), Block Groups (bg), Tracts (tract), New York State (FIPS 36)",
+"category": "landuse",
+"id": "",
+"portal": "U.S. Census Bureau \u2014 public domain",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 216533130,
+"license": "U.S. Census Bureau \u2014 public domain"
+},
+{
+"name": "2020 Census Blocks (NYC clipped to shoreline)",
+"category": "population",
+"id": "",
+"portal": "NYC Open Data \u2014 public domain / open",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 30001593,
+"license": "NYC Open Data \u2014 public domain / open"
+},
+{
+"name": "2020 Census Tracts (NYC clipped to shoreline)",
+"category": "population",
+"id": "",
+"portal": "NYC Open Data \u2014 public domain / open",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 7766344,
+"license": "NYC Open Data \u2014 public domain / open"
+},
+{
+"name": "2020 Community District Tabulation Areas (CDTAs)",
+"category": "population",
+"id": "",
+"portal": "NYC Open Data \u2014 public domain / open",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 3824429,
+"license": "NYC Open Data \u2014 public domain / open"
+},
+{
+"name": "2020 Neighborhood Tabulation Areas (NTAs)",
+"category": "population",
+"id": "",
+"portal": "NYC Open Data \u2014 public domain / open",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 4589227,
+"license": "NYC Open Data \u2014 public domain / open"
+},
+{
+"name": "2020 PL 94-171 Redistricting \u2014 Total Population by Census Block (5 NYC counties)",
+"category": "population",
+"id": "",
+"portal": "U.S. Census Bureau \u2014 public domain",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 7884043,
+"license": "U.S. Census Bureau \u2014 public domain"
+},
+{
+"name": "ACS 5-Year 2023 \u2014 Block Group (population, median HH income, means of transportation to work B08301)",
+"category": "population",
+"id": "",
+"portal": "U.S. Census Bureau \u2014 public domain",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 2502574,
+"license": "U.S. Census Bureau \u2014 public domain"
+},
+{
+"name": "Census Demographics at the NTA level",
+"category": "population",
+"id": "",
+"portal": "NYC Open Data \u2014 public domain / open",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 11877,
+"license": "NYC Open Data \u2014 public domain / open"
+},
+{
+"name": "2015 Street Tree Census - Tree Data",
+"category": "qol",
+"id": "uvpi-gqnh",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 220354362,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "311 Service Requests from 2010 to Present (FULL PULL per D-6)",
+"category": "qol",
+"id": "erm2-nwe9",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 13973902976,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "Air Quality (NYCCAS)",
+"category": "qol",
+"id": "c3uy-2p5r",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 2295725,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "Motor Vehicle Collisions - Crashes",
+"category": "qol",
+"id": "h9gi-nx95",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 476616139,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "Motor Vehicle Collisions - Person",
+"category": "qol",
+"id": "f55k-p6yu",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 1002752738,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "NYPD Complaint Data Current (Year To Date)",
+"category": "qol",
+"id": "5uac-w243",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 49099463,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "NYPD Complaint Data Historic",
+"category": "qol",
+"id": "qgea-i56i",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 3807636702,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "MTA Bus Automated Camera Enforcement (ACE) Routes",
+"category": "ridership",
+"id": "ki2b-sg5y",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 1709,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Bus Automated Camera Enforcement (ACE) Violations",
+"category": "ridership",
+"id": "kh8p-hcbm",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 1727693355,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Bus Hourly Ridership: 2020-2024",
+"category": "ridership",
+"id": "kv7t-n8in",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 28180322456,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Bus Hourly Ridership: Beginning 2025",
+"category": "ridership",
+"id": "gxb3-akrn",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 8607779533,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Bus Route Segment Speeds: 2023-2024",
+"category": "ridership",
+"id": "58t6-89vi",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 2989791926,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Bus Route Segment Speeds: Beginning 2025",
+"category": "ridership",
+"id": "kufs-yh3x",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 2141710125,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Daily Ridership",
+"category": "ridership",
+"id": "vxuj-8kew",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 162963,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Elevator and Escalator Availability",
+"category": "ridership",
+"id": "rc78-7x78",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 15647150,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Subway Hourly Ridership: 2020-2024",
+"category": "ridership",
+"id": "wujg-7c2s",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 18454423965,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Subway Hourly Ridership: Beginning 2025",
+"category": "ridership",
+"id": "5wq4-mkjj",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 6156466023,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "MTA Subway Origin-Destination Ridership: Beginning 2024",
+"category": "ridership",
+"id": "jsu2-fbtj",
+"portal": "data.ny.gov",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 23023259759,
+"license": "Public - NY State Open Data (data.ny.gov) / MTA Open Data Terms of Use"
+},
+{
+"name": "Bi-Annual Pedestrian Counts",
+"category": "sidewalk_pedestrian",
+"id": "cqsj-cfgu",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 114,
+"bytes": 70166,
+"license": "NYC Open Data"
+},
+{
+"name": "Bicycle and Pedestrian Counts (Automated)",
+"category": "sidewalk_pedestrian",
+"id": "ct66-47at",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-17",
+"rows": 20704366,
+"bytes": 4216731219,
+"license": "NYC Open Data"
+},
+{
+"name": "Bus Stop Shelters",
+"category": "sidewalk_pedestrian",
+"id": "t4f2-8md7",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 3381,
+"bytes": 544434,
+"license": "NYC Open Data"
+},
+{
+"name": "City Bench Locations (Historical)",
+"category": "sidewalk_pedestrian",
+"id": "whjh-s3x7",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 2164,
+"bytes": 622192,
+"license": "NYC Open Data"
+},
+{
+"name": "NYC DOT Pedestrian Plazas - Polygon",
+"category": "sidewalk_pedestrian",
+"id": "k5k6-6jex",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 93,
+"bytes": 612263,
+"license": "NYC Open Data"
+},
+{
+"name": "NYC Planimetric Database: Curbs",
+"category": "sidewalk_pedestrian",
+"id": "5xvt-8cbk",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 217662,
+"bytes": 460820329,
+"license": "NYC Open Data"
+},
+{
+"name": "NYC Planimetric Database: Roadbed",
+"category": "sidewalk_pedestrian",
+"id": "xgwd-7vhd",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 104961,
+"bytes": 534598908,
+"license": "NYC Open Data"
+},
+{
+"name": "NYC Planimetric Database: Sidewalk",
+"category": "sidewalk_pedestrian",
+"id": "vfx9-tbb6",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 50865,
+"bytes": 509822588,
+"license": "NYC Open Data"
+},
+{
+"name": "Open Streets Locations",
+"category": "sidewalk_pedestrian",
+"id": "uiay-nctu",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 391,
+"bytes": 139134,
+"license": "NYC Open Data"
+},
+{
+"name": "Pedestrian Mobility Plan Pedestrian Demand",
+"category": "sidewalk_pedestrian",
+"id": "fwpa-qxaf",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 127277,
+"bytes": 33780058,
+"license": "NYC Open Data"
+},
+{
+"name": "Pedestrian Ramp Locations",
+"category": "sidewalk_pedestrian",
+"id": "ufzp-rrqu",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 217679,
+"bytes": 42057860,
+"license": "NYC Open Data"
+},
+{
+"name": "Seating Locations",
+"category": "sidewalk_pedestrian",
+"id": "3qgi-jrgw",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 3562,
+"bytes": 973483,
+"license": "NYC Open Data"
+},
+{
+"name": "Sidewalk Management Database - Built",
+"category": "sidewalk_pedestrian",
+"id": "ugc8-s3f6",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 105990,
+"bytes": 3797113,
+"license": "NYC Open Data"
+},
+{
+"name": "Sidewalk Management Database - Violations",
+"category": "sidewalk_pedestrian",
+"id": "6kbp-uz6m",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 313297,
+"bytes": 49348207,
+"license": "NYC Open Data"
+},
+{
+"name": "Automated Traffic Volume Counts",
+"category": "street_network",
+"id": "7ym2-wayt",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 1875154,
+"bytes": 234460769,
+"license": "NYC Open Data"
+},
+{
+"name": "Centerline (CSCL)",
+"category": "street_network",
+"id": "inkn-q76z",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 122245,
+"bytes": 53520094,
+"license": "NYC Open Data"
+},
+{
+"name": "LION (Linear Integrated Ordered Network)",
+"category": "street_network",
+"id": "2v4z-66xt",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": null,
+"bytes": 45981902,
+"license": "NYC Open Data"
+},
+{
+"name": "New York City Bike Routes",
+"category": "street_network",
+"id": "mzxg-pwib",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 28983,
+"bytes": 8118624,
+"license": "NYC Open Data"
+},
+{
+"name": "New York City Truck Routes",
+"category": "street_network",
+"id": "jjja-shxy",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 32939,
+"bytes": 8652346,
+"license": "NYC Open Data"
+},
+{
+"name": "Parking Regulation Locations and Signs",
+"category": "street_network",
+"id": "nfid-uabd",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 440429,
+"bytes": 95715928,
+"license": "NYC Open Data"
+},
+{
+"name": "Traffic Volume Counts (Historical)",
+"category": "street_network",
+"id": "btm5-ppia",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 42756,
+"bytes": 6767681,
+"license": "NYC Open Data"
+},
+{
+"name": "VZV Speed Limits",
+"category": "street_network",
+"id": "7n5j-865y",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-16",
+"rows": 141444,
+"bytes": 21828821,
+"license": "NYC Open Data"
+},
+{
+"name": "Bus Lanes - Local Streets",
+"category": "transit_static",
+"id": "data.cityofnewyork.us ycrg-ses3 | https://data.cityofnewyork.us/api/views/ycrg-ses3/rows.csv?accessType=DOWNLOAD",
+"portal": "NYC Open Data terms of use (public)",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 1492291,
+"license": "NYC Open Data terms of use (public)"
+},
+{
+"name": "Citi Bike GBFS station_information",
+"category": "transit_static",
+"id": "",
+"portal": "Citi Bike / Lyft GBFS public feed (NABSA GBFS)",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 1332717,
+"license": "Citi Bike / Lyft GBFS public feed (NABSA GBFS)"
+},
+{
+"name": "MTA Bus Stops (current in-effect snapshot)",
+"category": "transit_static",
+"id": "data.ny.gov 2ucp-7wg5 | https://data.ny.gov/resource/2ucp-7wg5.csv?$where=in_effect='true'&$limit=50000&$order=:id",
+"portal": "NY State Open Data terms (public domain-style, attribution appreciated)",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 6294272,
+"license": "NY State Open Data terms (public domain-style, attribution appreciated)"
+},
+{
+"name": "MTA GTFS Static - Long Island Rail Road (LIRR)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "GO201_26",
+"rows": null,
+"bytes": 1945603,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - MTA Bus Company",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "gtfs_busco_20260611T155311Z",
+"rows": null,
+"bytes": 5621861,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - Metro-North Railroad (MNR)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "NOT PROVIDED (no feed_info.txt)",
+"rows": null,
+"bytes": 4391686,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Bus (Bronx)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "gtfs_bx_20260611T155333Z",
+"rows": null,
+"bytes": 6808243,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Bus (Brooklyn)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "gtfs_b_20260611T155327Z",
+"rows": null,
+"bytes": 13522834,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Bus (Manhattan)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "gtfs_m_20260611T155328Z",
+"rows": null,
+"bytes": 6708453,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Bus (Queens)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "gtfs_q_20260611T155317Z",
+"rows": null,
+"bytes": 4699835,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Bus (Staten Island)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "gtfs_si_20260611T155316Z",
+"rows": null,
+"bytes": 5013168,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Subway (SUPPLEMENTED, hourly-updated)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "20260513",
+"rows": null,
+"bytes": 20968084,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA GTFS Static - NYCT Subway (regular/base)",
+"category": "transit_static",
+"id": "",
+"portal": "MTA",
+"vintage": "20260526",
+"rows": null,
+"bytes": 5614607,
+"license": "MTA open data / developer terms (public GTFS; attribution to MTA)"
+},
+{
+"name": "MTA Subway Entrances and Exits",
+"category": "transit_static",
+"id": "data.ny.gov i9wp-a4ja | https://data.ny.gov/api/views/i9wp-a4ja/rows.csv?accessType=DOWNLOAD",
+"portal": "NY State Open Data terms (public domain-style, attribution appreciated)",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 280155,
+"license": "NY State Open Data terms (public domain-style, attribution appreciated)"
+},
+{
+"name": "MTA Subway Stations",
+"category": "transit_static",
+"id": "data.ny.gov 39hk-dx4f | https://data.ny.gov/api/views/39hk-dx4f/rows.csv?accessType=DOWNLOAD",
+"portal": "NY State Open Data terms (public domain-style, attribution appreciated)",
+"vintage": "2026-07-17",
+"rows": null,
+"bytes": 67857,
+"license": "NY State Open Data terms (public domain-style, attribution appreciated)"
+},
+{
+"name": "NYC Ferry GTFS Static (Connexionz)",
+"category": "transit_static",
+"id": "",
+"portal": "NYC Ferry / Connexionz open data (public riders' data)",
+"vintage": "20260707",
+"rows": null,
+"bytes": 44336,
+"license": "NYC Ferry / Connexionz open data (public riders' data)"
+}
+]
