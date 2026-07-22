@@ -18,6 +18,8 @@ const CAT_LABEL: Record<string, string> = {
   transit_static: "Transit (static)",
   ridership: "Ridership & operations",
   qol: "Quality of life",
+  housing: "Housing & buildings",
+  flood: "Flood & risk",
   raw: "Other",
 };
 
@@ -50,12 +52,56 @@ export default function DataPage() {
       </p>
 
       <section className="nyc-section">
+        <div
+          style={{
+            border: "1px solid var(--ark-border, #d4d8dd)",
+            borderRadius: 12,
+            padding: "1rem 1.1rem",
+            background: "var(--ark-surface, transparent)",
+            margin: "0.4rem 0 1rem",
+          }}
+        >
+          <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            NYC Observed Bus Headways
+            <span
+              style={{
+                border: "1px solid var(--ark-accent, #2563eb)",
+                color: "var(--ark-accent, #2563eb)",
+                borderRadius: 999,
+                padding: "0.1rem 0.6rem",
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                letterSpacing: "0.03em",
+              }}
+            >
+              BETA · PRELIMINARY
+            </span>
+          </h2>
+          <p style={{ maxWidth: "68ch" }}>
+            The MTA publishes <em>scheduled</em> service. This dataset publishes what the buses{" "}
+            <strong>actually did</strong> — observed headways, their variability (CV), a bunching index,
+            and the gap versus schedule, per route &times; direction &times; stop &times; date &times;
+            hour, derived from our own 31-second GTFS-realtime vehicle-position archive. Nobody else
+            publishes this. Updated daily; ships an all-days Parquet, the latest service day as CSV, and
+            a Frictionless <code>datapackage.json</code> (schema, CC-BY-4.0 licence, known gaps).
+          </p>
+          <p className="nyc-note" style={{ marginBottom: "0.6rem" }}>
+            <strong>Preliminary:</strong> reliability figures firm up at &ge;14 days of archive; the
+            2026-07-21 poller-suspension gap is excluded, not smoothed over. Arrival = trajectory crossing
+            a stop&rsquo;s shape offset (positional), which is distinct from a true door-open arrival.
+          </p>
+          <DownloadRow groups={["Observed Headways"]} />
+        </div>
+
         <h2>Analysis downloads</h2>
         <p className="nyc-note">
           Geospatial layers ship <strong>GeoJSON + GeoParquet</strong>; tabular data ships
-          <strong> CSV / XLSX / Parquet</strong>, never plain JSON (Carson DNA D-4).
+          <strong> CSV / XLSX / Parquet</strong>, never plain JSON (Carson DNA D-4). New in this
+          release: the 45-minute job-access <strong>isochrone grid</strong> and access-equity table
+          (S4 OpenTripPlanner routing), and the <strong>Renter&rsquo;s Map</strong> cell grid plus
+          per-BBL building aggregates (S7).
         </p>
-        <DownloadRow />
+        <DownloadRow exclude={["Observed Headways"]} />
       </section>
 
       <section className="nyc-section">

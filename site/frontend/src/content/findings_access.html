@@ -1,0 +1,156 @@
+<h1>Transit Access &amp; Job Reachability — Best Answers</h1>
+<p><strong>What this is.</strong> A network-based (real street + transit routing, via OpenTripPlanner)
+measure of how many NYC jobs a resident can reach within <strong>45 minutes</strong> of a <strong>weekday
+08:00</strong> trip using walking + subway/bus/ferry, computed for a <strong>1,196-cell H3 res-8
+grid</strong> covering NYC land and mapped down to all 37,588 census blocks, then summarized by
+<strong>block-group median-income decile</strong>.</p>
+<p>Because reachability here is measured over the actual transit + street network (not
+straight-line distance), the usual "as-the-crow-flies overstates access" caveat does
+<strong>not</strong> apply. The honesty issue that <em>does</em> matter is <strong>departure time</strong> (this is an
+AM-peak snapshot) — see caveats.</p>
+<p>Baseline: <strong>4,581,241</strong> NYC census-block jobs (LODES WAC 2023). Population-weighted using
+2020 Census block population. Coverage: <strong>37,507 / 37,588 blocks</strong> carry a value; 81
+blocks (0.2%) fall in 17 grid cells whose centroid landed in water/parkland with no
+routable street and are left null (never fabricated).</p>
+<hr />
+<h2>Claim 1 — The typical New Yorker reaches ~19% of the city's jobs in 45 minutes; the median differs ~40× across boroughs.</h2>
+<p>Population-weighted mean jobs reachable ≤45 min (wk-08:00):</p>
+<table>
+<thead>
+<tr>
+<th>Borough</th>
+<th>Mean jobs ≤45 min</th>
+<th>≈ % of NYC jobs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Manhattan</td>
+<td>2,219,501</td>
+<td>48%</td>
+</tr>
+<tr>
+<td>Brooklyn</td>
+<td>690,705</td>
+<td>15%</td>
+</tr>
+<tr>
+<td>Queens</td>
+<td>574,593</td>
+<td>13%</td>
+</tr>
+<tr>
+<td>Bronx</td>
+<td>349,418</td>
+<td>8%</td>
+</tr>
+<tr>
+<td><strong>Staten Island</strong></td>
+<td><strong>56,094</strong></td>
+<td><strong>1.2%</strong></td>
+</tr>
+<tr>
+<td><strong>Citywide</strong></td>
+<td><strong>861,039</strong></td>
+<td><strong>18.8%</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Caveat:</strong> Manhattan's figure is inflated by proximity to the job core itself (short
+trips reach the densest job cluster). Staten Island — no subway, served only by the SIR,
+buses, and the ferry — is the clear structural outlier. The dominant access divide in NYC
+is <strong>geographic</strong> (borough/proximity-to-Manhattan) at least as much as income.</p>
+<h2>Claim 2 — Job access rises with income, but the gradient is concentrated at the top, not a smooth ladder.</h2>
+<p>Population-weighted mean jobs reachable ≤45 min by income decile (D1 = lowest income):</p>
+<table>
+<thead>
+<tr>
+<th>Decile</th>
+<th>Median-income band</th>
+<th>Mean jobs ≤45 min</th>
+<th>% of NYC jobs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>$2.5k–$38k</td>
+<td>742,615</td>
+<td>16.2%</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>$38k–$53k</td>
+<td>591,238</td>
+<td>12.9%</td>
+</tr>
+<tr>
+<td>D3–D7</td>
+<td>$53k–$108k</td>
+<td>~600k–650k</td>
+<td>13–14%</td>
+</tr>
+<tr>
+<td>D8</td>
+<td>$108k–$128k</td>
+<td>799,713</td>
+<td>17.5%</td>
+</tr>
+<tr>
+<td>D9</td>
+<td>$128k–$166k</td>
+<td>1,238,422</td>
+<td>27.0%</td>
+</tr>
+<tr>
+<td>D10</td>
+<td>$166k–$250k</td>
+<td>1,998,087</td>
+<td>43.6%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>D10/D1 ratio = 2.69×.</strong> But deciles <strong>1 through 7 are essentially flat</strong> (~13–16% of
+jobs); the advantage is almost entirely in the <strong>top three deciles</strong>, and especially D10.</p>
+<p><strong>Caveat:</strong> This is <em>not</em> a "poverty = transit desert" story. NYC's lowest-income
+decile actually out-reaches deciles 2–7 — because the poorest neighborhoods (South Bronx,
+Harlem, central Brooklyn) sit on dense subway lines close to Manhattan. Low access
+concentrates in <strong>middle-income outer-borough</strong> areas (eastern Queens, south Brooklyn,
+Staten Island), not the poorest ones.</p>
+<h2>Claim 3 — Frequent-transit access is nearly universal (99.9%), so the equity gap is about <em>where transit goes</em>, not <em>whether a stop exists nearby</em>.</h2>
+<p>99.9% of the population lives within ~400 m of a stop with <strong>≥8 scheduled AM-peak
+departures</strong> (≈ a vehicle every ≤15 min). The share is 100% for the bottom five income
+deciles and only dips to ~99.6–99.8% at the top (a few low-density wealthy edges).</p>
+<p><strong>Caveat:</strong> "A frequent stop is nearby" ≠ "many destinations are reachable." The
+reachability gap in Claims 1–2 exists <em>despite</em> near-universal stop access — it is driven
+by <strong>network structure</strong> (radial lines converging on Manhattan; weak
+outer-borough-to-outer-borough links), not by stop scarcity. The flag counts combined
+stop frequency (any route/direction), not per-route headway.</p>
+<h2>Claim 4 — Reachability spans 0 to ~3.06 million jobs across the grid; the median cell reaches ~138k.</h2>
+<p>Across the 1,179 successfully-routed origin cells, jobs reachable ≤45 min ranges from ~0
+(isolated edges) to <strong>3,061,991</strong> (Midtown/Lower-Manhattan cells), median <strong>137,643</strong>.
+The distribution is highly right-skewed — a small set of Manhattan-core and inner-Brooklyn
+cells accounts for the top of the range.</p>
+<p><strong>Caveat:</strong> Origin granularity is res-8 (~0.7 km²); a block inherits its cell's
+isochrone, so sub-cell variation is not resolved.</p>
+<hr />
+<h2>Cross-cutting caveats (read before citing)</h2>
+<ol>
+<li><strong>AM-peak only.</strong> The precomputed grid is a <strong>weekday 08:00</strong> snapshot. Reachability
+   is materially departure-time sensitive — midday and especially evening/late-night
+   service is sparser, so off-peak access (and the equity gap) will differ. The live
+   <code>/api/isochrone</code> endpoint supports noon and evening windows for on-demand queries.</li>
+<li><strong>NYC jobs only.</strong> The routing graph is clipped to the NYC bbox and only NYC census
+   blocks are counted, so jobs in NJ / Westchester / Long Island reachable within 45 min
+   are <strong>excluded</strong> — this understates access for near-border origins (e.g. jobs in
+   Jersey City / Newark from western Manhattan and Staten Island).</li>
+<li><strong>City modes only.</strong> LIRR and Metro-North are <strong>not</strong> in the v1 graph; commuter-rail
+   reachability (which would lift access for eastern Queens / the Bronx) is not modeled.</li>
+<li><strong>No fares.</strong> Pure walk+transit travel time; fare cost and fare-based transfer rules
+   are not applied.</li>
+<li><strong>Walk speed</strong> fixed at 1.33 m/s (OTP default); no mobility/accessibility variation.</li>
+</ol>
+<p><strong>Method + provenance:</strong> <code>analysis/access/METHODS.md</code>.
+<strong>Data:</strong> <code>isochrone_grid_45min.parquet</code> (per-cell polygons + reachable jobs),
+<code>jobs_accessibility_block.parquet</code> (per-block), <code>access_equity.parquet</code> / <code>.xlsx</code>
+(by income decile).</p>

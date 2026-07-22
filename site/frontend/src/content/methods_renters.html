@@ -1,0 +1,164 @@
+<h1>Renter's Map — precompute methods (S7)</h1>
+<p><strong>Build:</strong> <code>build_renters_grid.py</code> (stages <code>bbl</code>, <code>grid</code>, <code>all</code>).
+<strong>CRS for all distance/area math:</strong> EPSG:2263 (NY State Plane Long Island, ftUS).
+<strong>Neighbourhood radius:</strong> 400 m = 1312.34 ft. <strong>Populated-test radius:</strong> 300 m = 984.25 ft.
+<strong>Grid resolution:</strong> H3 res-10 (avg hexagon area ≈ 0.0150 km², edge ≈ 66 m).</p>
+<p>Every score describes <strong>places and infrastructure only</strong>. No demographic / protected-class variable
+enters any score — see the fair-housing note at the end.</p>
+<hr />
+<h2>0. Cell universe (land cells)</h2>
+<p>Land cells = the union of the <strong>res-10 children of every res-8 origin cell</strong> in the S4 access grid
+(<code>analysis/access/_cache/origin_cells.parquet</code>, 1,196 res-8 cells, each derived from ≥1 2020-census-block
+centroid). 1,196 × 49 children ⇒ ~58.6 k res-10 cells covering all populated NYC land. Each cell carries
+its centroid (<code>lat</code>,<code>lon</code>) and its EPSG:2263 centroid (<code>x</code>,<code>y</code> ftUS via <code>ST_Transform(..., always_xy)</code>).</p>
+<blockquote>
+<p>H3 list-returning functions (<code>cell_to_children</code>, <code>grid_disk</code>) are evaluated with the <strong>Python <code>h3</code> lib</strong>
+because the DuckDB h3 community extension throws an internal-null error when unnesting its list results.
+The scalar <code>h3_latlng_to_cell</code> (used for binning the point layers, entirely in DuckDB) returns the <strong>same
+integer id</strong> as <code>h3.str_to_int(h3.latlng_to_cell(...))</code> — verified exactly — so binned counts join the
+Python-built cell table with no representation drift.</p>
+</blockquote>
+<h3>Neighbour map (the 400 m disk)</h3>
+<p>For each cell C, candidate neighbours = <code>h3.grid_disk(C, 5)</code> (91 cells, a superset of 400 m) intersected
+with the land set. Each candidate pair is kept iff the <strong>2263 centroid-to-centroid distance ≤ 1312.34 ft</strong>.
+Result: <code>nbr(cell, ncell, dist_ft)</code>, ~29 neighbour cells/cell on average. All "within 400 m" aggregates are
+<code>SUM</code> over <code>nbr</code> of a per-cell binned value — a hex-disk approximation of a 400 m circle, exact to
+res-10-cell granularity (±~66 m at the boundary), applied <strong>identically to every cell</strong> so citywide
+percentiles are consistent.</p>
+<h3>Populated flag (honest ranking)</h3>
+<p><code>pop_300m(C)</code> = Σ block population over land cells whose centroid is within <strong>300 m</strong> of C
+(2020 Census P1_001N binned to res-10, rolled up on the <code>nbr</code> map filtered to ≤ 984.25 ft).
+<code>populated = pop_300m &gt; 0</code>. <strong>All citywide percentiles are ranked over populated cells only</strong> — parks,
+water, rail yards and other unpopulated cells keep their raw values but get <code>NULL</code> percentiles, so a park
+next to a highway does not deflate a neighbourhood's noise ranking.</p>
+<hr />
+<h2>1. Transit (supply within 400 m + nearest subway)</h2>
+<p>Source: the <strong>Stop Access Index (SAI)</strong> stop table (<code>Outputs/NYCPlatform/sai/sai_scores.parquet</code>,
+13,621 MTA bus stops with lat/lon, routes, <code>trips_am</code>, and the composite <code>sai</code>). Binned to res-10, then
+rolled up over <code>nbr</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Grid field</th>
+<th>Formula</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>transit_stops_400m</code></td>
+<td>Σ SAI stops in the 400 m disk</td>
+</tr>
+<tr>
+<td><code>best_sai_400m</code></td>
+<td>MAX(<code>sai</code>) over those stops — the best-access stop you can walk to</td>
+</tr>
+<tr>
+<td><code>sched_am_trips_400m</code></td>
+<td>Σ <code>trips_am</code> (scheduled AM-peak departures) over those stops</td>
+</tr>
+</tbody>
+</table>
+<p><code>nearest_subway_*</code>: exact 2263 nearest of the 496 <code>transit_subway_stations</code> (name, borough, distance ft).
+Percentiles: <code>transit_supply_pctile</code> (on <code>sched_am_trips_400m</code>), <code>transit_sai_pctile</code> (on <code>best_sai_400m</code>);
+higher = more service / better access.</p>
+<h2>2. Quality of life (densities within 400 m, percentile-ranked citywide)</h2>
+<p>Each layer is binned to res-10 in DuckDB (<code>h3_latlng_to_cell(lat,lon,10)</code>) then summed over <code>nbr</code>.
+Percentiles use <code>cume_dist()</code> over <strong>populated</strong> cells; <strong>higher percentile = more of the thing</strong> (raw
+direction, not "good/bad" — the frontend supplies the plain-language reading).</p>
+<table>
+<thead>
+<tr>
+<th>Grid field (raw)</th>
+<th>Percentile</th>
+<th>Source &amp; filter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>noise_400m</code></td>
+<td><code>noise_pctile</code></td>
+<td>311 <code>complaint_type LIKE 'Noise%'</code> (all Noise-* subtypes)</td>
+</tr>
+<tr>
+<td><code>sidewalk311_400m</code></td>
+<td><code>sidewalk311_pctile</code></td>
+<td>311 <code>complaint_type IN (Sidewalk Condition, DEP Sidewalk Condition, Curb Condition, Root/Sewer/Sidewalk Condition)</code></td>
+</tr>
+<tr>
+<td><code>rodent_fail_rate</code> = <code>rodent_fail_400m / rodent_insp_400m</code></td>
+<td><code>rodent_fail_pctile</code></td>
+<td>DOHMH rodent inspections; failure = <code>result LIKE 'Failed%'</code>. Rate is NULL (unranked) where 0 inspections.</td>
+</tr>
+<tr>
+<td><code>ped_crash_400m</code></td>
+<td><code>ped_crash_pctile</code></td>
+<td>MV crashes with <code>number_of_pedestrians_injured&gt;0 OR ..._killed&gt;0</code></td>
+</tr>
+<tr>
+<td><code>trees_400m</code></td>
+<td><code>trees_pctile</code></td>
+<td>2015 Street Tree Census, <code>status='Alive'</code></td>
+</tr>
+<tr>
+<td><code>sidewalk_full_share</code> = <code>len_full / len_total</code></td>
+<td><code>sidewalk_cov_pctile</code></td>
+<td>DOT planimetric sidewalk coverage classes joined to CSCL centerline geometry; <code>len_full</code> = length of <code>both_sides</code> segments, <code>len_none</code> = <code>none</code> segments, within 400 m. Higher share = better coverage. <code>sidewalk_none_share</code> also stored (the no-sidewalk signal).</td>
+</tr>
+</tbody>
+</table>
+<p>Rodent is a true <strong>rate</strong> (fails ÷ inspections) not a raw count, so a heavily-inspected block isn't
+penalised for being inspected. Sidewalk coverage is a <strong>length share</strong> of nearby street segments.</p>
+<h2>3. Flood flags (point-in-polygon on the cell centroid)</h2>
+<ul>
+<li><code>flood_sw_moderate</code> / <code>flood_sw_extreme</code> — <code>ST_Intersects(cell_pt_2263, stormwater_part)</code>
+  for <code>scenario='moderate_current'</code> (2.13 in/hr, current sea level) / <code>extreme_2080</code> (3.66 in/hr, 2080 SLR).</li>
+<li><code>flood_firm_sfha</code> / <code>firm_zone</code> — intersects a FEMA NFHL <strong>Special Flood Hazard Area</strong> (<code>SFHA_TF='T'</code>);
+  <code>firm_zone</code> = the FLD_ZONE string (AE, VE, A…). Non-SFHA Zone-X is <strong>not</strong> flagged.</li>
+</ul>
+<blockquote>
+<p><strong>Implementation (performance):</strong> <code>geo_flood_stormwater</code> stores each scenario as a single dissolved
+citywide <strong>OGC-invalid MultiPolygon</strong> (7 k–98 k rings); a raw <code>ST_Intersects</code> join of 58 k points
+against it is catastrophic (hours / crash). The flood stage first <code>ST_Dump</code>s the stormwater layer into
+<strong>170,973 individual parts</strong> and the SFHA FIRM layer into 6,562 parts (~1.4 s), which lets DuckDB
+bbox-prune the point-in-polygon join — all 58,604 cells in ~9 s. Actual flagged cells:
+stormwater-moderate 753, stormwater-extreme 6,287, FEMA-SFHA 9,054.</p>
+</blockquote>
+<h2>Build (resumable, checkpointed stages)</h2>
+<p>The build is split into foreground-safe stages, each writing a checkpoint parquet under
+<code>Outputs/NYCPlatform/renters/_stage/</code> so a killed run resumes without recomputation:
+<code>cells</code> (→ cells/nbr) → <code>base</code> (populated + transit + subway + jobs) → <code>qol</code> (giant point layers) →
+<code>flood</code> → <code>assemble</code> (join + percentiles → <code>renters_grid.parquet</code>). Typical timings: cells 8 s,
+base 13 s, qol 3 s, flood 9 s, assemble &lt;1 s. Final grid = <strong>58,604 cells, 46,702 populated</strong>.</p>
+<h2>4. 45-minute 8am job access</h2>
+<p>Each cell inherits its <strong>res-8 parent</strong> cell's precomputed reachability from the S4 OpenTripPlanner grid
+(<code>analysis/access/isochrone_grid_45min.parquet</code>): <code>jobs_45min</code> (LEHD-WAC jobs reachable by WALK+TRANSIT
+in 45 min departing weekday 8am) and <code>jobs_45min_pct</code> (share of all NYC jobs). Percentile
+<code>jobs_pctile</code> over populated cells. The res-8 polygon (<code>geom_wkt</code>) is also the <strong>approximate-isochrone
+fallback</strong> the backend serves when live OTP is unreachable.</p>
+<hr />
+<h2>1b. Per-BBL building aggregates (join key = 10-digit NYC BBL string)</h2>
+<p>Written to <code>Outputs/NYCPlatform/renters/</code>:</p>
+<ul>
+<li><strong><code>hpd_open_violations_by_bbl.parquet</code></strong> — HPD violations with <code>violationstatus='Open'</code>, counted per BBL
+  and split by class (<code>open_class_a/b/c/i</code>; A=non-hazardous, B=hazardous, C=immediately hazardous,
+  I=informational) + <code>open_total</code>.</li>
+<li><strong><code>dob_permits_5y_by_bbl.parquet</code></strong> — DOB permit filings per BBL with effective date
+  <code>coalesce(filing_date, issuance_date, pre__filing_date, latest_action_date)</code> in the <strong>last 5 years</strong>
+  (<code>permits_5y</code>, <code>last_permit_date</code>).</li>
+<li><strong><code>landlord_portfolio_by_bbl.parquet</code></strong> — ownership <strong>proxy</strong> (documented approximation): from HPD
+  registration <strong>contacts</strong> we take each registration's head-officer / owner contact, normalise an
+  <code>owner_key = UPPER(owner name) | business house-number + street + zip</code>, count that owner's <strong>distinct
+  buildings</strong>, and give each BBL its registration-owner's <code>portfolio_buildings</code> (+ <code>owner_name</code>,
+  <code>owner_key</code>). This is a <em>same-registration-contact</em> grouping, <strong>not</strong> a legal beneficial-ownership
+  determination — shell entities and address variants can split or merge true portfolios.</li>
+</ul>
+<p>BBL construction: HPD violations already carry a 10-digit <code>bbl</code>; registrations build it as
+<code>boroid || lpad(block,5,'0') || lpad(lot,4,'0')</code>; PLUTO joins via <code>CAST(BBL AS BIGINT)::VARCHAR</code>.</p>
+<hr />
+<h2>Fair-housing / no-demographics guarantee</h2>
+<p>The score inputs are, exhaustively: transit stops &amp; schedules, subway locations, 311 complaint locations,
+rodent inspections, vehicle crashes, street trees, sidewalk geometry, flood polygons, job-reachability
+(LEHD workplace counts), and building/permit/registration records. <strong>None</strong> references resident race,
+national origin, religion, sex, family status, disability, age, or household income. Median-income and
+population appear only as the S4 job-access denominator and the populated-cell mask — never as a score —
+and are not surfaced per location. The profile describes a place, not the people in it.</p>

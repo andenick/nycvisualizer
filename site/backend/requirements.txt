@@ -6,3 +6,4 @@ httpx>=0.27
 python-dotenv>=1.0
 gtfs-realtime-bindings>=1.0.0
 protobuf>=4.25
+h3>=4.0  # isochrone origin-snapping (res-9 cache key)
