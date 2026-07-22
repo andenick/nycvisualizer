@@ -1,0 +1,199 @@
+<h1>derive2 — Realtime Derivation Engine v2 (methods)</h1>
+<p><strong>Owner:</strong> S2 of the nycvisualizer spokes campaign. <strong>Home:</strong> <code>realtime/derive2/</code>.
+<strong>Consumes:</strong> the poller's Parquet/JSONL archive under <code>realtime/archive/</code> + GTFS static
+under <code>data/raw/transit_static/</code>. <strong>Produces:</strong> <code>realtime/derived/{trajectories,
+observed_headways,adherence,kpis,data_quality}/date=*/…</code> and the public dataset
+<code>analysis/headways_dataset/</code>.</p>
+<p>Public-repo hygiene: every module resolves the platform root from <code>NYCV_PIPELINE_ROOT</code>
+(fallback: three levels up from <code>_common.py</code>); no absolute path literals. EPSG:2263 (US
+survey feet) is the measurement CRS.</p>
+<hr />
+<h2>0. The <code>current_status</code> discovery (why v2 exists)</h2>
+<p>The legacy <code>derive.py</code> defined an arrival as the earliest poll where a trip is reported
+<code>STOPPED_AT</code> (<code>current_status = 1</code>) a stop. <strong><code>current_status</code> and <code>current_stop_seq</code> are
+100% NULL in the entire bus vehicle-positions archive</strong> (verified: 2,046,002/2,046,002 NULL
+on 2026-07-19; identical every day). The legacy rule therefore yields <strong>zero</strong> arrival
+rows. <code>stop_id</code>, by contrast, is 100% populated, and <code>trip_id</code> joins to GTFS <code>trips.txt</code>
+at <strong>~99.4%</strong>. v2 builds arrival detection on <strong>shape-offset crossings</strong> (primary) and
+<strong>first-seen-per-(trip, stop_id)</strong> (fallback) instead. Nothing in v2 reads <code>current_status</code>.</p>
+<hr />
+<h2>1. Trajectories (<code>trajectories.py</code>)</h2>
+<p>Per archive day:</p>
+<ol>
+<li>Read <code>bus_vehicle_positions</code> (<code>trip_id, route_id, vehicle_id, ts = COALESCE(timestamp,
+   poll_ts), lat, lon</code>); drop null trip/lat/lon; de-dup exact <code>(trip_id, ts)</code>.</li>
+<li>Join <code>trip_id → GTFS trips.txt</code> (from all six borough/operator bus feeds; route→feed
+   ownership is 1:1, <strong>zero collisions</strong>) to get <code>shape_id, direction_id, feed</code>. Pings whose
+   trip has no GTFS match are counted as <code>trips_unmatched_no_gtfs</code> and dropped.</li>
+<li>Project every ping GPS (4326 → <strong>2263</strong>) and, grouped by shape, compute its
+   <strong>distance-along-shape offset</strong> with <code>shapely.line_locate_point</code> against the shape's
+   LineString (also built in 2263). Offset units are feet.</li>
+<li><strong>Monotonic-offset filter:</strong> walking the trip's pings in time order, drop any ping whose
+   offset falls more than <code>MONO_BACKTRACK_FT = 500 ft</code> below the running max (GPS jitter /
+   wrong-branch matches on looping routes). Count dropped pings (<code>non_monotonic_pings</code>).</li>
+<li><strong>Resample to 30 s</strong> (<code>RESAMPLE_S</code>): interpolate offset onto a regular 30 s grid between
+   the trip's first and last surviving ping (offsets forced non-decreasing first).</li>
+</ol>
+<p>Output <code>derived/trajectories/date=*/part-000.parquet</code>:
+<code>trip_id, route_id, direction_id, shape_id, feed, ts, offset_ft, frac_along</code>
+(<code>frac_along = offset_ft / shape_length</code> — the Marey y-coordinate in [0,1]).</p>
+<p>Honest rates (per day, in the run summary + state): <code>unmatched_trip_rate</code> (≈0.6%),
+<code>non_monotonic_rate</code> (≈3–4% of matched pings), <code>trips_too_few_points</code>.</p>
+<hr />
+<h2>2. Observed headways + bunching (<code>headways.py</code>)</h2>
+<p><strong>Arrival events</strong>, two detectors, unioned with a <code>method</code> tag:</p>
+<ul>
+<li><strong>PRIMARY — shape-offset crossing.</strong> For each trip's resampled offset series and each
+  stop's projected offset on that shape (<code>stop_offsets</code>, computed once in <code>gtfs_index</code>),
+  find the grid interval bracketing the stop offset and <strong>linearly interpolate the crossing
+  timestamp</strong>. That timestamp is the arrival.</li>
+<li><strong>FALLBACK — first-seen.</strong> For trips with no usable trajectory (unmatched shape / too few
+  pings), arrival = earliest archive <code>ts</code> the trip reports each <code>stop_id</code>. S0 validated this
+  gives plausible rush headways.</li>
+</ul>
+<p><strong>Clock / timezone.</strong> Observed <code>ts</code> are UTC epoch. NYC is EDT (UTC−4) for the whole archive
+window (no DST transition inside it), so local seconds = <code>ts − 14400</code>. Everything is
+<strong>bucketed by local date/hour</strong> so rush buckets and the scheduled join line up.</p>
+<p><strong>Scheduled arrival</strong> per <code>(trip, stop)</code> comes from GTFS <code>stop_times</code> by direct <code>trip_id</code>
+join (RT ids == GTFS ids). <code>deviation_s = observed_local_seconds − (sched_arr_sec mod
+86400)</code>.</p>
+<p><strong>Observed headway</strong> = gap between consecutive arrivals at a stop for a <code>route × direction</code>,
+kept when <code>MIN_HEADWAY_S (30) ≤ h ≤ MAX_HEADWAY_S (7200)</code>.</p>
+<p><strong>Scheduled headway</strong> per <code>route × direction × stop × local_hour</code> = median gap between
+consecutive <em>scheduled</em> arrivals, restricted to services active that calendar day
+(<code>calendar</code> weekday flags + <code>calendar_dates</code> exceptions).</p>
+<p><strong>Aggregate grain</strong> (<code>derived/observed_headways/date=*/part-000.parquet</code>), one row per
+<code>route × direction × stop × local_date × local_hour</code>:
+<code>n_arrivals, n_headways, median/mean/min/max_headway_s, headway_cv,
+sched_median_headway_s, headway_deviation_s (= median_obs − sched),
+bunch_share_lt50_sched, bunch_share_lt50_obs, bunching_index, median_deviation_s,
+stop_name, archive_depth_days, preliminary</code>.</p>
+<p><strong>Bunching index.</strong> Two honest components:
+- <code>headway_cv</code> = σ/μ of observed headways in the cell.
+- <code>bunch_share_lt50_sched</code> = share of observed gaps <code>&lt; 0.5 × scheduled</code> headway
+  (<code>BUNCH_SHORT_FRAC</code>). <code>bunch_share_lt50_obs</code> is the schedule-free analogue (<code>&lt; 0.5 ×</code>
+  observed median) so bunching is still defined where no schedule joins.
+<code>bunching_index</code> = mean of <code>headway_cv</code> and <code>bunch_share_lt50_sched</code> (skipping NaN).</p>
+<p>Event-level arrivals are also written (<code>arrivals-000.parquet</code>) for the adherence and KPI
+stages.</p>
+<hr />
+<h2>3. Adherence (<code>adherence.py</code>)</h2>
+<p>Arrival events ⋈ <code>stop_times</code> (adds <code>stop_seq</code>, <code>sched_arr_sec</code>); one arrival per
+<code>(trip, stop_seq)</code>. Per trip:
+- <code>start_delay_s</code> = observed − scheduled at the first stop; <code>end_delay_s</code> at the last.
+- <strong>Running-time delta by segment</strong>: for consecutive stops,
+  <code>run_delta_s = (obs_arr[next] − obs_arr[prev]) − (sched[next] − sched[prev])</code>.</p>
+<p>Outputs <code>derived/adherence/date=*/</code>: <code>trips-000.parquet</code> (per-trip start/end delay,
+mean/total running delta) and <code>segments-000.parquet</code> (per stop-to-stop segment).</p>
+<hr />
+<h2>4. Systemwide KPIs (<code>kpis.py</code>) — feeds the Ops Wall</h2>
+<p>5-minute <strong>local</strong> bins, systemwide:</p>
+<ul>
+<li><code>vehicles_reporting</code> — distinct vehicles in the <strong>last poll</strong> of the bin. The poller
+  cadence is irregular (30 s nominal, real multi-minute gaps), so bins with no poll are
+  <strong>forward-filled</strong> from the last known value and flagged <code>vehicles_stale = 1</code>. Binned by
+  <code>poll_ts</code> (the liveness clock), not by GPS <code>timestamp</code> (which clusters and leaves spurious
+  empty bins).</li>
+<li><code>scheduled_active</code> — trips whose scheduled span <code>[first_stop_sec, last_stop_sec]</code> covers
+  the bin on the active service day. <code>service_ratio = vehicles_reporting / scheduled_active</code>
+  (≈1.0 at peak, as expected).</li>
+<li><code>mean_abs_headway_dev_s</code> — mean <code>|observed headway − scheduled headway|</code> over the
+  <strong>trailing 60 min</strong> of arrival events; <code>n_arrivals_trailing60</code> alongside.</li>
+<li><code>active_bunching_pairs</code> — arrivals <code>&lt; 0.25 × scheduled</code> headway (<code>BUNCH_PAIR_FRAC</code>) after
+  the previous arrival at the same stop (same route × direction), counted in the bin.</li>
+<li><code>alerts_high/medium/low/total</code> — distinct GTFS-rt <code>alert_id</code>s present in the
+  <code>bus_alerts</code> + <code>subway_alerts</code> feed during the bin, bucketed by a severity tier derived
+  from the <code>effect</code> enum (no native severity field exists). Forward-filled across
+  alert-poll gaps (alert state is slowly varying).</li>
+</ul>
+<p><code>effect → severity</code>: <code>{1 NO_SERVICE, 2 REDUCED_SERVICE, 3 SIGNIFICANT_DELAYS} = high;
+{4 DETOUR, 6 MODIFIED_SERVICE, 9 STOP_MOVED} = medium;</code> everything else <code>= low</code>.</p>
+<p>Output <code>derived/kpis/date=*/part-000.parquet</code>, one row per 5-min bin.</p>
+<hr />
+<h2>5. Orchestration, idempotency, DATA_QUALITY (<code>run_derive.py</code>)</h2>
+<ul>
+<li>Runs the four stages in order per day. <strong>Idempotent / incremental:</strong> each day carries an
+  input <strong>signature</strong> (file count + max mtime over the high-volume feeds); a day is skipped
+  when unchanged, so the hourly task only reprocesses days that gained complete hours. State
+  in <code>DERIVE2_STATE.json</code> (canonical, resumable). <code>--backfill</code>, <code>--day D</code>, <code>--force</code>.</li>
+<li>After the stages it stamps <code>archive_depth_days</code> + <code>preliminary (&lt; 14 days)</code> into the
+  headway aggregate — consumers add PRELIMINARY badges from these.</li>
+<li><strong><code>DATA_QUALITY.json</code> per day</strong> (<code>derived/data_quality/date=*/</code>): for each high-volume
+  feed, per-hour <code>rows</code>, <code>coverage_pct</code> (vs the median rows for that feed × hour-of-day over
+  full ≥20-hour days), and a <code>status</code>:
+  <code>ok | partial (&lt;60% ) | missing | known_gap | in_progress</code>. <code>exclude_from_stats_hours</code>
+  lists the hours the headway dataset must drop.</li>
+</ul>
+<h3>The 2026-07-21 poller suspension (known gap)</h3>
+<p>Archiving was suspended <strong>2026-07-21T00:51Z → 22:55Z</strong> (disk guard); rows were buffered and
+only partially flushed (some dropped above the buffer cap). In the archive this shows as
+<code>bus_vehicle_positions</code> having <strong>only hours 00, 22, 23</strong> on 2026-07-21 (hour 22 partial:
+~32k rows vs a ~228k baseline). The window is declared in <code>_common.KNOWN_GAPS</code>; those hours
+are flagged <code>known_gap</code> in <code>DATA_QUALITY.json</code> and <strong>excluded</strong> from the published headway
+dataset. Honesty over volume.</p>
+<hr />
+<h2>6. Public dataset (<code>package_headways.py</code>)</h2>
+<p>Rolls <code>derived/observed_headways</code> into <code>analysis/headways_dataset/</code> as <strong>"NYC Observed Bus
+Headways (beta)"</strong>: per-service-day CSV + Parquet, a concatenated <code>…_all.parquet</code>, a
+<code>datapackage.json</code> (Frictionless-style, CC-BY 4.0, cadence daily), and a <code>README.md</code>. Drops
+PARTIAL/known-gap local hours (from <code>DATA_QUALITY.json</code>) and cells with <code>&lt; 2</code> observed
+headways. Every file carries <code>archive_depth_days</code> + <code>preliminary</code>. This is the novel
+artifact — MTA publishes schedules, not observed headways.</p>
+<hr />
+<h2>7. Thresholds (all in <code>_common.py</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Const</th>
+<th>Value</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RESAMPLE_S</code></td>
+<td>30 s</td>
+<td>trajectory resample cadence</td>
+</tr>
+<tr>
+<td><code>MIN_HEADWAY_S</code> / <code>MAX_HEADWAY_S</code></td>
+<td>30 / 7200 s</td>
+<td>observed-headway keep band</td>
+</tr>
+<tr>
+<td><code>MONO_BACKTRACK_FT</code></td>
+<td>500 ft</td>
+<td>GPS-jitter tolerance in the monotonic filter</td>
+</tr>
+<tr>
+<td><code>STOP_MATCH_TOL_FT</code></td>
+<td>660 ft</td>
+<td>"at a stop" proximity (reserved)</td>
+</tr>
+<tr>
+<td><code>BUNCH_SHORT_FRAC</code></td>
+<td>0.5</td>
+<td>gap &lt; 0.5× ⇒ counts toward bunching share</td>
+</tr>
+<tr>
+<td><code>BUNCH_PAIR_FRAC</code></td>
+<td>0.25</td>
+<td>KPI bunched-pair threshold</td>
+</tr>
+<tr>
+<td><code>COVERAGE_PARTIAL_FRAC</code></td>
+<td>0.60</td>
+<td>hour &lt; 60% of baseline ⇒ PARTIAL, excluded</td>
+</tr>
+<tr>
+<td>EDT offset</td>
+<td>14400 s</td>
+<td>UTC−4, whole archive window</td>
+</tr>
+</tbody>
+</table>
+<h2>8. Scheduling</h2>
+<p><code>JaneNYCDerive</code> — Windows Scheduled Task, hourly at <strong>:20</strong> (offset from poller flush
+windows), interactive user, <code>python</code>, wrapper <code>run_derive.ps1</code> (UTF-8 +
+logging, mirrors <code>changes/run_snapshot.ps1</code>). Runs <code>run_derive.py</code> (incremental) then
+<code>package_headways.py</code> (dataset roll).</p>

@@ -1,0 +1,128 @@
+<h1>S3 — GTFS Snapshot + Diff Engine</h1>
+<p>Content-hashed GTFS static snapshots + a structured schedule-change differ for the
+Jane / nycvisualizer NYC Platform. Answers "what changed in the published schedule, and
+when" — routes, headways, stops, service spans, trip counts, routings.</p>
+<h2>What's here</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>snapshot.py</code></td>
+<td>Fetch dynamic feeds, content-hash, store only on a <strong>changed</strong> hash; seed baselines from <code>data/raw/transit_static/</code>.</td>
+</tr>
+<tr>
+<td><code>gtfs_diff.py</code></td>
+<td>Structured diff between two snapshots of one feed → JSONL deltas + <code>CHANGELOG.md</code>.</td>
+</tr>
+<tr>
+<td><code>run_diffs.py</code></td>
+<td>Orchestrator: snapshot all feeds → diff every new snapshot vs its predecessor. Idempotent.</td>
+</tr>
+<tr>
+<td><code>_common.py</code></td>
+<td>Shared paths + the logical content-hash.</td>
+</tr>
+<tr>
+<td><code>run_snapshot.ps1</code></td>
+<td>Scheduled-task wrapper (sets <code>NYCV_PIPELINE_ROOT</code>, logs to <code>logs/</code>).</td>
+</tr>
+<tr>
+<td><code>gtfs_snapshots/</code></td>
+<td><code>SNAPSHOT_INDEX.json</code> + <code>&lt;feed&gt;/&lt;UTC-ts&gt;_&lt;hash8&gt;.zip</code> (only stored on change).</td>
+</tr>
+<tr>
+<td><code>deltas/</code></td>
+<td><code>&lt;feed&gt;__&lt;from_ts&gt;__to__&lt;to_ts&gt;.jsonl</code> structured delta records.</td>
+</tr>
+<tr>
+<td><code>CHANGELOG.md</code></td>
+<td>Human-readable change log, newest first.</td>
+</tr>
+</tbody>
+</table>
+<h2>Run</h2>
+<pre><code># env-parameterized root (no absolute paths baked into code)
+set NYCV_PIPELINE_ROOT=&lt;...&gt;/NYCPlatform      # optional; defaults to the dir above changes/
+
+python run_diffs.py          # snapshot all + diff new pairs  (the scheduled job)
+python snapshot.py --seed-only   # (re)seed baselines from disk, no network
+python run_diffs.py --no-fetch --all-pairs   # re-diff every consecutive pair
+python gtfs_diff.py --feed X --from-zip a.zip --to-zip b.zip \
+    --from-ts T0 --to-ts T1                   # ad-hoc diff of any two zips
+</code></pre>
+<h2>Feeds tracked</h2>
+<p><strong>Dynamic (re-fetched every 6 h):</strong> the supplemented subway feed
+(<code>gtfs_supplemented.zip</code>, includes SIR) + the 6 NYCT/MTA bus feeds
+(<code>gtfs_bx/b/m/q/si/busco.zip</code>) from <code>rrgtfsfeeds.s3.amazonaws.com</code>.</p>
+<p><strong>Static baselines (seeded, referenced in place — not re-fetched here):</strong> base subway
+<code>20260526</code>, ferry, LIRR, MNR. Seeded so their vintage is a first-class snapshot available
+for diffing (e.g. the proof backfill below).</p>
+<h2>Disk discipline (mandatory — D: is under pressure)</h2>
+<p>Dedup is by <strong>logical GTFS content hash</strong>, not raw zip bytes: <code>_common.content_hash</code>
+sha256s the sorted, newline-normalized schedule members (<code>routes/trips/stops/stop_times/
+calendar*/shapes/...</code>). The supplemented feed is <strong>re-zipped hourly</strong>; when the underlying
+schedule is unchanged the logical hash is identical and <strong>nothing is stored</strong>. A snapshot
+(~5–20 MB) lands only on a real content change. Baselines are <strong>referenced in place</strong> via a
+relative <code>ref</code> in the index — the existing <code>data/raw/transit_static</code> zips are never copied.</p>
+<h2>Feed semantics — read before trusting a diff</h2>
+<p><strong>The supplemented subway feed includes the next ~7 days of service changes.</strong> It is the
+MTA's operational feed: planned weekend GO (General Orders) work, reroutes, and temporary
+frequency changes are folded in as <strong>dated</strong> service. Consequences:</p>
+<ul>
+<li><strong>A supplemented diff reflects TEMPORARY changes too.</strong> A headway jump you see today may
+  be a single weekend's track work, not a permanent timetable change.</li>
+<li><strong>Permanent vs temporary classification matures with history.</strong> The honest rule: a change
+  is <em>temporary</em> if it disappears from a later snapshot and <em>permanent</em> if it persists
+  across snapshots spanning the affected dates. With only two snapshots you cannot tell —
+  the label firms up as the snapshot series lengthens. The engine records every snapshot so
+  this becomes decidable over time; it does not guess prematurely.</li>
+<li><strong>Supplemented (dated) vs base (repeating) are different animals.</strong> The base subway feed
+  uses 3 repeating service_ids (Weekday/Saturday/Sunday, ~20 k trip rows). The supplemented
+  feed enumerates ~100+ dated service_ids (~84 k trip rows). <strong>Raw trip-count diffs between a
+  supplemented and a base snapshot are therefore meaningless</strong> (they show a ~77 % "drop" that
+  is pure feed-structure, not service). Only diff <strong>like-for-like</strong>: supplemented↔supplemented,
+  bus↔bus. <code>run_diffs.py</code> only ever diffs consecutive snapshots of the <em>same</em> feed key, so it
+  is always like-for-like; the base-vs-supplemented proof diff is a deliberate one-off.</li>
+</ul>
+<h2>Diff method (what each change_type means)</h2>
+<ul>
+<li><strong>route_added / route_removed</strong> — <code>route_id</code> set difference in <code>routes.txt</code>.</li>
+<li><strong>headway_delta</strong> — per <code>route × service_period × time-of-day window × direction</code>: the
+  <strong>median of consecutive scheduled arrival gaps at the route's trunk stop</strong> (the stop with
+  the most visits on that route). Flagged when |Δ| &gt; 10 %. Service period is read from
+  <code>calendar.txt</code> day-flags, falling back to the majority day-of-week of <code>calendar_dates.txt</code>
+  added dates (needed for the supplemented feed's dated services). Windows: am_peak 06–10,
+  midday 10–16, pm_peak 16–20, evening 20–24.
+  <em>Caveat:</em> on the supplemented feed, many dated service_ids can each contribute an arrival
+  at nearly the same clock time at a trunk stop, compressing the median gap; very tight
+  baseline headways (≈1–2 min) and their large % deltas should be read as directional
+  signal, not exact timetable values. Consecutive 6-h supplemented snapshots (stable
+  calendar structure) give the cleanest headway deltas.</li>
+<li><strong>trip_count_delta</strong> — trips per <code>route_id</code> in <code>trips.txt</code> (like-for-like feeds only).</li>
+<li><strong>service_span_change</strong> — per <code>route × service_period</code>, change in earliest departure /
+  latest arrival (&gt; 5 min).</li>
+<li><strong>stop_added / stop_removed</strong> — revenue <code>stop_id</code> (location_type 0) set difference.</li>
+<li><strong>stop_relocated</strong> — common <code>stop_id</code> whose lat/lon moved &gt; 25 m (haversine).</li>
+<li><strong>shape_change</strong> — count of common <code>trip_id</code>s whose <code>shape_id</code> changed, per route.
+  Advisory: shape_ids churn between vintages even without a real reroute.</li>
+</ul>
+<p>Delta record shape: <code>{feed, from_ts, to_ts, change_type, route_id, detail, magnitude}</code>.</p>
+<h2>Schedule</h2>
+<p>Windows Scheduled Task <strong><code>JaneNYCGtfsSnap</code></strong> runs <code>run_snapshot.ps1</code> <strong>every 6 hours</strong>
+(interactive user, <code>python</code>). It is a sibling of <code>JaneNYCPoller</code>. The
+wrapper sets <code>NYCV_PIPELINE_ROOT</code>, silences the benign urllib3 warning, and appends output
+to <code>changes/logs/gtfssnap-&lt;date&gt;.log</code>.</p>
+<pre><code>schtasks /Query /TN JaneNYCGtfsSnap /V /FO LIST     # status
+schtasks /Run   /TN JaneNYCGtfsSnap                 # run now
+</code></pre>
+<h2>Public-repo hygiene</h2>
+<p>No absolute <code>workspace-root</code> literals in any code file — the root resolves from
+<code>NYCV_PIPELINE_ROOT</code> (else the dir above <code>changes/</code>), matching the poller/derive/build
+convention. Stored snapshot zips live under <code>gtfs_snapshots/</code> (gitignore per repo policy for
+<code>data/</code>-scale artifacts if published; the index + deltas + changelog are the shareable
+record).</p>

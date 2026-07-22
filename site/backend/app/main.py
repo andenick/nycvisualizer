@@ -14,9 +14,18 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import config, downloads, gtfs, realtime, siri, subway
+from . import changes, config, downloads, gtfs, isochrone, obs, opswall, realtime, renters, siri, subway
 
 app = FastAPI(title="nycvisualizer API", version="0.1.0")
+
+# Bus Observatory (S5): /api/obs/* — dossier, Marey, headways, league tables.
+app.include_router(obs.router)
+
+# Renter's Map (S7): /api/renters/* — location profile + two-location compare.
+app.include_router(renters.router)
+
+# Live Ops Wall (S6): /api/wall — one aggregate control-room JSON + SSE.
+app.include_router(opswall.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -138,6 +147,32 @@ async def stop_arrivals(stop_id: str) -> JSONResponse:
     return JSONResponse(data)
 
 
+@app.get("/api/isochrone")
+async def api_isochrone(
+    lat: float,
+    lon: float,
+    minutes: int = 45,
+    depart: str = "weekday_8am",
+) -> JSONResponse:
+    """Transit isochrone (WALK+TRANSIT) as GeoJSON polygons. 503 if OTP is down."""
+    try:
+        data = await asyncio.to_thread(
+            isochrone.get_isochrone, lat, lon, minutes, depart
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except isochrone.OTPUnavailable as e:
+        return JSONResponse(
+            {
+                "error": "Routing engine unavailable — no isochrone can be computed "
+                "right now. This endpoint never returns estimated polygons.",
+                "detail": str(e),
+            },
+            status_code=503,
+        )
+    return JSONResponse(data)
+
+
 @app.get("/api/downloads")
 async def downloads_inventory() -> JSONResponse:
     return JSONResponse(downloads.inventory())
@@ -152,6 +187,52 @@ async def download_file(key: str):
         return JSONResponse({"error": "unknown download key"}, status_code=404)
     path, media_type = hit
     return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+@app.get("/api/changes")
+async def api_changes(
+    page: int = 1,
+    page_size: int = 50,
+    feed: str | None = None,
+    route: str | None = None,
+    change_type: str | None = None,
+    borough: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    include_proof: bool = False,
+) -> JSONResponse:
+    """Paginated, filterable list of detected GTFS service changes (S3 diff outputs)."""
+    data = await asyncio.to_thread(
+        changes.query,
+        page=page,
+        page_size=page_size,
+        feed=feed,
+        route=route,
+        change_type=change_type,
+        borough=borough,
+        date_from=date_from,
+        date_to=date_to,
+        include_proof=include_proof,
+    )
+    return JSONResponse(data)
+
+
+@app.get("/api/changes/feed.json")
+async def api_changes_feed() -> JSONResponse:
+    """Machine feed: newest 200 detected changes (proof backfill excluded)."""
+    data = await asyncio.to_thread(changes.machine_feed, 200)
+    return JSONResponse(data)
+
+
+@app.get("/api/changes/rss")
+async def api_changes_rss(route: str | None = None) -> Response:
+    """RSS 2.0 feed of detected changes; `?route=M15` for a per-route watch feed."""
+    xml = await asyncio.to_thread(changes.rss, route, 200)
+    return Response(
+        content=xml,
+        media_type="application/rss+xml; charset=utf-8",
+        headers={"Cache-Control": "max-age=300"},
+    )
 
 
 @app.post("/__track")

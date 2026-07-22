@@ -22,7 +22,7 @@ function fmtBytes(b: number): string {
   return `${Math.max(1, Math.round(b / 1e3))} KB`;
 }
 
-export default function DownloadRow({ groups }: { groups?: string[] }) {
+export default function DownloadRow({ groups, exclude }: { groups?: string[]; exclude?: string[] }) {
   const [items, setItems] = useState<DownloadItem[]>([]);
   const [err, setErr] = useState(false);
 
@@ -33,7 +33,8 @@ export default function DownloadRow({ groups }: { groups?: string[] }) {
       .catch(() => setErr(true));
   }, []);
 
-  const show = groups ? items.filter((i) => groups.includes(i.group)) : items;
+  let show = groups ? items.filter((i) => groups.includes(i.group)) : items;
+  if (exclude) show = show.filter((i) => !exclude.includes(i.group));
   if (err) return <div className="nyc-note">Downloads temporarily unavailable.</div>;
   if (!show.length) return null;
 

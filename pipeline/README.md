@@ -10,9 +10,11 @@ NYC DCP BYTES (PLUTO / LION / planimetrics)   ├─► data/raw/  ──►  da
 U.S. Census (PL 94-171, ACS, TIGER)  ─┘        (verbatim + PROVENANCE)  (EPSG:2263 lake)   (DuckDB + spatial)
                                                                                               │
 MTA GTFS-RT (bus key; subway/rail key-free) ──► realtime/poller.py ──► realtime/archive/*.parquet
-                                                                                              │
-                                                                                              ▼
-                                                                    analysis/{sidewalk,bus,sai}/  ──► outputs/
+                                                                    │                         │
+                                          realtime/derive2/ ◄───────┘                         ▼
+                                    (trajectories, observed headways,          analysis/{sidewalk,bus,sai,access,renters}/
+                                     adherence, KPI rollups, dataset)  ──► outputs/           ──► outputs/
+MTA GTFS static (6-hourly snapshots) ──► changes/ (snapshot + gtfs_diff) ──► changes/deltas/*.jsonl + CHANGELOG
 ```
 
 Four stages: **acquire → lake → database → analyze** (plus a continuously-running
@@ -161,7 +163,7 @@ python db/doctor.py       # health gate: row counts vs inventory, CRS uniformity
 `doctor.py` is the phase gate — a green doctor means the database is coherent enough to
 analyze and serve.
 
-## 4. Analyze — `analysis/{sidewalk,bus,sai}/`
+## 4. Analyze — `analysis/{sidewalk,bus,sai,access,renters}/`
 
 Each analysis suite is a set of numbered, re-runnable scripts that read `jane_geo.duckdb`
 (read-only) and write tables (Parquet + one-sheet XLSX) to `outputs/<suite>/`. Each suite
@@ -175,6 +177,17 @@ has a `METHODS.md` (with honest caveats) and a `FINDINGS_*.md` brief.
 - **`analysis/sai/`** — the per-bus-stop **Stop Accessibility Index**: walkshed population,
   sidewalk provision, ramp access, comfort (shelter/bench), condition, safety, and service
   intensity, joined into one 0–100 index. This is the cross-flagship signature analysis.
+- **`analysis/access/`** — transit **accessibility / isochrones** via OpenTripPlanner
+  (`otp_client.py` talks to a local/box OTP2 graph; `build_access.py` precomputes an
+  isochrone grid + per-block jobs-reachable-≤45min equity table, joining LODES WAC). Ships a
+  precomputed-grid fallback when OTP isn't running. See `access/METHODS.md`.
+- **`analysis/renters/`** — the **Renter's Map** per-cell profile grid: `build_renters_grid.py`
+  aggregates transit access, quality-of-life densities (percentile-ranked citywide), building
+  facts (PLUTO/HPD/DOB) and flood risk per H3 cell; `verify_renters.py` sanity-gates it.
+  Place-based metrics only — no demographic inputs (fair-housing). See `renters/METHODS.md`.
+- **`analysis/bus/05_obs_precompute.py`** — precomputes the Bus Observatory dossier/league
+  aggregates (segment speeds, observed-headway/bunching summaries with archive-depth stamps)
+  the backend serves under `/api/obs/*`.
 
 Run a suite in order:
 
@@ -188,10 +201,46 @@ python analysis/sidewalk/02_width_derivation.py
 
 A single always-on asyncio poller harvests every NYC realtime transit feed (bus GTFS-RT +
 all subway/SIR/LIRR/MNR feeds + alerts + Citi Bike + Ferry) into an hourly-partitioned
-Parquet archive, and `derive.py` computes observed headways / segment speeds / schedule
-adherence from it. See [`realtime/README.md`](realtime/README.md) for the feed table, the
+Parquet archive. See [`realtime/README.md`](realtime/README.md) for the feed table, the
 BusTime 31 s rate floor (one hard rule — a violation can revoke your key), archive layout,
 and ops. The site's backend can also serve live data directly; the archive gives history.
+
+The archive path is env-driven (`NYCV_ARCHIVE_ROOT`, defaulting to `realtime/archive/`) so
+the collection store can live on a separate drive — set it in `.env`, never in code.
+
+### Derivation engine v2 — `realtime/derive2/`
+
+Productionized replacement for the original `derive.py`. Reads the settled Parquet archive
+(never the live feeds) and derives, idempotently by day-partition:
+
+1. **Trip trajectories** (`trajectories.py`) — vehicle positions map-matched to GTFS shapes
+   (nearest-point projection in EPSG:2263) → per-trip distance-along-route time series.
+2. **Observed headways + bunching** (`headways.py`) — per route×stop×direction arrival events
+   → headway series, scheduled-headway join, deviation, and a bunching index (headway CV +
+   %<50% scheduled). Metrics from <14 days of archive are stamped **PRELIMINARY**.
+3. **Adherence** (`adherence.py`) — observed vs scheduled per trip.
+4. **Systemwide KPI rollups** (`kpis.py`) — the numbers the Ops Wall shows, per 5-min bin.
+5. **Public dataset** (`package_headways.py`) — packages `derived/observed_headways/` as a
+   downloadable CSV/Parquet dataset ("NYC Observed Bus Headways"), refreshed daily — a novel
+   artifact MTA does not publish.
+
+`run_derive.py` runs the incremental cycle; `run_derive.ps1` is the `JaneNYCDerive` scheduled
+task wrapper (hourly, offset from poller flush windows). Methods: `derive2/METHODS_derive2.md`.
+
+### GTFS change monitor — `changes/`
+
+`snapshot.py` fetches the MTA GTFS static feeds every ~6h and stores content-hashed snapshots
+(dedup by hash). `gtfs_diff.py` diffs consecutive snapshots into structured deltas (routes
+added/removed, headway shifts per route×period, stop/service-span/shape changes) → a JSONL
+feed + human-readable `CHANGELOG.md`. `run_diffs.py` is the scheduled driver; `run_snapshot.ps1`
+the task wrapper. Powers the Service-Change Monitor page + `/observatory/changes`.
+
+```bash
+python realtime/derive2/run_derive.py     # incremental derivation cycle
+python changes/run_diffs.py               # snapshot all feeds + diff new pairs
+python analysis/access/build_access.py    # isochrone grid + equity table (OTP or precomputed)
+python analysis/renters/build_renters_grid.py <stage>   # renter profile grid
+```
 
 ---
 

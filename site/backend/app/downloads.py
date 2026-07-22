@@ -23,6 +23,8 @@ CT = {
     ".parquet": "application/octet-stream",
     ".csv": "text/csv; charset=utf-8",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # datapackage descriptor is dataset metadata (not a tabular-data offering) — JSON is fine here.
+    ".json": "application/json; charset=utf-8",
 }
 
 # key -> (relative path under OUTPUTS_ROOT, label, group, note)
@@ -74,6 +76,56 @@ _ITEMS: dict[str, tuple[str, str, str, str]] = {
     "bus_most_crowded.xlsx": ("bus/03_most_crowded_routes.xlsx", "Most-crowded routes (XLSX)", "Bus", ""),
     "bus_observed_headways.parquet": ("bus/04_observed_headways_route.parquet", "Observed headways per route (Parquet, preliminary)", "Bus",
                                        "~2h of realtime archive; preliminary"),
+    # --- NYC Observed Bus Headways (beta) — the marquee new dataset (S2 derive2) ---
+    "observed_headways_all.parquet": (
+        "headways_dataset/observed_bus_headways_all.parquet",
+        "NYC Observed Bus Headways — all days (Parquet)", "Observed Headways",
+        "PRELIMINARY — observed headways, variability (CV), bunching index & deviation vs schedule, "
+        "per route x direction x stop x date x hour, from our own GTFS-realtime archive (MTA publishes "
+        "schedules, not observed headways). Reliability figures firm up at >=14 days of archive."),
+    "observed_headways_latest.csv": (
+        "headways_dataset/observed_bus_headways_latest.csv",
+        "NYC Observed Bus Headways — latest service day (CSV)", "Observed Headways",
+        "PRELIMINARY — the most recent complete service day; the archive updates daily."),
+    "observed_headways_datapackage.json": (
+        "headways_dataset/datapackage.json",
+        "Frictionless datapackage descriptor (metadata)", "Observed Headways",
+        "Dataset metadata/provenance descriptor (not tabular data) — schema, licence (CC-BY-4.0), "
+        "temporal coverage, known gaps."),
+    # --- Access & isochrones (S4 OpenTripPlanner) ---
+    "isochrone_grid_45min.geoparquet": (
+        "access/isochrone_grid_45min.geoparquet",
+        "45-min job-access isochrone grid, 1,179 H3 res-8 cells (GeoParquet, EPSG:4326)",
+        "Access & isochrones",
+        "Network-based (real street+transit routing) weekday-08:00 45-min WALK+TRANSIT isochrone "
+        "polygons + reachable-jobs per origin cell. NOT Euclidean."),
+    "jobs_accessibility_block.csv": (
+        "access/jobs_accessibility_block.csv",
+        "Jobs reachable <=45 min, per census block, 37,588 blocks (CSV)", "Access & isochrones",
+        "Per-block reachable jobs, frequent-transit flag, block-group median income & population."),
+    "access_equity.csv": (
+        "access/access_equity.csv", "Access equity by income decile (CSV)", "Access & isochrones", ""),
+    "access_equity.parquet": (
+        "access/access_equity.parquet", "Access equity by income decile (Parquet)", "Access & isochrones", ""),
+    "access_equity.xlsx": (
+        "access/access_equity.xlsx", "Access equity by income decile (XLSX)", "Access & isochrones", ""),
+    # --- Renter's Map (S7) precomputed grid + per-BBL building aggregates ---
+    "renters_grid.parquet": (
+        "renters/renters_grid.parquet",
+        "Renter's Map cell grid, 58,604 H3 res-10 cells (Parquet)", "Renter's Map",
+        "Per-cell transit supply, QoL densities + citywide percentiles, flood flags, and 45-min job "
+        "access. Place-based only; no demographic/protected-class variable enters any score."),
+    "renters_hpd_open_violations_by_bbl.parquet": (
+        "renters/hpd_open_violations_by_bbl.parquet",
+        "HPD open violations per BBL, by class (Parquet)", "Renter's Map", ""),
+    "renters_dob_permits_5y_by_bbl.parquet": (
+        "renters/dob_permits_5y_by_bbl.parquet",
+        "DOB permit filings (last 5 years) per BBL (Parquet)", "Renter's Map", ""),
+    "renters_landlord_portfolio_by_bbl.parquet": (
+        "renters/landlord_portfolio_by_bbl.parquet",
+        "Landlord registration-portfolio size per BBL (Parquet)", "Renter's Map",
+        "Ownership PROXY from HPD registration contacts (same-registration-contact grouping), "
+        "not a legal beneficial-ownership determination."),
 }
 
 

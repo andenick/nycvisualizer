@@ -1,5 +1,85 @@
 [
 {
+"name": "FEMA NFHL S_FLD_HAZ_AR (Flood Hazard Zones) - NYC",
+"category": "flood",
+"id": "FEMA NFHL MapServer layer 28 (S_FLD_HAZ_AR)",
+"portal": "FEMA National Flood Hazard Layer - public domain (US Federal)",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 196791753,
+"license": "FEMA National Flood Hazard Layer - public domain (US Federal)"
+},
+{
+"name": "NYC Stormwater Flood Maps",
+"category": "flood",
+"id": "9i7c-xyvv",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 33785094,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "DOB Job Application Filings (legacy)",
+"category": "housing",
+"id": "ic3t-wcy2",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 1580169667,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "DOB NOW: Build - Approved Permits",
+"category": "housing",
+"id": "w9ak-ipjd",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 806447417,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "DOB Permit Issuance (BIS)",
+"category": "housing",
+"id": "ipu4-2q9a",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 1555427611,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "HPD Housing Maintenance Code Violations",
+"category": "housing",
+"id": "wvxf-dwi5",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 6169493174,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "HPD Registration Contacts",
+"category": "housing",
+"id": "feu5-w2e2",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 69926122,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "HPD Registrations",
+"category": "housing",
+"id": "tesw-yqqr",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 26604797,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
 "name": "Building Footprints (NYC)",
 "category": "landuse",
 "id": "",
@@ -147,6 +227,16 @@
 "vintage": "2026-07-16",
 "rows": null,
 "bytes": 2295725,
+"license": "NYC Open Data - public domain (Open Data terms of use)"
+},
+{
+"name": "DOHMH Rodent Inspections",
+"category": "qol",
+"id": "p937-wjvj",
+"portal": "data.cityofnewyork.us",
+"vintage": "2026-07-22",
+"rows": null,
+"bytes": 822735554,
 "license": "NYC Open Data - public domain (Open Data terms of use)"
 },
 {

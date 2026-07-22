@@ -71,6 +71,11 @@ def load_env(path: Path) -> dict:
     return env
 
 ENV = load_env(ENV_FILE)
+# archive root override (NYCV_ARCHIVE_ROOT in .env or process env) — lets the active
+# archive live on a different drive than the code (D: contention immunization 2026-07-22)
+_arch_override = ENV.get("NYCV_ARCHIVE_ROOT") or os.environ.get("NYCV_ARCHIVE_ROOT")
+if _arch_override:
+    ARCHIVE = Path(_arch_override)
 BUS_KEY = ENV.get("MTA_BUSTIME_KEY", "")
 
 # ------------------------------------------------------------------ feed catalog
@@ -471,7 +476,7 @@ async def maintenance_loop():
     """Periodic flush, disk guard, heartbeat."""
     global ARCHIVING_ENABLED, DISK_FREE_GB
     while True:
-        DISK_FREE_GB = disk_free_gb("D:/")
+        DISK_FREE_GB = disk_free_gb(ARCHIVE.anchor or "D:/")
         if DISK_FREE_GB < DISK_FLOOR_GB:
             if ARCHIVING_ENABLED:
                 log(f"!!! DISK GUARD TRIPPED — D: {DISK_FREE_GB:.1f} GB < {DISK_FLOOR_GB} GB. "

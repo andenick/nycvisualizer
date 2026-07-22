@@ -1,0 +1,128 @@
+<h1>Transit Access &amp; Isochrones — Methods</h1>
+<p>Spoke <strong>S4</strong> of the nycvisualizer platform: an OpenTripPlanner routing engine, a
+live isochrone API, a precomputed reachability grid, and an income-decile access-equity
+analysis. Everything here is <strong>network-based</strong> (real street + transit routing), not
+straight-line/Euclidean — so the usual "as-the-crow-flies overstates access" caveat
+does <strong>not</strong> apply.</p>
+<h2>1. Routing engine (OpenTripPlanner)</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Engine</td>
+<td>OpenTripPlanner (OTP) <strong>2.5.0</strong> (<code>otp-2.5.0-shaded.jar</code>, Java 21 / eclipse-temurin:21-jre)</td>
+</tr>
+<tr>
+<td>Why 2.5.0 (not 2.9/2.10)</td>
+<td>The isochrone sandbox (<code>ext.traveltime</code>, feature <code>SandboxAPITravelTime</code>, endpoint <code>/otp/traveltime/isochrone</code>) is the mechanism we need. It was <strong>removed in OTP 2.6.0</strong>. 2.5.0 is the last release that ships it. The <code>opentripplanner/opentripplanner:latest</code> Docker image is a 2.10.0-SNAPSHOT dev build and has no isochrone endpoint.</td>
+</tr>
+<tr>
+<td>Host</td>
+<td>Homelab box (HP EliteDesk 800 G5, 6-core i5-9500T, 30 GiB RAM), internal only</td>
+</tr>
+<tr>
+<td>Serving container</td>
+<td><code>nycvis-otp</code> on the <code>homelab_default</code> docker network, <code>--load --serve</code>, <code>-Xmx3g</code>, <code>restart: unless-stopped</code>. <strong>No host port, no public hostname</strong> — only our backend (same network) or an ssh-tunnel reaches it.</td>
+</tr>
+<tr>
+<td>Feature flag</td>
+<td><code>otp-config.json</code>: <code>{"otpFeatures":{"SandboxAPITravelTime":true}}</code></td>
+</tr>
+</tbody>
+</table>
+<h3>Graph inputs</h3>
+<ul>
+<li><strong>OSM street network</strong>: Geofabrik <code>new-york-latest.osm.pbf</code> (~470 MB, full NY state),
+  clipped with <code>osmium extract</code> to the NYC bbox <code>-74.30,40.47,-73.68,40.93</code>
+  (→ ~101 MB <code>nyc.osm.pbf</code>).</li>
+<li><strong>GTFS transit feeds</strong> (city modes only — v1 graph):</li>
+<li>Subway (supplemented feed, includes SIR / Staten Island Railway)</li>
+<li>Bus: Bronx, Brooklyn, Manhattan, Queens, Staten Island, MTA Bus Company (6 feeds)</li>
+<li>NYC Ferry</li>
+<li><strong>Excluded from the v1 graph: LIRR and Metro-North.</strong> These are commuter rail
+    reaching outside the five boroughs; excluding them keeps the graph "city modes"
+    and avoids implying suburban commuter access we did not model. (Their GTFS is
+    on-disk and can be added in a v2 graph.)</li>
+<li><strong>Router defaults</strong> (<code>router-config.json</code>): <code>walkSpeed = 1.33 m/s</code> (OTP default,
+  ~3.0 mph), <code>transferSlack = 2m</code>. <strong>No fares</strong> modeled (walk+transit time only).</li>
+</ul>
+<h3>Build</h3>
+<p><code>--build --save</code> with <code>-Xmx6g</code>. Street graph ~446k edges; graph serialized to
+<code>graph.obj</code> (~0.37 GB). See the return note for the exact build time / size of the
+final run.</p>
+<h2>2. Live isochrone API</h2>
+<p>Backend module <code>site/backend/app/isochrone.py</code>, endpoint:</p>
+<pre><code>GET /api/isochrone?lat=&lt;&gt;&amp;lon=&lt;&gt;&amp;minutes=30|45|60&amp;depart=weekday_8am|noon|evening
+</code></pre>
+<ul>
+<li>Snaps the origin to an <strong>H3 res-9 cell</strong> (~0.1 km² ; edge ~174 m) so nearby requests
+  share a cache entry; the query is issued from the snapped cell centroid.</li>
+<li>Calls OTP <code>/otp/traveltime/isochrone</code> (<code>modes=WALK,TRANSIT</code>, <code>arriveBy=false</code>,
+  <code>cutoff=&lt;minutes&gt;m</code>) over the internal network (<code>OTP_URL</code>, default
+  <code>http://nycvis-otp:8080</code>); returns the GeoJSON <code>FeatureCollection</code> of polygons.</li>
+<li><strong>Departure windows</strong> anchor to the next weekday (default <code>2026-07-22</code>, a Wednesday,
+  overridable via <code>ISOCHRONE_DEPART_DATE</code>) at <code>08:00 / 12:00 / 18:00</code> America/New_York (EDT, <code>-04:00</code>).</li>
+<li><strong>Cache</strong>: two-tier — in-process LRU (512 entries) over an on-disk JSON cache keyed on
+  <code>sha1(h3_res9 | minutes | depart | date)</code>.</li>
+<li><strong>Honesty contract</strong>: if OTP is unreachable or errors, the endpoint returns <strong>HTTP 503</strong>
+  with a plain message. It <strong>never</strong> returns an estimated/interpolated polygon.</li>
+</ul>
+<h2>3. Precomputed reachability grid (<code>isochrone_grid_45min.parquet</code>)</h2>
+<p>The fallback path and the equity input.</p>
+<ul>
+<li><strong>Origin grid</strong>: every <strong>H3 res-8 cell</strong> (~0.7 km²; edge ~461 m) whose interior
+  contains ≥1 NYC census-block centroid → <strong>1,196 land cells</strong>.</li>
+<li>For each origin-cell centroid: one <strong>45-min, weekday-08:00, WALK+TRANSIT</strong> isochrone
+  from box OTP. The polygon is converted to its covered set of <strong>H3 res-9 cells</strong>
+  (<code>h3.geo_to_cells</code>), and <strong>reachable jobs</strong> = Σ LODES WAC <code>C000</code> over NYC census
+  blocks whose res-9 cell is in that set.</li>
+<li>The driver is <strong>serial and resumable</strong>: each cell is checkpointed
+  (<code>_cache/grid_checkpoint.parquet</code>); a cell whose OTP query fails is recorded
+  <code>status=error</code> and retried on the next run (never fabricated).</li>
+<li>Columns: <code>res8, lat, lon, jobs_reachable, n_reach_res9, geom_wkt (isochrone polygon),
+  jobs_reachable_pct</code>.</li>
+</ul>
+<h3>Jobs-accessibility table (<code>jobs_accessibility_block.parquet</code>)</h3>
+<p>Per NYC census block: the block inherits the reachable-jobs of the res-8 origin cell that
+contains its centroid, plus <code>frequent_transit_access</code>, block-group median income, and
+population. One row per block (37,588).</p>
+<h3>Frequent-transit-access flag</h3>
+<p>A block is flagged if a <strong>frequent AM-peak stop</strong> lies within ~400 m. A stop is
+"frequent" if it has <strong>≥8 scheduled departures in the 07:00–09:00 window</strong> (≈ a vehicle
+every ≤15 min — the "turn-up-and-go" combined-frequency threshold, counting all
+routes/directions serving the stop), from the parsed <code>transit_gtfs_stop_times</code>. Trips
+whose <code>trip_id</code> carries a Saturday/Sunday/Weekend token are excluded to approximate a
+weekday. Proximity is done in H3: each frequent stop marks its res-9 cell + a k=2 ring
+(~≤430 m); a block is flagged if its res-9 cell is in that set.</p>
+<h2>4. Access-equity (<code>access_equity.parquet</code> / <code>.xlsx</code>)</h2>
+<ul>
+<li>Each NYC block carries: reachable-jobs (≤45 min, wk-08:00), block-group <strong>median
+  household income</strong> (ACS 2023 <code>B19013_001E</code>; <code>-666666666</code> sentinel → null), and
+  <strong>population</strong> (block-level where available, else equal weight).</li>
+<li>Blocks are sorted by income and split into <strong>population-weighted deciles</strong> (D1 = lowest
+  income, D10 = highest).</li>
+<li>Per decile: population-weighted mean jobs reachable ≤45 min, that as a % of all NYC
+  jobs, and the frequent-transit-access population share.</li>
+</ul>
+<h2>Caveats (read before citing)</h2>
+<ol>
+<li><strong>Single departure window in the grid</strong> — the precomputed grid uses weekday <strong>08:00</strong>
+   only. The live API supports noon/evening; reachability is materially depart-time
+   sensitive (evening/late service is sparser). The grid is an AM-peak snapshot.</li>
+<li><strong>Walk speed</strong> fixed at the OTP default 1.33 m/s; no per-person mobility differences.</li>
+<li><strong>No fares / no fare-based transfer limits</strong> — purely travel-time reachability.</li>
+<li><strong>Jobs = NYC census-block jobs only.</strong> The graph is clipped to the NYC bbox and only
+   NYC block geometries are used, so jobs in NJ / Westchester / Long Island reachable
+   within 45 min are <strong>not</strong> counted. This understates total reachable jobs for
+   near-border origins but is consistent citywide.</li>
+<li><strong>LIRR / Metro-North excluded</strong> from the v1 graph (city modes only).</li>
+<li><strong>res-8 origin granularity</strong>: blocks inherit their ~0.7 km² origin cell's isochrone;
+   sub-cell variation within a cell is not resolved.</li>
+<li><strong>Frequent-transit flag</strong> uses combined stop frequency (any vehicle ≤15 min), not
+   per-route headway, and a static-schedule AM window rather than a full calendar join.</li>
+</ol>

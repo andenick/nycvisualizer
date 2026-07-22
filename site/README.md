@@ -66,6 +66,37 @@ npm run preview  # serve the production build
 | `GET /api/stations/{id}/arrivals` | live arrivals board for one station (key-free trip-updates, cached ~30s per line-group feed) |
 | `GET /api/downloads` | download inventory (whitelist registry; D-4 formats) |
 | `GET /api/downloads/{key}` | file download with correct content-type (GeoJSON `application/geo+json`, parquet `application/octet-stream`, etc.) |
+| `GET /api/changes` | paginated/filterable detected GTFS service changes (S3 diff engine) |
+| `GET /api/changes/feed.json` · `GET /api/changes/rss` | machine + RSS feeds of changes |
+
+### Bus Observatory (`/api/obs/*`, S5)
+
+The route-reliability + Marey-diagram surface. Reads derive2's hourly-refreshed outputs
+(`realtime/derived/{trajectories,observed_headways}`) + its GTFS static cache
+(`realtime/derive2/cache/`), the bus analysis outputs (`Outputs/NYCPlatform/bus/`), SAI
+(`Outputs/NYCPlatform/sai/`), live positions (the `/api/rt` layer), and two precomputed
+dossier aggregates (`Outputs/NYCPlatform/bus/obs/`, built by `analysis/bus/05_obs_precompute.py`
+on the `JaneNYCDerive` cadence — route-hourly ridership + ACE counts, to keep the dossier off
+the 5.4 GB jane_geo DB at request time). All roots are env-overridable (`NYCV_DERIVED_ROOT`,
+`NYCV_DERIVE2_CACHE`, `NYCV_OUTPUTS_ROOT`, `NYCV_BUS_OUTPUTS`, `NYCV_OBS_PRECOMPUTE`,
+`NYCV_SAI_DIR`), relative by default.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/obs/routes` | all bus routes + borough group, SBS flag, yesterday's headline stats (median headway, bunching index, coverage) |
+| `GET /api/obs/marey?route&direction=0\|1&window=3h\|6h\|today&date=YYYY-MM-DD&end=<epoch>` | Marey trajectory data: observed trips (archive, ~60 s-resampled) **+** scheduled ghost trips (from GTFS stop_times) **+** stop gridlines; merges LIVE positions for a window ending now. `end` (epoch s) is optional (defaults to now / last data point) and drives brush-zoom |
+| `GET /api/obs/marey/stream?route&direction` | SSE, incremental live trajectory points ~every 30 s |
+| `GET /api/obs/headways?route&stop_id&date_range` | observed-vs-scheduled headway series + bunching per hour (stop grain if `stop_id`, else route-hour) |
+| `GET /api/obs/headways/summary?route&direction` | per-stop medians for the strip view (ordered by along-route offset) |
+| `GET /api/obs/dossier?route` | full route profile: ridership-by-hour, slowest segments, ACE, SAI-of-stops, stop spacing, scheduled span/frequency, reliability summary, active alerts |
+| `GET /api/obs/leagues` | league tables: most/least reliable routes (≥3 observed days & ≥50 headways, else excluded), slowest corridors, most-improved-vs-schedule |
+
+Every reliability response carries an `archive` block `{archive_depth_days, preliminary
+(depth<14), gap_note, observed_dates}` — frontends render a PRELIMINARY badge until 14-day
+depth. **Route ids that contain `+` (SBS variants, e.g. `M15+`) MUST be percent-encoded as
+`%2B` in query strings** (a bare `+` decodes to a space). Marey y-axis is distance-along-shape
+in feet on the route+direction's canonical (most-used) shape; timestamps are UTC epoch seconds.
+Marey is cached 30 s per `(route,dir,window,date)`; dossier/leagues 10 min.
 
 Sidewalk Explorer layers are pre-generated GeoJSON under `frontend/public/layers/`
 (built by `tools/build_layers.py` from `jane_geo.duckdb` + the analysis outputs;
