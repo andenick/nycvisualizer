@@ -6,6 +6,7 @@ import {
   getVehicles,
   getRoutes,
   getRouteShape,
+  getRibbon,
   getAlerts,
   getSubway,
   getStations,
@@ -52,6 +53,18 @@ function fmtClock(epoch: number | null): string {
 }
 
 const STATION_MIN_ZOOM = 13;
+
+// Q1.3: reliability-ribbon diverging color (speed percentile within the route).
+function ribbonSpeedColor(pct: number): string {
+  const lerp = (a: string, b: string, t: number) => {
+    const p = (c: string) => [1, 3, 5].map((j) => parseInt(c.slice(j, j + 2), 16));
+    const pa = p(a), pb = p(b);
+    const m = pa.map((x, i) => Math.round(x + (pb[i] - x) * t));
+    return `rgb(${m[0]},${m[1]},${m[2]})`;
+  };
+  const p = Math.max(0, Math.min(1, pct));
+  return p < 0.5 ? lerp("#c1272d", "#cfcfcf", p / 0.5) : lerp("#cfcfcf", "#1a6fb5", (p - 0.5) / 0.5);
+}
 
 export default function BusMap() {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -346,9 +359,29 @@ export default function BusMap() {
     getRouteShape(selected)
       .then((s) => {
         const color = colorFor(selected);
+        // Q1.3: the shape becomes a quiet base; the reliability ribbon (segment
+        // speeds) overlays it as the hero when segment data exists.
         for (const line of s.polylines) {
-          L.polyline(line, { color, weight: 4, opacity: 0.75 }).addTo(sl);
+          L.polyline(line, { color, weight: 2, opacity: 0.4 }).addTo(sl);
         }
+        getRibbon(selected)
+          .then((rb) => {
+            if (selectedRef.current !== selected) return; // selection moved on
+            for (const seg of rb.segments) {
+              L.polyline(
+                seg.coords.map((c) => [c[0], c[1]] as [number, number]),
+                { color: ribbonSpeedColor(seg.speed_pctile), weight: 5, opacity: 0.9, lineCap: "round" },
+              )
+                .bindPopup(
+                  `<strong>${seg.from_stop} → ${seg.to_stop}</strong><br/>` +
+                    `<strong>${seg.wt_speed_mph} mph</strong> · ${Math.round(seg.speed_pctile * 100)}th pct on ${selected}`,
+                )
+                .addTo(sl);
+            }
+          })
+          .catch(() => {
+            /* no ribbon data — the quiet shape line already drawn stands in */
+          });
         for (const stop of s.stops) {
           L.circleMarker([stop.lat, stop.lon], {
             radius: 3,
@@ -506,6 +539,14 @@ export default function BusMap() {
         {showSubway && (
           <div style={{ marginTop: showBuses ? 4 : 0 }}>
             Trains: official line colors · faded&nbsp;=&nbsp;estimated position
+          </div>
+        )}
+        {showBuses && selected && (
+          <div style={{ marginTop: 4 }}>
+            {selected} speed:
+            <span className="swatch" style={{ background: "#c1272d", marginLeft: 6 }} /> slow
+            <span className="swatch" style={{ background: "#cfcfcf", marginLeft: 6 }} /> on-pace
+            <span className="swatch" style={{ background: "#1a6fb5", marginLeft: 6 }} /> fast
           </div>
         )}
         {basemap && (

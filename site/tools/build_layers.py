@@ -54,30 +54,44 @@ def main() -> None:
     con = duckdb.connect(str(DB), read_only=True)
     con.execute("INSTALL spatial; LOAD spatial")
     cov = (SW / "01_coverage_segments.parquet").as_posix()
+    wid = (SW / "02_width_segments.parquet").as_posix()
 
     # ---------------------------------------------------- 1. coverage segments (per borough)
     # One tier: CSCL segments are mostly 2-point straight lines, so geometric
     # simplification barely changes size (measured overview==detail within 5%).
     # Delivery efficiency comes from per-borough lazy loading + coord rounding.
+    #
+    # Q1.2 width-mode: the coverage source (01_coverage_segments) carries NO
+    # sidewalk-width column, only the class. The per-segment MEDIAN sidewalk width
+    # (ft) lives in 02_width_segments, keyed by the same PHYSICALID, so we LEFT JOIN
+    # it and emit it as property `w` (rounded to 0.1 ft; null where a segment has no
+    # measured polygons). The frontend width-mode toggle scales line thickness by
+    # sqrt(w); color always stays the coverage class (never conflate channels).
     boros = ["Manhattan", "Bronx", "Brooklyn", "Queens", "Staten Island"]
     for tier, tol, nd in [("seg", 0.00004, 5)]:
         for boro in boros:
             rows = con.execute(
                 f"""
-                SELECT c.coverage_class, ST_AsGeoJSON(ST_Simplify(g.geom_wkb, {tol})) AS gj
+                SELECT c.coverage_class,
+                       w.width_median_ft,
+                       ST_AsGeoJSON(ST_Simplify(g.geom_wkb, {tol})) AS gj
                 FROM read_parquet('{cov}') c
+                LEFT JOIN read_parquet('{wid}') w ON w.PHYSICALID = c.PHYSICALID
                 JOIN geo_cscl g ON g.PHYSICALID = c.PHYSICALID
                 WHERE c.borough = ?
                 """,
                 [boro],
             ).fetchall()
             feats = []
-            for cls, gj in rows:
+            for cls, wmed, gj in rows:
                 if gj is None:
                     continue
                 geom = json.loads(gj)
                 geom["coordinates"] = rnd(geom["coordinates"], nd)
-                feats.append({"type": "Feature", "properties": {"c": cls[0]}, "geometry": geom})
+                props = {"c": cls[0]}
+                if wmed is not None:
+                    props["w"] = round(float(wmed), 1)
+                feats.append({"type": "Feature", "properties": props, "geometry": geom})
             key = boro.lower().replace(" ", "_")
             write(
                 LAYERS / f"coverage_{tier}_{key}.geojson",

@@ -56,7 +56,6 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
   const stopLayer = useRef<L.LayerGroup | null>(null);
   const floodLayer = useRef<L.LayerGroup | null>(null);
   const [basemap, setBasemap] = useState<BasemapInfo | null>(null);
-  const [minutes, setMinutes] = useState<30 | 45 | 60>(45);
   const [showStops, setShowStops] = useState(true);
   const [showFlood, setShowFlood] = useState(true);
   const [isoBusy, setIsoBusy] = useState(false);
@@ -146,71 +145,81 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
     else if (pts.length > 1) map.current.fitBounds(L.latLngBounds(pts).pad(0.35), { animate: true });
   }, [primary, secondary, compare]);
 
-  // ---- isochrone (45 inline; 30/60 lazy) ----
+  // ---- banded isochrones (Q1.4): nested 15/30/45/60-min bands ----
+  // Sequential accent ramp, darkest = nearest (15 min). The profile ships the
+  // 45-min inline; 15/30/60 are fetched lazily and cached. Bands are drawn
+  // largest→smallest so the nearer/darker band sits on top; a 2px band stroke
+  // separates the rings. Compare mode = outlines only (A accent, B violet).
   useEffect(() => {
     const g = isoLayer.current;
     if (!g || !map.current) return;
     let cancelled = false;
 
-    const draw = (polys: [number, number][][][], color: string, approx: boolean) => {
-      for (const poly of polys) {
+    // 15 → 60 min, darkest → lightest (validated sequential blue ramp)
+    const BAND: Record<number, string> = { 15: "#1e50c8", 30: "#4d82e6", 45: "#8fb4f0", 60: "#c9dcfa" };
+    const ORDER = [60, 45, 30, 15]; // paint far→near so near/dark sits on top
+
+    const fillBand = (polys: [number, number][][][], color: string) => {
+      for (const poly of polys)
         L.polygon(poly, {
-          color,
-          weight: 1.5,
-          opacity: 0.9,
-          fillColor: color,
-          fillOpacity: 0.14,
-          dashArray: approx ? "5,5" : undefined,
-          interactive: false,
+          color, weight: 2, opacity: 0.9, fillColor: color, fillOpacity: 0.3, interactive: false,
         }).addTo(g);
+    };
+    const outline = (polys: [number, number][][][], color: string) => {
+      for (const poly of polys)
+        L.polygon(poly, { color, weight: 2.5, opacity: 0.95, fill: false, interactive: false }).addTo(g);
+    };
+
+    const isoFor = async (
+      lat: number, lon: number, mins: number, inline: RenterIsochrone | null | undefined,
+    ): Promise<RenterIsochrone | null | undefined> => {
+      if (mins === 45) return inline; // profile's inline 45-min polygon
+      const key = `${lat}|${lon}|${mins}`;
+      let iso = isoCache.current.get(key);
+      if (!iso) {
+        try {
+          const gj = await getIsochrone(lat, lon, mins);
+          iso = { source: "live_otp", approximate: false, geojson: gj };
+          isoCache.current.set(key, iso);
+        } catch {
+          iso = { source: "unavailable", approximate: true, note: "routing engine busy" };
+        }
       }
+      return iso;
     };
 
     const run = async () => {
       g.clearLayers();
       setIsoNote(null);
-      // Side A
-      if (primary && !primary.error && primary.query) {
-        const { lat, lon } = primary.query;
-        let iso: RenterIsochrone | null | undefined;
-        if (minutes === 45) {
-          iso = primary.isochrone_45min_8am;
-        } else {
-          const key = `${lat}|${lon}|${minutes}`;
-          iso = isoCache.current.get(key);
-          if (!iso) {
-            setIsoBusy(true);
-            try {
-              const gj = await getIsochrone(lat, lon, minutes);
-              iso = { source: "live_otp", approximate: false, geojson: gj };
-              isoCache.current.set(key, iso);
-            } catch {
-              iso = { source: "unavailable", approximate: true, note: "routing engine busy" };
-            } finally {
-              if (!cancelled) setIsoBusy(false);
-            }
-          }
-        }
-        if (cancelled) return;
+      if (compare) {
+        // outlines only when both are shown, at the shared inline 45-min
+        if (primary && !primary.error && primary.query) outline(isoPolys(primary.isochrone_45min_8am), A_COLOR);
+        if (secondary && !secondary.error && secondary.query) outline(isoPolys(secondary.isochrone_45min_8am), B_COLOR);
+        return;
+      }
+      if (!primary || primary.error || !primary.query) return;
+      const { lat, lon } = primary.query;
+      setIsoBusy(true);
+      const isos: Record<number, RenterIsochrone | null | undefined> = {};
+      await Promise.all(ORDER.map(async (m) => { isos[m] = await isoFor(lat, lon, m, primary.isochrone_45min_8am); }));
+      if (cancelled) return;
+      let anyApprox = false;
+      for (const m of ORDER) {
+        const iso = isos[m];
+        if (!iso) continue;
+        if (iso.approximate) anyApprox = true;
         const polys = isoPolys(iso);
-        if (polys.length) draw(polys, A_COLOR, !!iso?.approximate);
-        if (iso?.approximate)
-          setIsoNote(
-            iso.note ??
-              "Approximate: routing engine unreachable — showing the precomputed reachable area for this grid cell.",
-          );
+        if (polys.length) fillBand(polys, BAND[m]);
       }
-      // Side B (compare) — always its inline 45-min
-      if (compare && secondary && !secondary.error && secondary.query) {
-        const polys = isoPolys(secondary.isochrone_45min_8am);
-        if (polys.length) draw(polys, B_COLOR, !!secondary.isochrone_45min_8am?.approximate);
-      }
+      setIsoBusy(false);
+      if (anyApprox)
+        setIsoNote("Some bands approximate: routing engine busy — showing precomputed reachable areas.");
     };
     void run();
     return () => {
       cancelled = true;
     };
-  }, [primary, secondary, compare, minutes]);
+  }, [primary, secondary, compare]);
 
   // ---- stops ----
   // The profile's nearest_stops_detail carries names + SAI but NO coordinates, so
@@ -309,19 +318,8 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
       <div className="nyc-map" ref={mapRef} />
 
       <div className="nyc-map-controls">
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>Reachable in</div>
-        <div className="rent-seg" role="group" aria-label="Isochrone minutes">
-          {[30, 45, 60].map((mn) => (
-            <button
-              key={mn}
-              type="button"
-              className={minutes === mn ? "on" : ""}
-              disabled={compare && mn !== 45}
-              onClick={() => setMinutes(mn as 30 | 45 | 60)}
-            >
-              {mn}m
-            </button>
-          ))}
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+          {compare ? "Reachable in 45 min (outlines)" : "Reachable in 15 · 30 · 45 · 60 min"}
         </div>
         <label style={{ marginTop: 6 }}>
           <input type="checkbox" checked={showStops} onChange={() => setShowStops((v) => !v)} style={{ width: "auto" }} />{" "}
@@ -331,20 +329,32 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
           <input type="checkbox" checked={showFlood} onChange={() => setShowFlood((v) => !v)} style={{ width: "auto" }} />{" "}
           Flood exposure
         </label>
-        {isoBusy && <div className="muted">Computing isochrone…</div>}
-        {compare && <div className="muted">45-min shown for both in compare</div>}
+        {isoBusy && <div className="muted">Computing isochrones…</div>}
+        {compare && <div className="muted">45-min outline shown for both in compare</div>}
       </div>
 
       <div className="nyc-legend" style={{ maxWidth: "min(76vw, 320px)" }}>
-        <div>
-          <span className="swatch" style={{ background: A_COLOR }} /> Reachable area (A){approxA ? " · approx" : ""}
-          {compare && (
-            <>
-              <br />
-              <span className="swatch" style={{ background: B_COLOR }} /> Reachable area (B)
-            </>
-          )}
-        </div>
+        {compare ? (
+          <div>
+            <span className="swatch" style={{ background: A_COLOR }} /> Reachable (A){approxA ? " · approx" : ""}
+            <span className="swatch" style={{ background: B_COLOR, marginLeft: 8 }} /> Reachable (B)
+          </div>
+        ) : (
+          <div>
+            Reachable by transit (weekday 8am):
+            <div style={{ marginTop: 3 }}>
+              {[15, 30, 45, 60].map((m) => (
+                <span key={m} style={{ marginRight: 8, whiteSpace: "nowrap" }}>
+                  <span
+                    className="swatch"
+                    style={{ background: { 15: "#1e50c8", 30: "#4d82e6", 45: "#8fb4f0", 60: "#c9dcfa" }[m] }}
+                  />
+                  {m}m
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 4 }}>
           SAI stops:
           <span className="swatch" style={{ background: saiColor(10), marginLeft: 6 }} /> low

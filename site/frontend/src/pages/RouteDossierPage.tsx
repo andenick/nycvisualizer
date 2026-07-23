@@ -12,6 +12,7 @@ import {
   type AceInfo,
 } from "../lib/api";
 import MareyChart from "../components/MareyChart";
+import ReliabilityRibbon from "../components/ReliabilityRibbon";
 import HeadwayStrip from "../components/HeadwayStrip";
 import ChartErrorBoundary from "../components/ChartErrorBoundary";
 import ArkPlotly from "../components/ArkPlotly";
@@ -179,6 +180,11 @@ export default function RouteDossierPage() {
       {/* THE Marey view */}
       <ChartErrorBoundary label="Marey diagram">
         <MareyChart route={routeId} displayName={display} accent="#2563eb" />
+      </ChartErrorBoundary>
+
+      {/* Reliability ribbon — segment speeds on the map (Q1.3) */}
+      <ChartErrorBoundary label="Reliability ribbon">
+        <ReliabilityRibbon route={routeId} displayName={display} />
       </ChartErrorBoundary>
 
       {status === "ok" && d && (

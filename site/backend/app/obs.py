@@ -1042,3 +1042,94 @@ def _leagues_payload() -> dict[str, Any]:
 async def obs_leagues() -> JSONResponse:
     data = _cached("leagues", 600, _leagues_payload)
     return JSONResponse(data)
+
+
+# --------------------------------------------------------------------------- #
+# 7) /api/obs/ribbon — reliability ribbon (Q1.3): the route's stop-pair segments
+#    with geometry + peak weighted speed + within-route speed PERCENTILE.
+# --------------------------------------------------------------------------- #
+# Data honesty
+# ------------
+# * geometry  : 02_segment_geometry.parquet (from transit_segment_speeds timepoint
+#               endpoints; 100% join to 02_all_segments_peak). Both parquets — this
+#               endpoint never touches the 5.4 GB jane_geo DB (obs.py design rule).
+# * color     : speed PERCENTILE within the route (Swiftly pattern) — 0 = slowest
+#               segment on the route, 1 = fastest; diverging around the route median.
+# * WIDTH     : CONSTANT / color-only. Per-segment PASSENGER ridership is NOT
+#               derivable — 02_all_segments_peak carries n_trips (bus trip count =
+#               service frequency), not APC boardings, and route-level APC cannot be
+#               honestly allocated to segments. So we do NOT fake a ridership width;
+#               `width_basis` says so and the frontend keeps a constant stroke.
+def _ribbon_payload(route_id: str) -> dict[str, Any]:
+    t0 = time.time()
+    seg_file = _bus_file("02_all_segments_peak")
+    geom_file = _bus_file("02_segment_geometry")
+    con = _con()
+    try:
+        rows = con.execute(
+            f"""
+            SELECT s.from_stop, s.to_stop, s.wt_speed_mph, s.n_trips, s.seg_miles, s.borough,
+                   g.from_lat, g.from_lon, g.to_lat, g.to_lon
+            FROM read_parquet('{seg_file}') s
+            LEFT JOIN read_parquet('{geom_file}') g
+              ON g.route_id = s.route_id AND g.from_stop = s.from_stop AND g.to_stop = s.to_stop
+            WHERE s.route_id = ?
+            """,
+            [route_id],
+        ).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        con.close()
+
+    placed = [r for r in rows if r[6] is not None and r[8] is not None and r[2] is not None]
+    speeds = sorted(float(r[2]) for r in placed)
+    n = len(speeds)
+
+    def pctile(v: float) -> float:
+        # fraction of segments strictly slower (0 = slowest, 1 = fastest)
+        if n <= 1:
+            return 0.5
+        lo = sum(1 for s in speeds if s < v)
+        return round(lo / (n - 1), 4)
+
+    median_speed = round(speeds[n // 2], 2) if n else None
+    segments = []
+    for r in placed:
+        spd = float(r[2])
+        segments.append({
+            "from_stop": r[0], "to_stop": r[1],
+            "wt_speed_mph": round(spd, 2),
+            "speed_pctile": pctile(spd),
+            "n_trips": int(r[3]) if r[3] is not None else None,
+            "seg_miles": round(r[4], 3) if r[4] is not None else None,
+            "borough": r[5],
+            "coords": [[round(r[6], 6), round(r[7], 6)], [round(r[8], 6), round(r[9], 6)]],
+        })
+    # order slowest-first so slow segments paint on top
+    segments.sort(key=lambda s: s["speed_pctile"])
+    return {
+        "route": route_id,
+        "meta": _route_meta(route_id),
+        "n_segments": len(rows),
+        "n_placed": len(segments),
+        "route_median_speed_mph": median_speed,
+        "speed_domain": {"basis": "within_route_percentile", "min_mph": round(speeds[0], 2) if n else None,
+                         "max_mph": round(speeds[-1], 2) if n else None},
+        "width_basis": "constant_color_only",
+        "width_note": (
+            "Line width is constant (color-only). Per-segment passenger ridership is not "
+            "derivable from the source (02_all_segments_peak carries bus trip counts, not APC "
+            "boardings), so no ridership width is shown rather than fabricate an allocation."
+        ),
+        "color_note": "Color = peak weighted through-speed as a percentile within this route (diverging around the route median).",
+        "segments": segments,
+        "archive": _archive_meta(),
+        "elapsed_ms": round((time.time() - t0) * 1000, 1),
+    }
+
+
+@router.get("/ribbon")
+async def obs_ribbon(route: str) -> JSONResponse:
+    data = _cached(f"ribbon|{route}", 600, lambda: _ribbon_payload(route))
+    return JSONResponse(data)

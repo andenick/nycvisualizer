@@ -234,6 +234,10 @@ def _live_bunching(vehicles: list[dict[str, Any]]) -> dict[str, Any]:
             hotspots.append({
                 "lat": round((vs[i]["lat"] + vs[j]["lat"]) / 2, 6),
                 "lon": round((vs[i]["lon"] + vs[j]["lon"]) / 2, 6),
+                # Q1.5: both bus positions so the frontend can draw the bunching
+                # CONNECTOR line between the pair (the gap IS the mark).
+                "lat_a": round(vs[i]["lat"], 6), "lon_a": round(vs[i]["lon"], 6),
+                "lat_b": round(vs[j]["lat"], 6), "lon_b": round(vs[j]["lon"], 6),
                 "route": rid, "direction": dirn, "severity": sev,
                 "gap_m": round(gap), "sched_headway_s": round(headway),
             })
