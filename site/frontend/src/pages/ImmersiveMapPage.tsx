@@ -1,7 +1,7 @@
 // Immersive ant-farm map (I1) — full-window live map with floating chrome.
 //
 // Two modes share this one host, each mounted on its own route:
-//   /live/buses  → ant-farm buses only  (route filter + borough/route color)
+//   /live/bus    → ant-farm buses only  (route filter + borough/route color)
 //   /live/subway → track-worms only     (line filter chips + station dots)
 //
 // The map canvas fills 100dvw × 100dvh (safe-area-inset padded) with NO page
@@ -223,7 +223,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     // canonical → apex path (subdomains are additive; avoid duplicate-content)
     const canonical = document.createElement("link");
     canonical.rel = "canonical";
-    canonical.href = APEX + (mode === "buses" ? "/live/buses" : "/live/subway");
+    canonical.href = APEX + (mode === "buses" ? "/live/bus" : "/live/subway");
     document.head.appendChild(canonical);
     return () => {
       document.title = prevTitle;
@@ -529,7 +529,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
               <span className="imm-mark-txt">NYC Visualizer</span>
             </a>
             <div className="imm-modeswitch" role="group" aria-label="Immersive mode">
-              <Link className={"imm-mode" + (mode === "buses" ? " on" : "")} to="/live/buses">
+              <Link className={"imm-mode" + (mode === "buses" ? " on" : "")} to="/live/bus">
                 Buses
               </Link>
               <Link className={"imm-mode" + (mode === "subway" ? " on" : "")} to="/live/subway">
