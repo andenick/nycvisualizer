@@ -30,7 +30,7 @@ function RouteChip({ r }: { r: ObsRoute }) {
         <em
           className="obs-chip-bi"
           title={`bunching index ${bi}`}
-          style={{ color: bi < 0.15 ? "#16a34a" : bi < 0.3 ? "#d97706" : "#dc2626" }}
+          style={{ color: bi < 0.15 ? "#1a7f37" : bi < 0.3 ? "#b8860b" : "#dc2626" }}
         >
           {bi.toFixed(2)}
         </em>
@@ -157,7 +157,7 @@ export default function ObservatoryPage() {
               }))}
             />
           </div>
-          <p className="nyc-note" style={{ fontSize: "0.8rem" }}>
+          <p className="nyc-note" style={{ fontSize: "0.8rem", maxWidth: "72ch" }}>
             {leagues.criteria.qualifying_routes} routes qualify; {leagues.criteria.excluded_thin_routes} excluded
             as thin/gap-dominated ({leagues.criteria.note.split(".")[0]}).
           </p>

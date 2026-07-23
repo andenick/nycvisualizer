@@ -4,6 +4,14 @@
 
 :root {
   --nyc-map-h: calc(100vh - 210px);
+  /* Q0.1 dark-mode surface fix: these two tokens were referenced ~15× across
+     app surfaces (cards, map controls/legends, obs panels, tables) but were
+     NEVER defined, so every var(--ark-surface,#fff)/var(--ark-border,#d4d8dd)
+     fell back to the light literal even in dark mode. Alias them to the
+     arcanum.css neutrals, which correctly flip across prefers-color-scheme AND
+     the [data-theme] toggle overrides — so these now theme too. */
+  --ark-surface: var(--ark-bg-soft);
+  --ark-border: var(--ark-line);
 }
 
 /* ---------- Landing / hub ---------- */
@@ -108,20 +116,51 @@
 .nyc-asof.stale .dot { background: #fbbf24; }
 .nyc-asof.error .dot { background: #f87171; }
 
-.nyc-alerts {
+/* Q0.3: collapsed alert pill + expandable scrollable drawer (top-right).
+   Replaces the old stacked .nyc-alerts callouts that covered the map/controls
+   at 390px and crowded 1440px. */
+.nyc-alerts-wrap {
   position: absolute;
   top: 10px; right: 10px;
   z-index: 1000;
-  max-width: min(70vw, 340px);
-  max-height: 40%;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;
+  max-width: min(78vw, 340px);
+}
+.nyc-alert-pill {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font: inherit; font-size: 0.8rem; font-weight: 600;
+  background: #fef3c7; color: #713f12;
+  border: 1px solid #f59e0b; border-radius: 999px;
+  padding: 0.32rem 0.7rem; cursor: pointer;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+}
+.nyc-alert-pill:hover { background: #fde68a; }
+.nyc-alert-caret { font-size: 0.7rem; opacity: 0.8; }
+.nyc-alert-drawer {
+  width: min(78vw, 340px);
+  max-height: min(50vh, 360px);
   overflow-y: auto;
   display: flex; flex-direction: column; gap: 0.4rem;
+  background: var(--ark-surface, #fff);
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 10px; padding: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
+.nyc-alert-drawer-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.78rem; font-weight: 700; opacity: 0.85;
+  padding: 0 0.1rem 0.1rem;
+}
+.nyc-alert-close {
+  font: inherit; font-size: 0.85rem; line-height: 1; cursor: pointer;
+  background: none; border: none; color: inherit; opacity: 0.7; padding: 0.1rem 0.25rem;
+}
+.nyc-alert-close:hover { opacity: 1; }
 .nyc-alert {
   background: #fef3c7; color: #713f12;
   border-left: 4px solid #f59e0b;
   padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.8rem;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
 }
 @media (prefers-color-scheme: dark) {
   .nyc-alert { background: #3a2e0c; color: #fde68a; }
@@ -186,6 +225,11 @@
 .nyc-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1rem 0; }
 .nyc-table th, .nyc-table td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--ark-border, #e5e7eb); }
 .nyc-table th { font-weight: 600; }
+/* Q0.5: lined-up figures in every data table (leagues, dossier). Numeric
+   columns are right-aligned inline in the JSX; tabular-nums keeps digit
+   widths uniform so the columns don't shimmer. */
+.nyc-table td { font-variant-numeric: tabular-nums; }
+.nyc-table td[style*="right"], .nyc-table th[style*="right"] { font-variant-numeric: tabular-nums; }
 .nyc-table-wrap { overflow-x: auto; max-width: 100%; }
 
 /* small secondary "Download CSV" button (league tables etc.) */

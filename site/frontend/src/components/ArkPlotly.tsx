@@ -40,9 +40,39 @@ export default function ArkPlotly({
   height = 380,
 }: ArkPlotlyProps) {
   const el = useRef<HTMLDivElement | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const [failed, setFailed] = useState(false);
+  // Q0.6.2: defer the ~1.49MB plotly chunk until the chart is near the viewport.
+  // Plotly is already a dynamic import, but this component's draw effect used to
+  // run on mount — so a below-the-fold chart (e.g. the landing OMNY chart) still
+  // fetched plotly during first paint. Gate the import behind IntersectionObserver
+  // so landing first-paint no longer pulls plotly.
+  const [visible, setVisible] = useState<boolean>(
+    typeof IntersectionObserver === "undefined",
+  );
 
   useEffect(() => {
+    if (visible) return; // already scheduled to draw
+    const target = sectionRef.current;
+    if (!target || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "250px" },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
     let disposed = false;
     let node: HTMLDivElement | null = null;
     import("plotly.js-dist-min")
@@ -85,7 +115,7 @@ export default function ArkPlotly({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [visible]);
 
   const downloadCsv = () => {
     const blob = new Blob([toCsv(csvRows)], { type: "text/csv;charset=utf-8" });
@@ -97,7 +127,7 @@ export default function ArkPlotly({
   };
 
   return (
-    <section className="nyc-chart" style={{ margin: "1.6rem 0" }}>
+    <section ref={sectionRef} className="nyc-chart" style={{ margin: "1.6rem 0" }}>
       <div
         style={{
           display: "flex",
@@ -132,7 +162,8 @@ export default function ArkPlotly({
       {failed ? (
         <div className="nyc-note">Chart failed to load — the data is still downloadable above.</div>
       ) : (
-        <div ref={el} style={{ width: "100%" }} />
+        // minHeight reserves layout space so the deferred mount doesn't shift the page.
+        <div ref={el} style={{ width: "100%", minHeight: height }} />
       )}
       {source && (
         <div style={{ fontSize: "0.74rem", opacity: 0.65, marginTop: "0.2rem" }}>{source}</div>

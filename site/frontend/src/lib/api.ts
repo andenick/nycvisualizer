@@ -175,12 +175,36 @@ export const getStationArrivals = (stationId: string) =>
   getJSON<StationArrivals>(`/api/stations/${encodeURIComponent(stationId)}/arrivals`);
 
 /** Generic SSE subscription. Returns an unsubscribe fn.
- *  Falls back silently — callers also run a poll timer as a safety net. */
+ *  Falls back silently — callers also run a poll timer as a safety net.
+ *
+ *  Q0.6.5: the native EventSource auto-reconnect is uncontrolled (it retries the
+ *  aborted stream on a fixed interval and re-fires onerror in a tight loop,
+ *  which is the source of the /api/rt/vehicles/stream ERR_ABORTED churn). We
+ *  instead close on error and drive our own BOUNDED EXPONENTIAL backoff back to
+ *  SSE (2s → 30s cap), resetting on a good frame, and stop cleanly on
+ *  unsubscribe so an unmount can never schedule a reconnect (the mount/unmount
+ *  race). Between failures the caller's poll timer covers the gap. */
 function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => void): () => void {
   let es: EventSource | null = null;
-  try {
-    es = new EventSource(API_BASE + path);
+  let stopped = false;
+  let attempt = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const MAX_BACKOFF_MS = 30_000;
+
+  const connect = () => {
+    if (stopped) return;
+    try {
+      es = new EventSource(API_BASE + path);
+    } catch {
+      onError?.();
+      scheduleRetry();
+      return;
+    }
+    es.onopen = () => {
+      attempt = 0; // healthy connection — reset backoff
+    };
     es.onmessage = (ev) => {
+      attempt = 0; // a good frame also proves liveness
       try {
         onData(JSON.parse(ev.data) as T);
       } catch {
@@ -189,11 +213,31 @@ function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => voi
     };
     es.onerror = () => {
       onError?.();
+      // Take over reconnection ourselves rather than let the browser hammer.
+      es?.close();
+      es = null;
+      scheduleRetry();
     };
-  } catch {
-    onError?.();
-  }
-  return () => es?.close();
+  };
+
+  const scheduleRetry = () => {
+    if (stopped || retryTimer) return;
+    const delay = Math.min(MAX_BACKOFF_MS, 2000 * 2 ** attempt);
+    attempt++;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, delay);
+  };
+
+  connect();
+
+  return () => {
+    stopped = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    es?.close();
+    es = null;
+  };
 }
 
 export const streamVehicles = (onData: (v: VehiclesResponse) => void, onError?: () => void) =>

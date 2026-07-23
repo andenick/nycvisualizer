@@ -136,18 +136,21 @@ export default function Landing() {
 
       <section className="nyc-section">
         <h2>What this is</h2>
-        <p>
-          nycvisualizer is a hub for hyper-granular NYC visualizations. It pairs a realtime layer
-          (a 31-second GTFS-RT poller archiving every bus, subway, ferry, and rail vehicle) with a
-          static geodatabase of sidewalks, curbs, ramps, the street network, census population, and
-          ridership. The signature question it is built to answer joins the two: for any bus stop,
-          can you actually walk there — is there a sidewalk, a ramp, a shelter, and is it in good
-          condition?
-        </p>
-        <p className="nyc-note">
-          Real data only. Views that are not yet built show an honestly-labeled roadmap, never
-          placeholder or synthetic data.
-        </p>
+        {/* Q0.5: cap this stray body prose at a 72ch measure for readability. */}
+        <div className="ark-prose">
+          <p>
+            nycvisualizer is a hub for hyper-granular NYC visualizations. It pairs a realtime layer
+            (a 31-second GTFS-RT poller archiving every bus, subway, ferry, and rail vehicle) with a
+            static geodatabase of sidewalks, curbs, ramps, the street network, census population, and
+            ridership. The signature question it is built to answer joins the two: for any bus stop,
+            can you actually walk there — is there a sidewalk, a ramp, a shelter, and is it in good
+            condition?
+          </p>
+          <p className="nyc-note">
+            Real data only. Views that are not yet built show an honestly-labeled roadmap, never
+            placeholder or synthetic data.
+          </p>
+        </div>
       </section>
     </div>
   );

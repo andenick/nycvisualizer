@@ -77,6 +77,8 @@ export default function BusMap() {
   const [subCount, setSubCount] = useState(0);
   const [subSource, setSubSource] = useState<SubwayResponse["source"]>("none");
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertsOpen, setAlertsOpen] = useState(false); // Q0.3: drawer collapsed by default
+  const [alertsDismissed, setAlertsDismissed] = useState(false);
   const [basemap, setBasemap] = useState<BasemapInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const selectedRef = useRef(selected);
@@ -135,10 +137,10 @@ export default function BusMap() {
   useEffect(() => {
     getRoutes().then(setRoutes).catch(() => setErr("Could not load route list."));
     getAlerts()
-      .then((a) => setAlerts(a.alerts.slice(0, 6)))
+      .then((a) => setAlerts(a.alerts.slice(0, 30)))
       .catch(() => setAlerts([]));
     const aTimer = setInterval(() => {
-      getAlerts().then((a) => setAlerts(a.alerts.slice(0, 6))).catch(() => {});
+      getAlerts().then((a) => setAlerts(a.alerts.slice(0, 30))).catch(() => {});
     }, 60000);
     return () => clearInterval(aTimer);
   }, []);
@@ -437,14 +439,41 @@ export default function BusMap() {
         {showSubway && <div className="muted">Zoom in to tap stations for live arrivals.</div>}
       </div>
 
-      {alerts.length > 0 && (
-        <div className="nyc-alerts" aria-label="Service alerts">
-          {alerts.map((a) => (
-            <div className="nyc-alert" key={a.id}>
-              <strong>{a.routes.length ? a.routes.slice(0, 4).join(", ") + ": " : ""}</strong>
-              {a.header}
+      {alerts.length > 0 && !alertsDismissed && (
+        <div className="nyc-alerts-wrap">
+          {/* Q0.3: single collapsed pill (top-right) expands to a scrollable
+              drawer; sits top-right so it never covers the top-left filter
+              control, and collapses to one line at 390px. */}
+          <button
+            type="button"
+            className="nyc-alert-pill"
+            aria-expanded={alertsOpen}
+            onClick={() => setAlertsOpen((v) => !v)}
+          >
+            <span aria-hidden="true">⚠</span> {alerts.length} service alert{alerts.length === 1 ? "" : "s"}
+            <span className="nyc-alert-caret" aria-hidden="true">{alertsOpen ? "▴" : "▾"}</span>
+          </button>
+          {alertsOpen && (
+            <div className="nyc-alert-drawer" aria-label="Service alerts">
+              <div className="nyc-alert-drawer-head">
+                <span>Service alerts</span>
+                <button
+                  type="button"
+                  className="nyc-alert-close"
+                  aria-label="Dismiss service alerts"
+                  onClick={() => setAlertsDismissed(true)}
+                >
+                  ✕
+                </button>
+              </div>
+              {alerts.map((a) => (
+                <div className="nyc-alert" key={a.id}>
+                  <strong>{a.routes.length ? a.routes.slice(0, 4).join(", ") + ": " : ""}</strong>
+                  {a.header}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 

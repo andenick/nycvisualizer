@@ -78,6 +78,10 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
       maxZoom: 18,
       maxBounds: NYC_BOUNDS,
       maxBoundsViscosity: 0.6,
+      // Q0.2: this is the only map lacking preferCanvas; without it the cold
+      // cluster of stop circleMarkers can stall the SVG renderer before the
+      // container has a size, contributing to the blank-basemap symptom.
+      preferCanvas: true,
     });
     setBasemap(addBasemap(m));
     markerLayer.current = L.layerGroup().addTo(m);
@@ -89,7 +93,28 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
       onPickRef.current?.(+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6));
     });
     map.current = m;
+
+    // Q0.2: cold-load blank basemap fix. The map often mounts before the flex
+    // container has resolved its height, so Leaflet sizes the tile grid to 0×0
+    // and no tiles ever paint until a user interaction. A post-mount tick
+    // (double rAF) re-measures and re-centers once layout settles, and a
+    // ResizeObserver keeps the tile grid correct on every container resize.
+    const tick = () =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          m.invalidateSize();
+          m.setView(NYC_CENTER, m.getZoom(), { animate: false });
+        }),
+      );
+    tick();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && mapRef.current) {
+      ro = new ResizeObserver(() => m.invalidateSize());
+      ro.observe(mapRef.current);
+    }
+
     return () => {
+      ro?.disconnect();
       m.remove();
       map.current = null;
     };
