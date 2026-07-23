@@ -973,3 +973,74 @@ i.obs-hw-obs.key { border-radius: 50%; }
 :root[data-theme="light"] .leagues-gate,
 :root[data-theme="light"] .recon,
 :root[data-theme="light"] .ctx-callout { background: var(--ark-bg-soft, #f7f8fa); }
+
+/* ============================================================================
+   Q4.1 — IA / navigation rework: breadcrumbs, badge-taxonomy legend, dossier
+   cross-links, renter → dossier route chips. (section-subnav reuses .obs-subnav.)
+   ============================================================================ */
+
+/* Breadcrumb trail (Observatory → M15) */
+.nyc-breadcrumbs { margin: 0.4rem 0 0.2rem; }
+.nyc-breadcrumbs ol {
+  list-style: none; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 0.35rem; margin: 0; padding: 0; font-size: 0.82rem;
+}
+.nyc-breadcrumbs li { display: inline-flex; align-items: center; gap: 0.35rem; }
+.nyc-breadcrumbs a { color: var(--ark-accent, #2563eb); text-decoration: none; }
+.nyc-breadcrumbs a:hover { text-decoration: underline; }
+.nyc-breadcrumbs span[aria-current="page"] { font-weight: 600; opacity: 0.9; }
+.nyc-breadcrumbs .crumb-sep { opacity: 0.45; }
+
+/* Dossier cross-links (leagues / changes for this route) */
+.obs-crosslinks { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.3rem 0 0.6rem; }
+.obs-xchip {
+  border: 1px solid var(--ark-border, #d4d8dd); border-radius: 999px;
+  padding: 0.22rem 0.7rem; font-size: 0.8rem; font-weight: 500;
+  text-decoration: none; color: inherit; background: var(--ark-surface, transparent);
+}
+.obs-xchip:hover { border-color: var(--ark-accent); color: var(--ark-accent, #2563eb); }
+
+/* "How to read our badges" taxonomy legend strip (landing) */
+.badge-taxonomy {
+  margin: 1.1rem 0 0.4rem; padding: 0.85rem 1rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px; background: var(--ark-bg-soft, #f7f8fa);
+}
+.badge-taxonomy-head {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em;
+  font-weight: 700; opacity: 0.55; margin-bottom: 0.55rem;
+}
+.badge-taxonomy ul {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 0.4rem 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+.badge-taxonomy li {
+  display: flex; align-items: baseline; gap: 0.4rem; font-size: 0.86rem; line-height: 1.4;
+}
+.badge-taxonomy .bt-dot { flex: 0 0 auto; }
+.badge-taxonomy .bt-label { font-weight: 700; flex: 0 0 auto; }
+.badge-taxonomy .bt-gloss { opacity: 0.8; }
+.badge-taxonomy-foot { font-size: 0.78rem; opacity: 0.72; margin: 0.6rem 0 0; }
+.badge-taxonomy-foot a { color: var(--ark-accent, #2563eb); }
+
+/* Renter scorecard → route dossier links (transit section) */
+.rent-routes {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem;
+  margin: 0.55rem 0 0.15rem;
+}
+.rent-routes-label { font-size: 0.78rem; font-weight: 600; opacity: 0.75; }
+.rent-route-chip {
+  border: 1px solid var(--ark-border, #d4d8dd); border-radius: 7px;
+  padding: 0.08rem 0.45rem; font-size: 0.8rem; font-weight: 600;
+  text-decoration: none; color: var(--ark-accent, #2563eb);
+  background: var(--ark-accent-soft, #dbeafe);
+}
+.rent-route-chip:hover { filter: brightness(0.96); text-decoration: underline; }
+.rent-routes-hint { font-size: 0.74rem; opacity: 0.6; }
+
+@media (prefers-color-scheme: dark) {
+  .badge-taxonomy { background: rgba(148, 163, 184, 0.07); }
+}
+:root[data-theme="dark"] .badge-taxonomy { background: rgba(148, 163, 184, 0.07); }
+:root[data-theme="light"] .badge-taxonomy { background: var(--ark-bg-soft, #f7f8fa); }

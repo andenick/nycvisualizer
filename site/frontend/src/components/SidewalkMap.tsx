@@ -72,6 +72,27 @@ function saiColor(v: number): string {
   return stops[stops.length - 1][1];
 }
 
+// Q4.1 cross-link: a location popup on the sidewalk map offers a jump to the same
+// spot in the Renter's Map (lat/lon URL — the renters page reads ?ll= on load, so
+// the link is shareable). Plain anchor: the popup HTML lives outside React, and an
+// internal href to /renters?ll= navigates the SPA to the right place.
+function rentersLinkHtml(lat: number, lon: number): string {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+  const url = `/renters?ll=${lat.toFixed(6)},${lon.toFixed(6)}`;
+  return (
+    `<a href="${url}" class="sw-popup-renters" ` +
+    `style="display:inline-block;margin-top:6px;font-weight:600;color:var(--ark-accent,#2563eb)">` +
+    `Explore this location in the Renter&rsquo;s Map →</a>`
+  );
+}
+/** GeoJSON point → [lat, lon] (coords are [lon, lat]); null if not a point. */
+function pointLatLon(f: { geometry?: { type?: string; coordinates?: number[] } }): [number, number] | null {
+  const g = f.geometry;
+  if (!g || g.type !== "Point" || !Array.isArray(g.coordinates)) return null;
+  const [lon, lat] = g.coordinates;
+  return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+}
+
 function ntaColor(v: number | null, metric: "ratio" | "spc"): string {
   if (v == null) return "#9ca3af";
   const max = metric === "ratio" ? 14 : 150;
@@ -266,6 +287,7 @@ export default function SidewalkMap() {
           const p = f.properties as Record<string, string | number>;
           const sub = (label: string, key: string) =>
             `<tr><td style="padding-right:8px">${label}</td><td><strong>${p[key]}</strong></td></tr>`;
+          const ll = pointLatLon(f as { geometry?: { type?: string; coordinates?: number[] } });
           l.bindPopup(
             `<div style="min-width:190px"><strong>${p.stop_name}</strong><br/>` +
               `<span style="opacity:.75">${p.routes} · ${p.borough}</span><br/>` +
@@ -278,7 +300,9 @@ export default function SidewalkMap() {
               sub("Condition", "condition") +
               sub("Safety", "safety") +
               sub("Service intensity", "service_intensity") +
-              `</table><span style="opacity:.65;font-size:.8em">${Number(p.pop_400m).toLocaleString()} residents within 400 m</span></div>`,
+              `</table><span style="opacity:.65;font-size:.8em">${Number(p.pop_400m).toLocaleString()} residents within 400 m</span>` +
+              (ll ? `<br/>${rentersLinkHtml(ll[0], ll[1])}` : "") +
+              `</div>`,
           );
         },
       });
@@ -332,9 +356,11 @@ export default function SidewalkMap() {
           L.circleMarker(latlng, { pane: "points", radius: 3.5, weight: 1.4, color: "#dc2626", fillColor: "#fecaca", fillOpacity: 0.85 }),
         onEachFeature: (f, l) => {
           const p = f.properties as Record<string, string | number>;
+          const ll = pointLatLon(f as { geometry?: { type?: string; coordinates?: number[] } });
           l.bindPopup(
             `<strong>Intersection without any ramp</strong><br/>within 50 ft (of ${p.deg} legs)<br/>` +
-              `<span style="opacity:.75">${p.nta} · ${p.boro}</span>`,
+              `<span style="opacity:.75">${p.nta} · ${p.boro}</span>` +
+              (ll ? `<br/>${rentersLinkHtml(ll[0], ll[1])}` : ""),
           );
         },
       });

@@ -2,8 +2,10 @@
 // (site/tools/build_content.py). Downloads served where we host extracts;
 // giants link to the source portal instead (honest note below).
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import catalog from "../content/data_catalog.json";
 import DownloadRow from "../components/DownloadRow";
+import ConfidenceBadge from "../components/ConfidenceBadge";
 
 interface CatRow {
   name: string; category: string; id: string; portal: string;
@@ -49,6 +51,7 @@ export default function DataPage() {
         Every layer on this site traces to an authentic public source &mdash; NYC Open Data (two
         Socrata portals), the MTA, NYC City Planning, and the U.S. Census. The catalog below is
         generated from the platform's per-dataset provenance records ({rows.length} acquired datasets).
+        See the <Link to="/code">reproduce &amp; code</Link> page for how each figure is built.
       </p>
 
       <section className="nyc-section">
@@ -76,6 +79,7 @@ export default function DataPage() {
             >
               BETA · PRELIMINARY
             </span>
+            <ConfidenceBadge claimKey="data-headways" />
           </h2>
           <p style={{ maxWidth: "68ch" }}>
             The MTA publishes <em>scheduled</em> service. This dataset publishes what the buses{" "}

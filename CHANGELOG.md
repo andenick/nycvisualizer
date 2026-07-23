@@ -2,6 +2,43 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Q4.1/Q4.2 structure, flow & performance deep pass
+
+IA/navigation rework + per-spoke code-split. Deployed and verified on the live
+public site (headless Chrome, light+dark, 1440 + 390). Regression-guarded: the
+Marey diagram, Ops Wall dark, Q1 coverage centerlines, confidence badges, KB
+callouts, and reconciliation panels all render unchanged.
+
+### IA / navigation (Q4.1)
+- Flat 9-item bar → **spoke-first grouped nav**: `Maps · Observatory · Ops Wall ·
+  Data · Methodology · About`. "Maps" and "Observatory" are section landings; the
+  chrome nav stays flat (no dropdowns), so grouping is expressed with in-page
+  sub-nav strips. "Code" drops off the bar (reachable from Data) to keep six items
+  that wrap cleanly on mobile. Grouping-parent highlight: any `/bus /sidewalks
+  /renters /maps` path lights **Maps**; any `/observatory*` lights **Observatory**.
+- New **Maps hub** (`/maps`): hero + the three map cards.
+- New shared `SectionSubnav`; `ObsSubnav` refactored onto it; new `MapsSubnav`
+  (Overview / Transit Live / Sidewalks / Renter's Map) shown on the three map pages.
+- Landing gains a **"how to read our badges"** taxonomy legend (the three
+  ConfidenceBadge tiers, one line each, sourced from the same registry).
+- **Breadcrumbs** on route dossiers (Observatory › M15).
+- **Cross-links**: dossier → Reliability leagues + "Service changes for {route}"
+  (Changes now reads `?route=` from the URL); sidewalk SAI/ADA popups gain an
+  "Explore this location in the Renter's Map" link (lat/lon URL); the Renter
+  scorecard's transit section links each nearby bus route to its dossier. All
+  internal `<Link>`s; shareable URLs preserved.
+
+### Performance (Q4.2)
+- **Per-spoke code-split** (`React.lazy` per route). Main `index.js` **733 KB → 207
+  KB raw** (244 → 69 KB gzip). Leaflet + protomaps hoisted into ONE shared `basemap`
+  chunk (map pages only, cached) — no double-include. Plotly stays a deferred
+  dynamic-import chunk (never on first paint).
+- **Landing first paint ~263 → ~85 KB gzip (−68%)** — well under the < 1 MB target.
+- Live TTFBs 76–115 ms (all < 150 ms target); `/api/wall` warm at 94 ms; assets +
+  geo layers immutable/long-cached → warm loads under the 400 ms target.
+- Full measured table + method notes + known-heavies: `PERF_BASELINE.md` (internal
+  regression reference).
+
 ## 2026-07-23 — Q3.3 knowledge exploitation (history meets live)
 
 Ingested-KB knowledge surfaced on the live pages. Verified live (public site +

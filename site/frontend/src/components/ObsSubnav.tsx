@@ -1,25 +1,15 @@
 // In-page sub-navigation for the Observatory section (S5 item 4). The shared
 // Arcanum chrome nav is flat, so Routes / Leagues / Service Changes live here.
-import { Link, useLocation } from "react-router-dom";
+// Q4.1: now built on the shared SectionSubnav (same tab strip the Maps group
+// uses). A route dossier (/observatory/:route) keeps "Routes" highlighted.
+import SectionSubnav from "./SectionSubnav";
 
 const TABS = [
-  { label: "Routes", href: "/observatory" },
+  { label: "Routes", href: "/observatory", matchPrefix: "/observatory/" },
   { label: "Leagues", href: "/observatory/leagues" },
   { label: "Service Changes", href: "/observatory/changes" },
 ];
 
 export default function ObsSubnav() {
-  const { pathname } = useLocation();
-  return (
-    <nav className="obs-subnav" aria-label="Observatory sections">
-      {TABS.map((t) => {
-        const active = pathname === t.href || (t.href === "/observatory" && pathname === "/observatory/");
-        return (
-          <Link key={t.href} to={t.href} className={active ? "on" : ""} aria-current={active ? "page" : undefined}>
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
+  return <SectionSubnav tabs={TABS} ariaLabel="Observatory sections" />;
 }

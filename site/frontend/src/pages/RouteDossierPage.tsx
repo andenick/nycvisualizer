@@ -12,6 +12,7 @@ import {
   type AceInfo,
 } from "../lib/api";
 import MareyChart from "../components/MareyChart";
+import Breadcrumbs from "../components/Breadcrumbs";
 import ReliabilityRibbon from "../components/ReliabilityRibbon";
 import HeadwayStrip from "../components/HeadwayStrip";
 import ChartErrorBoundary from "../components/ChartErrorBoundary";
@@ -179,6 +180,7 @@ export default function RouteDossierPage() {
   if (status === "err")
     return (
       <div>
+        <Breadcrumbs crumbs={[{ label: "Observatory", to: "/observatory" }, { label: routeId }]} />
         <Link to="/observatory" className="obs-back">← All routes</Link>
         <div className="nyc-note">No dossier for route “{routeId}”. It may not be a current bus route.</div>
       </div>
@@ -186,7 +188,16 @@ export default function RouteDossierPage() {
 
   return (
     <div>
-      <Link to="/observatory" className="obs-back">← All routes</Link>
+      {/* Q4.1: breadcrumb trail (Observatory → M15) + cross-links to the same
+          route in the leagues and service-changes views. */}
+      <Breadcrumbs crumbs={[{ label: "Observatory", to: "/observatory" }, { label: display }]} />
+      <div className="obs-crosslinks" aria-label="This route elsewhere">
+        <Link className="obs-xchip" to="/observatory/leagues">Reliability leagues</Link>
+        <Link className="obs-xchip" to={`/observatory/changes?route=${encodeURIComponent(display)}`}>
+          Service changes for {display}
+        </Link>
+        <Link className="obs-xchip" to="/observatory">← All routes</Link>
+      </div>
       <div className="obs-dossier-head">
         <h1 style={{ margin: "0.3rem 0" }}>
           {display}

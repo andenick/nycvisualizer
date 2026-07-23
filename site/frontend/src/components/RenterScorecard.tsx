@@ -4,6 +4,7 @@
 // a neutral better/lower marker vs the other side (never moral red/green). The
 // fair-housing disclaimer is pinned, visible, at the bottom.
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   METRIC_ORDER,
   METRIC_UI,
@@ -11,6 +12,7 @@ import {
   saiColor,
 } from "../lib/renters";
 import type { RenterProfile, RenterBuilding, RenterScoreKey } from "../lib/api";
+import ConfidenceBadge from "./ConfidenceBadge";
 
 function BuildingRow({ b }: { b: RenterBuilding }) {
   const [open, setOpen] = useState(false);
@@ -128,7 +130,8 @@ export default function RenterScorecard({ profile, other, label, accent = "#2563
       <div className="rent-jobs">
         <div className="rent-jobs-num">{jobs.value != null ? Math.round(jobs.value).toLocaleString() : "—"}</div>
         <div className="rent-jobs-label">
-          jobs reachable in 45 min by transit (8am)
+          jobs reachable in 45 min by transit (8am){" "}
+          <ConfidenceBadge claimKey="rent-jobs" compact className="conf-right" />
           <div className="rent-sub">
             {jobs.percentile != null ? `${Math.round(jobs.percentile)}th percentile citywide` : "no estimate"}
             {jobsShare ? ` · ${jobsShare}` : ""}
@@ -170,7 +173,10 @@ export default function RenterScorecard({ profile, other, label, accent = "#2563
 
       {/* Transit summary */}
       <div className="rent-block">
-        <h4>Transit nearby</h4>
+        <h4 style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+          Transit nearby
+          <ConfidenceBadge claimKey="sai-index" compact />
+        </h4>
         <div className="rent-transit-grid">
           <div>
             <b>{t.bus_stops_within_400m}</b> bus stops within 400 m
@@ -186,6 +192,28 @@ export default function RenterScorecard({ profile, other, label, accent = "#2563
             {t.nearest_subway.distance_mi != null ? ` · ${t.nearest_subway.distance_mi} mi` : ""}
           </div>
         </div>
+        {/* Q4.1 cross-link: the bus routes serving the nearby stops link to their
+            Observatory dossiers (Marey, headways, reliability for that route). */}
+        {(() => {
+          const routeSet = new Set<string>();
+          for (const s of t.nearest_stops_detail)
+            for (const r of s.routes ?? []) routeSet.add(r);
+          const routes = [...routeSet].sort((a, b) =>
+            a.localeCompare(b, undefined, { numeric: true }),
+          );
+          if (!routes.length) return null;
+          return (
+            <div className="rent-routes">
+              <span className="rent-routes-label">Routes here:</span>
+              {routes.slice(0, 12).map((r) => (
+                <Link key={r} className="rent-route-chip" to={`/observatory/${encodeURIComponent(r)}`}>
+                  {r}
+                </Link>
+              ))}
+              <span className="rent-routes-hint">→ open the route&rsquo;s reliability dossier</span>
+            </div>
+          );
+        })()}
         {t.nearest_stops_detail.length > 0 && (
           <div className="rent-chips">
             {t.nearest_stops_detail.slice(0, 6).map((s, i) => (
