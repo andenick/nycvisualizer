@@ -20,6 +20,22 @@ const SPOKES = [
       "Every MTA bus and subway train in the five boroughs, live. Filter bus routes, tap a station for its arrivals board — with an honest 'as of' clock on every tick and estimated train positions clearly marked.",
   },
   {
+    key: "live-buses",
+    title: "Bus Ant Farm",
+    to: "/live/buses",
+    status: "live" as const,
+    blurb:
+      "Watch every MTA bus in the city move at once, full screen — a live 'ant farm' of true-scale vehicles gliding between reports. Filter to any route and the map fills the whole window.",
+  },
+  {
+    key: "live-subway",
+    title: "Subway Ant Farm",
+    to: "/live/subway",
+    status: "live" as const,
+    blurb:
+      "Every subway and SIR train as a worm crawling along the actual track, full screen — filter by line with official bullets, tap a station for arrivals, estimated positions honestly faded.",
+  },
+  {
     key: "observatory",
     title: "Bus Observatory",
     to: "/observatory",

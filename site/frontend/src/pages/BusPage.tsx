@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import BusMap from "../components/BusMap";
 import MapsSubnav from "../components/MapsSubnav";
 
@@ -9,6 +10,10 @@ export default function BusPage() {
         <h1 style={{ margin: "0.6rem 0" }}>Live Transit Map</h1>
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Live</span>
       </div>
+      <p className="nyc-feedlinks" style={{ margin: "0 0 0.2rem" }}>
+        <Link to="/live/buses">Buses — full-window view &rarr;</Link>
+        <Link to="/live/subway">Subway — full-window view &rarr;</Link>
+      </p>
       <p className="nyc-note" style={{ marginTop: 0 }}>
         Every MTA bus and subway/SIR train, refreshed ~every 30 seconds from the MTA GTFS-RT feeds
         via our server-side poller. Positions are served through this site's backend &mdash; your browser
