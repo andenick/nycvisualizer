@@ -578,12 +578,24 @@
    "tagline": "Where can you go, and can you walk there? — NYC transit service and pedestrian infrastructure at the finest measurable grain, live. The home of all NYC work, hub-with-spokes.",
    "pages": [
     {
-     "label": "Explore",
-     "path": "/explore"
+     "label": "Live Transit Map",
+     "path": "/bus"
     },
     {
-     "label": "Live Bus Map",
-     "path": "/bus"
+     "label": "Bus Observatory",
+     "path": "/observatory"
+    },
+    {
+     "label": "Ops Wall",
+     "path": "/ops"
+    },
+    {
+     "label": "Renter's Map",
+     "path": "/renters"
+    },
+    {
+     "label": "Service Changes",
+     "path": "/observatory/changes"
     },
     {
      "label": "Sidewalk Explorer",

@@ -10,6 +10,36 @@ import ObsSubnav from "../components/ObsSubnav";
 
 const href = (routeId: string) => `/observatory/${encodeURIComponent(routeId)}`;
 
+// Client-side CSV export so every league table is downloadable (Carson
+// DOWNLOAD_AND_FORMATS / TABLE_RENDERING — every data table gets a CSV).
+function toCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [headers.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+}
+function downloadCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
+  const blob = new Blob([toCsv(headers, rows)], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function PanelHead({ title, onDownload }: { title: string; onDownload: () => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "0.5rem" }}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <button type="button" className="nyc-dl-btn" onClick={onDownload} aria-label={`Download ${title} as CSV`}>
+        Download CSV
+      </button>
+    </div>
+  );
+}
+
 export default function LeaguesPage() {
   const [d, setD] = useState<LeaguesResponse | null>(null);
   const [err, setErr] = useState(false);
@@ -40,11 +70,15 @@ export default function LeaguesPage() {
 
       <div className="obs-leagues-grid">
         <section className="obs-panel">
-          <h3 style={{ marginTop: 0 }}>Most reliable</h3>
+          <PanelHead title="Most reliable" onDownload={() => downloadCsv(
+            "nyc_leagues_most_reliable.csv",
+            ["rank", "route_id", "short_name", "borough", "bunching_index", "median_headway_min", "observed_days"],
+            d.most_reliable.map((r, i) => [i + 1, r.route_id, r.short_name, r.borough, r.bunching_index, r.median_headway_min, r.observed_days]),
+          )} />
           <div className="obs-subtle">lowest bunching index (steadiest gaps)</div>
           <div className="nyc-table-wrap">
             <table className="nyc-table">
-              <thead><tr><th>#</th><th>Route</th><th>Borough</th><th style={{ textAlign: "right" }}>Bunching</th><th style={{ textAlign: "right" }}>Med. hw (min)</th><th style={{ textAlign: "right" }}>Days</th></tr></thead>
+              <thead><tr><th>#</th><th>Route</th><th>Borough</th><th style={{ textAlign: "right" }}>Bunching</th><th style={{ textAlign: "right" }}>Median headway (min)</th><th style={{ textAlign: "right" }}>Days</th></tr></thead>
               <tbody>
                 {d.most_reliable.map((r, i) => (
                   <tr key={r.route_id}>
@@ -62,11 +96,15 @@ export default function LeaguesPage() {
         </section>
 
         <section className="obs-panel">
-          <h3 style={{ marginTop: 0 }}>Least reliable</h3>
+          <PanelHead title="Least reliable" onDownload={() => downloadCsv(
+            "nyc_leagues_least_reliable.csv",
+            ["rank", "route_id", "short_name", "borough", "bunching_index", "median_headway_min", "observed_days"],
+            d.least_reliable.map((r, i) => [i + 1, r.route_id, r.short_name, r.borough, r.bunching_index, r.median_headway_min, r.observed_days]),
+          )} />
           <div className="obs-subtle">highest bunching index (most uneven gaps)</div>
           <div className="nyc-table-wrap">
             <table className="nyc-table">
-              <thead><tr><th>#</th><th>Route</th><th>Borough</th><th style={{ textAlign: "right" }}>Bunching</th><th style={{ textAlign: "right" }}>Med. hw (min)</th><th style={{ textAlign: "right" }}>Days</th></tr></thead>
+              <thead><tr><th>#</th><th>Route</th><th>Borough</th><th style={{ textAlign: "right" }}>Bunching</th><th style={{ textAlign: "right" }}>Median headway (min)</th><th style={{ textAlign: "right" }}>Days</th></tr></thead>
               <tbody>
                 {d.least_reliable.map((r, i) => (
                   <tr key={r.route_id}>
@@ -84,7 +122,11 @@ export default function LeaguesPage() {
         </section>
 
         <section className="obs-panel">
-          <h3 style={{ marginTop: 0 }}>Slowest corridors</h3>
+          <PanelHead title="Slowest corridors" onDownload={() => downloadCsv(
+            "nyc_leagues_slowest_corridors.csv",
+            ["rank", "route_id", "from_stop", "to_stop", "wt_speed_mph", "n_trips"],
+            d.slowest_corridors.map((r, i) => [i + 1, r.route_id, r.from_stop, r.to_stop, r.wt_speed_mph, r.n_trips]),
+          )} />
           <div className="obs-subtle">weighted peak speed, slowest 25 segments citywide</div>
           <div className="nyc-table-wrap">
             <table className="nyc-table">
@@ -106,11 +148,15 @@ export default function LeaguesPage() {
 
         {d.most_improved_vs_schedule.length > 0 && (
           <section className="obs-panel">
-            <h3 style={{ marginTop: 0 }}>Most improved vs schedule</h3>
-            <div className="obs-subtle">largest drop in mean |deviation|, first half vs second half of the archive</div>
+            <PanelHead title="Most improved vs schedule" onDownload={() => downloadCsv(
+              "nyc_leagues_most_improved.csv",
+              ["rank", "route_id", "short_name", "borough", "early_avg_deviation_s", "late_avg_deviation_s", "improvement_s"],
+              d.most_improved_vs_schedule.map((r, i) => [i + 1, r.route_id, r.short_name, r.borough, r.early_abs_dev_s, r.late_abs_dev_s, r.improvement_s]),
+            )} />
+            <div className="obs-subtle">largest drop in mean absolute deviation, first half vs second half of the archive</div>
             <div className="nyc-table-wrap">
               <table className="nyc-table">
-                <thead><tr><th>#</th><th>Route</th><th>Borough</th><th style={{ textAlign: "right" }}>Early |dev| (s)</th><th style={{ textAlign: "right" }}>Late |dev| (s)</th><th style={{ textAlign: "right" }}>Improvement (s)</th></tr></thead>
+                <thead><tr><th>#</th><th>Route</th><th>Borough</th><th style={{ textAlign: "right" }}>Early avg. deviation (s)</th><th style={{ textAlign: "right" }}>Late avg. deviation (s)</th><th style={{ textAlign: "right" }}>Improvement (s)</th></tr></thead>
                 <tbody>
                   {d.most_improved_vs_schedule.map((r, i) => (
                     <tr key={r.route_id}>

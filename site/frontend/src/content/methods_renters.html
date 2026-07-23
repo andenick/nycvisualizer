@@ -1,4 +1,4 @@
-<h1>Renter's Map — precompute methods (S7)</h1>
+<h1>Renter's Map — precompute methods</h1>
 <p><strong>Build:</strong> <code>build_renters_grid.py</code> (stages <code>bbl</code>, <code>grid</code>, <code>all</code>).
 <strong>CRS for all distance/area math:</strong> EPSG:2263 (NY State Plane Long Island, ftUS).
 <strong>Neighbourhood radius:</strong> 400 m = 1312.34 ft. <strong>Populated-test radius:</strong> 300 m = 984.25 ft.
@@ -7,7 +7,7 @@
 enters any score — see the fair-housing note at the end.</p>
 <hr />
 <h2>0. Cell universe (land cells)</h2>
-<p>Land cells = the union of the <strong>res-10 children of every res-8 origin cell</strong> in the S4 access grid
+<p>Land cells = the union of the <strong>res-10 children of every res-8 origin cell</strong> in the transit-access grid
 (<code>analysis/access/_cache/origin_cells.parquet</code>, 1,196 res-8 cells, each derived from ≥1 2020-census-block
 centroid). 1,196 × 49 children ⇒ ~58.6 k res-10 cells covering all populated NYC land. Each cell carries
 its centroid (<code>lat</code>,<code>lon</code>) and its EPSG:2263 centroid (<code>x</code>,<code>y</code> ftUS via <code>ST_Transform(..., always_xy)</code>).</p>
@@ -33,9 +33,11 @@ water, rail yards and other unpopulated cells keep their raw values but get <cod
 next to a highway does not deflate a neighbourhood's noise ranking.</p>
 <hr />
 <h2>1. Transit (supply within 400 m + nearest subway)</h2>
-<p>Source: the <strong>Stop Access Index (SAI)</strong> stop table (<code>Outputs/NYCPlatform/sai/sai_scores.parquet</code>,
+<p>Source: the <strong>Stop Access Index (SAI)</strong> stop table (<code>sai_scores.parquet</code>,
 13,621 MTA bus stops with lat/lon, routes, <code>trips_am</code>, and the composite <code>sai</code>). Binned to res-10, then
-rolled up over <code>nbr</code>:</p>
+rolled up over <code>nbr</code>. The SAI composite and its sub-score weights are published on the
+<strong>Stop Accessibility Index methods</strong> page (see the Methodology section); this page borrows that
+index unchanged.</p>
 <table>
 <thead>
 <tr>
@@ -130,7 +132,7 @@ stormwater-moderate 753, stormwater-extreme 6,287, FEMA-SFHA 9,054.</p>
 <code>flood</code> → <code>assemble</code> (join + percentiles → <code>renters_grid.parquet</code>). Typical timings: cells 8 s,
 base 13 s, qol 3 s, flood 9 s, assemble &lt;1 s. Final grid = <strong>58,604 cells, 46,702 populated</strong>.</p>
 <h2>4. 45-minute 8am job access</h2>
-<p>Each cell inherits its <strong>res-8 parent</strong> cell's precomputed reachability from the S4 OpenTripPlanner grid
+<p>Each cell inherits its <strong>res-8 parent</strong> cell's precomputed reachability from the OpenTripPlanner access grid
 (<code>analysis/access/isochrone_grid_45min.parquet</code>): <code>jobs_45min</code> (LEHD-WAC jobs reachable by WALK+TRANSIT
 in 45 min departing weekday 8am) and <code>jobs_45min_pct</code> (share of all NYC jobs). Percentile
 <code>jobs_pctile</code> over populated cells. The res-8 polygon (<code>geom_wkt</code>) is also the <strong>approximate-isochrone
@@ -160,5 +162,5 @@ fallback</strong> the backend serves when live OTP is unreachable.</p>
 rodent inspections, vehicle crashes, street trees, sidewalk geometry, flood polygons, job-reachability
 (LEHD workplace counts), and building/permit/registration records. <strong>None</strong> references resident race,
 national origin, religion, sex, family status, disability, age, or household income. Median-income and
-population appear only as the S4 job-access denominator and the populated-cell mask — never as a score —
+population appear only as the job-access denominator and the populated-cell mask — never as a score —
 and are not surfaced per location. The profile describes a place, not the people in it.</p>

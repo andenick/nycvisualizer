@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import MareyChart from "../components/MareyChart";
 import HeadwayStrip from "../components/HeadwayStrip";
+import ChartErrorBoundary from "../components/ChartErrorBoundary";
 import ArkPlotly from "../components/ArkPlotly";
 import ArchiveBadge from "../components/ArchiveBadge";
 
@@ -146,7 +147,9 @@ export default function RouteDossierPage() {
       </div>
 
       {/* THE Marey view */}
-      <MareyChart route={routeId} displayName={display} accent="#2563eb" />
+      <ChartErrorBoundary label="Marey diagram">
+        <MareyChart route={routeId} displayName={display} accent="#2563eb" />
+      </ChartErrorBoundary>
 
       {status === "ok" && d && (
         <>
