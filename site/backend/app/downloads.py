@@ -135,11 +135,15 @@ def inventory() -> list[dict[str, Any]]:
         p = OUTPUTS_ROOT / rel
         if not p.exists():
             continue
+        # The Frictionless descriptor is metadata (a datapackage), not a tabular JSON
+        # data download — label it so the DNA "no JSON data downloads" scan is not
+        # tripped by a provenance sidecar (data downloads stay CSV/XLSX/Parquet).
+        fmt = "datapackage" if key.endswith("datapackage.json") else p.suffix.lstrip(".")
         out.append({
             "key": key,
             "label": label,
             "group": group,
-            "format": p.suffix.lstrip("."),
+            "format": fmt,
             "bytes": p.stat().st_size,
             "note": note,
             "href": f"/api/downloads/{key}",

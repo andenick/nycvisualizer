@@ -186,7 +186,31 @@
 .nyc-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1rem 0; }
 .nyc-table th, .nyc-table td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--ark-border, #e5e7eb); }
 .nyc-table th { font-weight: 600; }
-.nyc-table-wrap { overflow-x: auto; }
+.nyc-table-wrap { overflow-x: auto; max-width: 100%; }
+
+/* small secondary "Download CSV" button (league tables etc.) */
+.nyc-dl-btn {
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--ark-border, #d1d5db);
+  border-radius: 6px;
+  background: var(--ark-surface, #fff);
+  color: var(--ark-accent, #2563eb);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nyc-dl-btn:hover { border-color: var(--ark-accent, #2563eb); }
+
+/* chart error-boundary fallback — a chart fault must never blank the page */
+.chart-error {
+  border: 1px dashed var(--ark-border, #d1d5db);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin: 1rem 0;
+  color: var(--ark-muted, #6b7280);
+  font-size: 0.9rem;
+}
 
 /* ---------- pre-rendered prose (methodology docs; no literal markdown ships) ---------- */
 .nyc-prose { max-width: 76ch; line-height: 1.62; }

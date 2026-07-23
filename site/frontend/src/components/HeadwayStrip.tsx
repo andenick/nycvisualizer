@@ -49,8 +49,8 @@ function StopRow({
         />
       </div>
       <div className="obs-hw-nums">
-        <span title="observed median headway">{obs ? `${obs}′` : "—"}</span>
-        <span className="sched" title="scheduled median headway">/ {sched ? `${sched}′` : "—"}</span>
+        <span title="observed median headway (minutes)">{obs ? `${obs}` : "—"}</span>{" "}
+        <span className="sched" title="scheduled median headway (minutes)">/ {sched ? `${sched}` : "—"} min</span>
       </div>
     </div>
   );

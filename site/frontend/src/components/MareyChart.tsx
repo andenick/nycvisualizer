@@ -195,8 +195,13 @@ export default function MareyChart({ route, displayName, accent = "#2563eb" }: P
     if (!el) return;
     const ro = new ResizeObserver((ents) => {
       const cr = ents[0].contentRect;
-      const h = Math.max(320, Math.min(560, Math.round(cr.width * 0.52)));
-      setSize({ w: Math.round(cr.width), h });
+      // Ignore 0-width layout ticks (RO can fire mid-layout); never let the
+      // measured width collapse the canvas to 0×0 (that would throw in drawImage).
+      const measured = Math.round(cr.width);
+      if (measured <= 0) return;
+      const w = Math.max(280, measured);
+      const h = Math.max(320, Math.min(560, Math.round(w * 0.52)));
+      setSize({ w, h });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -303,6 +308,7 @@ export default function MareyChart({ route, displayName, accent = "#2563eb" }: P
   // -------- draw the static offscreen buffer (grid, stops, axis, ghosts) ------
   const drawBuffer = useCallback(() => {
     if (!data || !domain) return;
+    if (size.w <= 0 || size.h <= 0) return; // never build a 0-sized offscreen buffer
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     let buf = bufRef.current;
     if (!buf) {
@@ -382,6 +388,7 @@ export default function MareyChart({ route, displayName, accent = "#2563eb" }: P
     const cvs = canvasRef.current;
     const buf = bufRef.current;
     if (!cvs || !buf || !data || !domain) return;
+    if (size.w <= 0 || size.h <= 0 || buf.width === 0 || buf.height === 0) return; // guard drawImage against a 0-sized buffer
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (cvs.width !== Math.round(size.w * dpr)) {
       cvs.width = Math.round(size.w * dpr);
