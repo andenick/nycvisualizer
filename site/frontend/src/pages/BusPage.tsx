@@ -1,8 +1,10 @@
 import BusMap from "../components/BusMap";
+import MapsSubnav from "../components/MapsSubnav";
 
 export default function BusPage() {
   return (
     <div>
+      <MapsSubnav />
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1 style={{ margin: "0.6rem 0" }}>Live Transit Map</h1>
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Live</span>

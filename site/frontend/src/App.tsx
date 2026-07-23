@@ -1,36 +1,55 @@
+import { Suspense, lazy } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import ArcanumChrome from "./chrome/ReactChrome";
 import ecosystem from "./chrome/ecosystem.json";
 import Landing from "./pages/Landing";
-import BusPage from "./pages/BusPage";
-import SidewalksPage from "./pages/SidewalksPage";
-import DataPage from "./pages/DataPage";
-import CodePage from "./pages/CodePage";
-import MethodologyPage from "./pages/MethodologyPage";
-import AboutPage from "./pages/AboutPage";
-import ChangesPage from "./pages/ChangesPage";
-import ObservatoryPage from "./pages/ObservatoryPage";
-import RouteDossierPage from "./pages/RouteDossierPage";
-import LeaguesPage from "./pages/LeaguesPage";
-import OpsWallPage from "./pages/OpsWallPage";
-import RentersPage from "./pages/RentersPage";
-import NotFound from "./pages/NotFound";
 
-// The Observatory (S5) is the Bus Observatory: a route picker, per-route dossiers
-// with the signature Marey view, reliability leagues, and the S8 service-change
-// monitor. Its landing (/observatory) is the route picker; the chrome nav is flat,
-// so Routes / Leagues / Service Changes live in an in-page sub-nav (ObsSubnav).
+// Q4.2: per-spoke code-splitting. The heavy map/chart pages (Leaflet + protomaps +
+// the dossier stack) are each their own lazy chunk so the landing first paint no
+// longer ships them. Leaflet/protomaps are imported by several lazy pages, so
+// Rollup hoists them into ONE shared vendor chunk — no double-include. Plotly stays
+// a separate deferred chunk (ArkPlotly dynamic-imports it behind IntersectionObserver).
+// Landing stays eager: it is the entry page, so a Suspense flash there would be a
+// regression, and its own weight is light (no Leaflet).
+const BusPage = lazy(() => import("./pages/BusPage"));
+const SidewalksPage = lazy(() => import("./pages/SidewalksPage"));
+const DataPage = lazy(() => import("./pages/DataPage"));
+const CodePage = lazy(() => import("./pages/CodePage"));
+const MethodologyPage = lazy(() => import("./pages/MethodologyPage"));
+const AboutPage = lazy(() => import("./pages/AboutPage"));
+const ChangesPage = lazy(() => import("./pages/ChangesPage"));
+const ObservatoryPage = lazy(() => import("./pages/ObservatoryPage"));
+const RouteDossierPage = lazy(() => import("./pages/RouteDossierPage"));
+const LeaguesPage = lazy(() => import("./pages/LeaguesPage"));
+const OpsWallPage = lazy(() => import("./pages/OpsWallPage"));
+const RentersPage = lazy(() => import("./pages/RentersPage"));
+const MapsPage = lazy(() => import("./pages/MapsPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Q4.1 IA rework: the flat 9-item bar becomes a spoke-first grouped nav. The shared
+// chrome NavItem is flat (no dropdowns), so grouping is expressed with two SECTION
+// LANDINGS — "Maps" (→ /maps, the three interactive maps) and "Observatory"
+// (→ /observatory, the route picker) — each of which carries an in-page sub-nav
+// strip (MapsSubnav / ObsSubnav). Ops Wall, Data, Methodology, and About stay
+// top-level. Code drops off the bar (reachable from the Data page) to keep the bar
+// to six items that wrap cleanly on mobile.
 const NAV = [
-  { label: "Live Transit Map", href: "/bus" },
-  { label: "Ops Wall", href: "/ops" },
-  { label: "Sidewalks", href: "/sidewalks" },
-  { label: "Renter's Map", href: "/renters" },
+  { label: "Maps", href: "/maps" },
   { label: "Observatory", href: "/observatory" },
+  { label: "Ops Wall", href: "/ops" },
   { label: "Data", href: "/data" },
-  { label: "Code", href: "/code" },
   { label: "Methodology", href: "/methodology" },
   { label: "About", href: "/about" },
 ];
+
+// Highlight the grouping parent in the chrome nav even on a sub-page: any /bus,
+// /sidewalks, /renters, /maps path lights "Maps"; any /observatory* path lights
+// "Observatory". Chrome compares the *returned* path to each nav href.
+function navActivePath(pathname: string): string {
+  if (/^\/(maps|bus|sidewalks|renters)(\/|$)/.test(pathname)) return "/maps";
+  if (/^\/observatory(\/|$)/.test(pathname)) return "/observatory";
+  return pathname;
+}
 
 export default function App() {
   const location = useLocation();
@@ -43,24 +62,27 @@ export default function App() {
       dprUrl="/methodology"
       dprLabel="Methodology & sources"
       ecosystem={ecosystem as unknown as Parameters<typeof ArcanumChrome>[0]["ecosystem"]}
-      activePath={location.pathname}
+      activePath={navActivePath(location.pathname)}
     >
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/bus" element={<BusPage />} />
-        <Route path="/ops" element={<OpsWallPage />} />
-        <Route path="/sidewalks" element={<SidewalksPage />} />
-        <Route path="/renters" element={<RentersPage />} />
-        <Route path="/observatory" element={<ObservatoryPage />} />
-        <Route path="/observatory/leagues" element={<LeaguesPage />} />
-        <Route path="/observatory/changes" element={<ChangesPage />} />
-        <Route path="/observatory/:route" element={<RouteDossierPage />} />
-        <Route path="/data" element={<DataPage />} />
-        <Route path="/code" element={<CodePage />} />
-        <Route path="/methodology" element={<MethodologyPage />} />
-        <Route path="/about" element={<AboutPage />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <Suspense fallback={<div className="nyc-note" style={{ margin: "1.5rem 0" }}>Loading…</div>}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/maps" element={<MapsPage />} />
+          <Route path="/bus" element={<BusPage />} />
+          <Route path="/ops" element={<OpsWallPage />} />
+          <Route path="/sidewalks" element={<SidewalksPage />} />
+          <Route path="/renters" element={<RentersPage />} />
+          <Route path="/observatory" element={<ObservatoryPage />} />
+          <Route path="/observatory/leagues" element={<LeaguesPage />} />
+          <Route path="/observatory/changes" element={<ChangesPage />} />
+          <Route path="/observatory/:route" element={<RouteDossierPage />} />
+          <Route path="/data" element={<DataPage />} />
+          <Route path="/code" element={<CodePage />} />
+          <Route path="/methodology" element={<MethodologyPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
     </ArcanumChrome>
   );
 }

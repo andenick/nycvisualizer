@@ -4,6 +4,7 @@
 // README semantics honestly: supplemented-subway changes stay "planned/temporary"
 // until observed persisting across snapshots.
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { getChanges, type ChangesResponse, type ServiceChange } from "../lib/api";
 import ObsSubnav from "../components/ObsSubnav";
 
@@ -37,11 +38,15 @@ function ChangeCard({ c }: { c: ServiceChange }) {
 }
 
 export default function ChangesPage() {
+  // Q4.1 cross-link: a dossier links here as /observatory/changes?route=M15, so the
+  // route filter seeds from the URL. Keeping the filter in the URL also makes any
+  // filtered view shareable.
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState<ChangesResponse | null>(null);
   const [err, setErr] = useState(false);
   const [borough, setBorough] = useState("");
   const [changeType, setChangeType] = useState("");
-  const [route, setRoute] = useState("");
+  const [route, setRoute] = useState(searchParams.get("route") ?? "");
   const [includeProof, setIncludeProof] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
@@ -69,6 +74,20 @@ export default function ChangesPage() {
 
   // Reset to page 1 whenever a filter changes.
   useEffect(() => setPage(1), [borough, changeType, routeQ, includeProof]);
+
+  // Keep the route filter reflected in the URL (shareable + back-button friendly).
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (routeQ) n.set("route", routeQ);
+        else n.delete("route");
+        return n;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeQ]);
 
   const facets = data?.facets;
   const boroughs = useMemo(

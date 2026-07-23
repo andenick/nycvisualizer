@@ -1,4 +1,5 @@
 import SidewalkMap from "../components/SidewalkMap";
+import MapsSubnav from "../components/MapsSubnav";
 import DownloadRow from "../components/DownloadRow";
 import ArkPlotly from "../components/ArkPlotly";
 import ConfidenceBadge from "../components/ConfidenceBadge";
@@ -11,6 +12,7 @@ export default function SidewalksPage() {
   const sai = charts.sai_borough;
   return (
     <div>
+      <MapsSubnav />
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1 style={{ margin: "0.6rem 0" }}>Sidewalk Explorer</h1>
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Built</span>

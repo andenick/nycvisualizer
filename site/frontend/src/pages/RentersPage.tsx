@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RentersMap from "../components/RentersMap";
+import MapsSubnav from "../components/MapsSubnav";
 import RenterScorecard from "../components/RenterScorecard";
 import { ContextCallouts } from "../components/ContextCallout";
 import KnowDontKnow from "../components/KnowDontKnow";
@@ -167,6 +168,7 @@ export default function RentersPage() {
 
   return (
     <div>
+      <MapsSubnav />
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1 style={{ margin: "0.6rem 0" }}>Renter&rsquo;s Map</h1>
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Live</span>
