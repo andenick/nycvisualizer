@@ -24,6 +24,7 @@ const LeaguesPage = lazy(() => import("./pages/LeaguesPage"));
 const OpsWallPage = lazy(() => import("./pages/OpsWallPage"));
 const RentersPage = lazy(() => import("./pages/RentersPage"));
 const MapsPage = lazy(() => import("./pages/MapsPage"));
+const ImmersiveMapPage = lazy(() => import("./pages/ImmersiveMapPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Q4.1 IA rework: the flat 9-item bar becomes a spoke-first grouped nav. The shared
@@ -53,6 +54,22 @@ function navActivePath(pathname: string): string {
 
 export default function App() {
   const location = useLocation();
+
+  // I1: the immersive ant-farm views (/live/*) are full-window — they render
+  // OUTSIDE the standard chrome (no header/footer/max-width wrap). Their own
+  // floating top strip + corner ⓘ overlay carry the nav + mandated dual anchors.
+  if (/^\/live\//.test(location.pathname)) {
+    return (
+      <Suspense fallback={<div className="nyc-note" style={{ margin: "1.5rem" }}>Loading…</div>}>
+        <Routes>
+          <Route path="/live/buses" element={<ImmersiveMapPage mode="buses" />} />
+          <Route path="/live/subway" element={<ImmersiveMapPage mode="subway" />} />
+          <Route path="*" element={<ImmersiveMapPage mode="buses" />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
   return (
     <ArcanumChrome
       siteKey="nycvisualizer"

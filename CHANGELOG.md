@@ -2,6 +2,42 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Immersive full-window ant-farm views (`/live/buses` + `/live/subway`)
+
+Two new chrome-less, full-window homes for the live ant farm — one for buses, one
+for the subway — each on its own route and additive vanity subdomain. They REUSE
+the existing `VehicleFlowLayer` renderer (not forked); no new data or claims.
+Built, deployed, and verified live end-to-end (headless Chrome; both themes;
+1440 / 834 / 390; motion confirmed).
+
+### New `ImmersiveMapPage` (I1)
+- `100dvw × 100dvh` map canvas with safe-area insets (`viewport-fit=cover`), **zero
+  page scroll**, and no standard header/footer — the immersive routes render
+  OUTSIDE the site chrome. Both themes.
+- **Floating top strip** (the "links at the top"): identity mark → hub, a Buses/Subway
+  mode switch, and links back into the site (Transit Map · Observatory · Ops Wall ·
+  Sidewalks · Renter's Map · Data). Collapses to a menu at mobile widths; **auto-fades
+  to a thin grab-tab after ~5 s idle** and reappears on any pointer / touch / key.
+- **Corner ⓘ overlay** carries the mandated **dual anchors** (heterodata.org +
+  nickanderson.us), basemap attribution, the data-vintage / honesty stamp (with a live
+  ms/frame readout), and a **theme toggle** — so identity/D9 pass without page chrome.
+- **Mode scoping:** `/live/buses` = ant-farm buses only, with a route filter (loads the
+  shape + shape-snapped glide) and a borough-vs-route color toggle; `/live/subway` =
+  track-worms only, with line filter chips (official MTA bullets), station dots at
+  zoom ≥ 13, and estimated positions honestly faded.
+- **Shareable URL state** (`?ll=&z=&route=|line=`), per-mode `document.title`, and a
+  `canonical` link to the apex path (the subdomains are additive — no duplicate content).
+
+### Wiring (I2.1)
+- SPA boot host→path map extended: `buses.` → `/live/buses`, `subway.` → `/live/subway`.
+
+### Integration (I3)
+- Landing + Maps hub gain Bus/Subway Ant Farm cards; `/bus` links "full-window view →"
+  for each mode; ecosystem manifest lists both immersive pages.
+
+_The `buses.` / `subway.` Cloudflare Public Hostnames are a user-side (DNS/tunnel) step;
+the apex paths `/live/buses` and `/live/subway` work standalone without them._
+
 ## 2026-07-23 — Live Transit Map "ant farm": animated true-scale vehicle canvas
 
 The `/bus` Live Transit Map now renders every bus and subway train as a

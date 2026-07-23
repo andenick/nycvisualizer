@@ -14,6 +14,20 @@ const MAPS = [
       "Every MTA bus and subway train in the five boroughs, live — filter routes, tap a station for its arrivals board, with an honest 'as of' clock on every tick.",
   },
   {
+    key: "live-buses",
+    title: "Bus Ant Farm — full screen",
+    to: "/live/buses",
+    blurb:
+      "The live bus map with nothing else on screen: every vehicle gliding at true scale, the map filling the whole window, route filter and borough/route color in a floating overlay.",
+  },
+  {
+    key: "live-subway",
+    title: "Subway Ant Farm — full screen",
+    to: "/live/subway",
+    blurb:
+      "Every train as a track-worm along the rails, full window — line filter chips with official bullets, station dots when you zoom in, estimated positions faded for honesty.",
+  },
+  {
     key: "sidewalks",
     title: "Sidewalk Explorer",
     to: "/sidewalks",

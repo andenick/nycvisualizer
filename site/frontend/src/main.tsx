@@ -17,6 +17,9 @@ import "./index.css";
       "ops.": "/ops",
       "renters.": "/renters",
       "changes.": "/observatory/changes",
+      // I2.1: immersive full-window ant-farm subdomains
+      "buses.": "/live/buses",
+      "subway.": "/live/subway",
     };
     for (const prefix in SPOKES) {
       if (host.startsWith(prefix)) {
