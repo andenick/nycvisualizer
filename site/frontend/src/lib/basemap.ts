@@ -48,11 +48,38 @@ export function addBasemap(map: L.Map): BasemapInfo {
 
   const layer = leafletLayer({
     url: BASEMAP_URL,
-    flavor: prefersDark ? "dark" : "light",
+    // protomaps-leaflet 4.x uses `theme` (NOT `flavor` — that is the MapLibre
+    // @protomaps/basemaps API). An unknown option silently yields empty
+    // paintRules/labelRules, so the basemap fetches tiles but paints nothing.
+    // "dark"/"light" are valid keys in the lib's themes registry
+    // (node_modules/protomaps-leaflet/src/default_style/themes.ts).
+    theme: prefersDark ? "dark" : "light",
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
   });
   layer.addTo(map);
+
+  // Regression guard: if the style failed to resolve, paintRules is an empty
+  // array and the basemap will render blank. Surface it loudly instead of
+  // shipping a silent blank map (this is exactly the `flavor`→`theme` bug).
+  const paintRuleCount = (layer as unknown as { paintRules?: unknown[] }).paintRules
+    ?.length;
+  if (paintRuleCount === 0) {
+    console.error(
+      "[basemap] protomaps-leaflet produced EMPTY paintRules — basemap will not paint. " +
+        "Check the `theme` option against the installed protomaps-leaflet themes registry.",
+    );
+    try {
+      const container = map.getContainer();
+      const chip = document.createElement("div");
+      chip.className = "imm-basemap-warn";
+      chip.setAttribute("role", "status");
+      chip.textContent = "basemap style failed to load";
+      container.appendChild(chip);
+    } catch {
+      /* non-DOM env (SSR/tests): console.error above is sufficient */
+    }
+  }
 
   return {
     mode: "pmtiles",

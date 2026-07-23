@@ -2,6 +2,26 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — P0 fix: basemap now paints on every map page
+
+The Protomaps vector basemap was fetching tiles but painting nothing on every map
+page, in production, for all users. Root cause: `addBasemap()` passed `flavor:` to
+protomaps-leaflet's `leafletLayer()`, but that library (v4.1.1) reads `theme:` —
+`flavor` is the separate MapLibre `@protomaps/basemaps` API. An unrecognized option
+falls through to empty `paintRules`/`labelRules`, so the layer renders blank.
+
+- `basemap.ts`: `flavor:` → `theme:` (`"dark"`/`"light"` are valid keys in the lib's
+  themes registry). Basemap now paints in both light and dark.
+- Regression guard: after layer construction, assert non-empty `paintRules`; on an
+  empty rule set, `console.error` and show a "basemap style failed to load" chip in
+  the map corner, so a silent recurrence can never ship again.
+- Cosmetic: Leaflet container background now uses the theme bg token (Leaflet's
+  default `#ddd` was a wrong-colored void in dark mode before tiles paint).
+
+Verified with a real paint check (headless CDP; `/bus`, `/live/subway`, `/sidewalks`;
+light + dark) locally and live: every basemap tile canvas paints (nonzero-alpha
+pixels), guard silent.
+
 ## 2026-07-23 — Immersive full-window ant-farm views (`/live/bus` + `/live/subway`)
 
 _Bus view canonical path is `/live/bus` (singular) on `bus.nycvisualizer.com`; the legacy
