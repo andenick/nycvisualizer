@@ -2,6 +2,54 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Q2.3–2.7 editorial calibration (honesty as a feature)
+
+Certainty, commentary, and reconciliation surfaced site-wide. Verified live
+(public site + API serving the new fields; distribution mode rendering at the
+current 6-day archive depth).
+
+### League gating (Q2.3)
+- `/observatory/leagues` no longer names a "most" or "least" reliable route until
+  the archive earns it. Below **14 observed days** the page renders the
+  **bunching-index distribution** (a contract-compliant histogram over all
+  qualifying routes) + an **unranked, client-sortable per-route table**
+  (bunching, headway CV, observed-days per route — no rank column, no winner/loser
+  framing) + an explainer that says rankings unlock at 14 days and how many days
+  we have. The **Slowest-corridors** table stays in both modes (MTA administrative
+  segment-speed data, not archive-gated).
+- Auto-flip: the backend now reports `rankings_unlocked` (`archive_depth_days ≥ 14`)
+  and a full `distribution` array on `/api/obs/leagues`; the leaderboard renders
+  automatically at depth — verified against a mocked 14-day depth. The Observatory
+  landing's ranked league cards are gated the same way.
+
+### Reconciliation panels (Q2.4)
+- New reusable `ReconciliationNote` ("Our figure vs the authority" — two columns,
+  a why-they-differ paragraph, a what-would-close-it line, dated, quiet styling).
+- **ACE** (dossier ACE section + methodology bus tab): our ≈0 mph unmatched
+  citywide segment difference vs the MTA's reported **+5% average speed-up (up to
+  +30%)** on its 39 ACE-enforced routes — reconciled as different estimands
+  (unmatched citywide average vs targeted corridor before/after). Cites *MTA ACE
+  program materials, 2024–25*.
+- **Bus speed** (methodology bus tab, corroboration): our Manhattan ≈6.2 mph vs
+  **NYC DOT's 7.44 mph citywide average (2017)** — two independent measurements
+  agreeing in magnitude and the Manhattan-slow gradient.
+
+### Know / don't-know panels (Q2.5)
+- New reusable `KnowDontKnow` ("What we can say" / "What we can't yet — and what
+  would change that"), one per flagship: Observatory, Sidewalks, Renter's Map, and
+  the methodology Access section. Each open question names the exact data or method
+  that would settle it.
+
+### KB context callouts (Q2.6)
+- New reusable `ContextCallout` (quiet soft-surface card: a quote/fact + "Doc,
+  Year — Jane KB" source line), fed by a curated `content/kb_callouts.json` of
+  **10 quote-verified passages** from the Jane Knowledge Base: the Hub-Bound
+  1963-onward CBD cordon series (Observatory), the bunching definition and NYC
+  DOT's since-2012 bus-speed tracking (Leagues), Vision Zero pedestrian-safety
+  context (Sidewalks + SAI), the city's equity framing and the NYC Ferry access
+  record (Renter's Map + Access), and Moses / Jacobs / subway network history
+  (About). Every quote was checked against its source doc before shipping.
+
 ## 2026-07-23 — Q1 map visualization overhaul (dots → centerlines)
 
 Streets become the canvas: sidewalk coverage and bus reliability now read ON the

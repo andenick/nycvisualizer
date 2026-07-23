@@ -787,3 +787,189 @@ i.obs-hw-obs.key { border-radius: 50%; }
   .rent-transit-grid { grid-template-columns: 1fr; }
   .rent-jobs-num { font-size: 1.7rem; }
 }
+
+/* =========================================================================
+   ConfidenceBadge (Q2.1) — site-wide confidence-taxonomy chip + popover.
+   Tier is named in text (never color-alone); dot emoji is decorative. Chip
+   colors are light-base with dark overrides under BOTH prefers-color-scheme
+   and the [data-theme] JS toggle, so all four theme states read correctly.
+   ========================================================================= */
+.conf-badge { position: relative; display: inline-flex; vertical-align: baseline; }
+.conf-chip {
+  display: inline-flex; align-items: center; gap: 0.28em;
+  font: inherit; font-size: 0.64rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  line-height: 1; padding: 0.2rem 0.5rem; border-radius: 999px;
+  border: 1px solid transparent; cursor: help; white-space: nowrap;
+  background: var(--conf-bg); color: var(--conf-fg); border-color: var(--conf-bd);
+}
+.conf-chip:hover { filter: brightness(0.97); }
+.conf-chip:focus-visible { outline: 2px solid var(--ark-accent, #2563eb); outline-offset: 2px; }
+.conf-dot { font-size: 0.72em; line-height: 1; }
+.conf-word { font-size: inherit; }
+
+/* tier palettes (light base) */
+.conf-established { --conf-bg: #dcfce7; --conf-fg: #166534; --conf-bd: #a7e0bd; }
+.conf-preliminary { --conf-bg: #fef3c7; --conf-fg: #92400e; --conf-bd: #ecd9a0; }
+.conf-exploratory { --conf-bg: #dbeafe; --conf-fg: #1e40af; --conf-bd: #b3ccf5; }
+
+/* --- popover --- */
+.conf-pop {
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0;
+  width: max-content; max-width: min(20rem, 78vw);
+  background: var(--ark-bg-soft, #fff); color: var(--ark-fg, #14181d);
+  border: 1px solid var(--ark-border, #d4d8dd); border-radius: 10px;
+  padding: 0.6rem 0.7rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  font-size: 0.76rem; line-height: 1.4; text-transform: none; letter-spacing: normal;
+  opacity: 0; visibility: hidden; transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+  pointer-events: none;
+}
+/* keep the popover on-screen for right-aligned chips */
+.conf-badge.conf-right .conf-pop { left: auto; right: 0; }
+.conf-badge:hover .conf-pop,
+.conf-badge:focus-within .conf-pop,
+.conf-pop.open {
+  opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+}
+.conf-pop-tier { font-weight: 800; font-size: 0.72rem; display: block; margin-bottom: 0.35rem; }
+.conf-pop-fields { margin: 0; display: grid; grid-template-columns: 1fr; gap: 0.1rem 0; }
+.conf-pop-fields dt {
+  font-weight: 700; opacity: 0.62; font-size: 0.66rem; text-transform: uppercase;
+  letter-spacing: 0.04em; margin-top: 0.3rem;
+}
+.conf-pop-fields dt:first-child { margin-top: 0; }
+.conf-pop-fields dd { margin: 0.05rem 0 0; }
+
+/* dark overrides — both signals so OS-dark and forced-dark match */
+@media (prefers-color-scheme: dark) {
+  .conf-established { --conf-bg: #14311f; --conf-fg: #7ee2a8; --conf-bd: #1e5236; }
+  .conf-preliminary { --conf-bg: #3a2e0c; --conf-fg: #fcd34d; --conf-bd: #5c4a12; }
+  .conf-exploratory { --conf-bg: #17274d; --conf-fg: #93c5fd; --conf-bd: #274378; }
+}
+:root[data-theme="dark"] .conf-established { --conf-bg: #14311f; --conf-fg: #7ee2a8; --conf-bd: #1e5236; }
+:root[data-theme="dark"] .conf-preliminary { --conf-bg: #3a2e0c; --conf-fg: #fcd34d; --conf-bd: #5c4a12; }
+:root[data-theme="dark"] .conf-exploratory { --conf-bg: #17274d; --conf-fg: #93c5fd; --conf-bd: #274378; }
+/* re-assert light when the visitor forces light on a dark OS */
+:root[data-theme="light"] .conf-established { --conf-bg: #dcfce7; --conf-fg: #166534; --conf-bd: #a7e0bd; }
+:root[data-theme="light"] .conf-preliminary { --conf-bg: #fef3c7; --conf-fg: #92400e; --conf-bd: #ecd9a0; }
+:root[data-theme="light"] .conf-exploratory { --conf-bg: #dbeafe; --conf-fg: #1e40af; --conf-bd: #b3ccf5; }
+
+/* =========================================================================
+   Editorial calibration (Q2.3–Q2.6): league gating, reconciliation notes,
+   know / don't-know panels, KB context callouts. All quiet, kit-token themed,
+   theme-aware via prefers-color-scheme + the [data-theme] toggle. No color
+   here carries good/bad sentiment.
+   ========================================================================= */
+
+/* ---- Q2.3 league gating: distribution mode ---- */
+.leagues-gate {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-left: 4px solid var(--ark-accent, #2563eb);
+  border-radius: 10px;
+  background: var(--ark-bg-soft, #f7f8fa);
+  padding: 0.8rem 1rem; margin: 1rem 0 1.2rem;
+}
+.leagues-gate h3 { margin: 0 0 0.3rem; font-size: 1.02rem; }
+.leagues-gate p { margin: 0.3rem 0 0; font-size: 0.88rem; opacity: 0.85; max-width: 74ch; }
+.leagues-gate .gate-depth { font-variant-numeric: tabular-nums; font-weight: 700; }
+.dist-sort-hint { font-size: 0.76rem; opacity: 0.6; margin: 0.2rem 0 0.5rem; }
+.nyc-table th.sortable {
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+.nyc-table th.sortable:hover { color: var(--ark-accent, #2563eb); }
+.nyc-table th.sortable .arrow { opacity: 0.55; font-size: 0.7em; margin-left: 0.2em; }
+
+/* ---- Q2.4 ReconciliationNote ---- */
+.recon {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px;
+  background: var(--ark-bg-soft, #f7f8fa);
+  padding: 0.9rem 1.05rem; margin: 1.2rem 0;
+}
+.recon-head { margin-bottom: 0.6rem; }
+.recon-kicker {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 700; opacity: 0.6;
+}
+.recon-title { margin: 0.15rem 0 0; font-size: 1rem; }
+.recon-cols {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch;
+  gap: 0.7rem; margin: 0.5rem 0 0.7rem;
+}
+.recon-col {
+  background: var(--ark-surface, #fff);
+  border: 1px solid var(--ark-border, #e5e7eb);
+  border-radius: 9px; padding: 0.6rem 0.75rem; min-width: 0;
+}
+.recon-col-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.62; }
+.recon-col-value { font-size: 1.15rem; font-weight: 700; margin-top: 0.15rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.recon-col-detail { font-size: 0.8rem; opacity: 0.82; margin-top: 0.25rem; }
+.recon-col-src { font-size: 0.72rem; opacity: 0.6; margin-top: 0.35rem; }
+.recon-vs {
+  align-self: center; font-size: 0.78rem; font-weight: 700; opacity: 0.5;
+  text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.1rem;
+}
+.recon-why, .recon-closes { margin: 0.35rem 0 0; font-size: 0.86rem; line-height: 1.5; max-width: 78ch; }
+.recon-foot { font-size: 0.72rem; opacity: 0.58; margin-top: 0.6rem; line-height: 1.45; max-width: 80ch; }
+@media (max-width: 620px) {
+  .recon-cols { grid-template-columns: 1fr; }
+  .recon-vs { justify-self: start; padding: 0.1rem 0; }
+}
+
+/* ---- Q2.5 KnowDontKnow ---- */
+.kdk {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px; background: var(--ark-surface, #fff);
+  padding: 1rem 1.1rem; margin: 1.4rem 0;
+}
+.kdk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem 1.4rem; }
+.kdk-side { min-width: 0; }
+.kdk-h { display: flex; align-items: baseline; gap: 0.45rem; margin: 0 0 0.5rem; font-size: 0.92rem; line-height: 1.3; }
+.kdk-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; transform: translateY(1px); }
+.kdk-dot-can { background: #1a7f37; }
+.kdk-dot-cannot { background: #b8860b; }
+.kdk-list { margin: 0; padding-left: 1.05rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.kdk-list li { font-size: 0.86rem; line-height: 1.5; }
+.kdk-can .kdk-list { border-left: 2px solid #a7e0bd; padding-left: 1.1rem; margin-left: -0.05rem; }
+.kdk-cannot .kdk-list { border-left: 2px solid #ecd9a0; padding-left: 1.1rem; }
+.kdk-closes { opacity: 0.72; font-style: italic; }
+.kdk-foot { font-size: 0.72rem; opacity: 0.55; margin-top: 0.7rem; }
+@media (max-width: 680px) { .kdk-grid { grid-template-columns: 1fr; } }
+@media (prefers-color-scheme: dark) {
+  .kdk-can .kdk-list { border-left-color: #1e5236; }
+  .kdk-cannot .kdk-list { border-left-color: #5c4a12; }
+}
+:root[data-theme="dark"] .kdk-can .kdk-list { border-left-color: #1e5236; }
+:root[data-theme="dark"] .kdk-cannot .kdk-list { border-left-color: #5c4a12; }
+
+/* ---- Q2.6 ContextCallout ---- */
+.ctx-stack { display: flex; flex-direction: column; gap: 0.7rem; margin: 1rem 0; }
+.ctx-callout {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-left: 3px solid var(--ark-accent, #2563eb);
+  border-radius: 10px;
+  background: var(--ark-bg-soft, #f7f8fa);
+  padding: 0.7rem 0.9rem;
+}
+.ctx-kicker {
+  font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.07em;
+  font-weight: 700; opacity: 0.5;
+}
+.ctx-lead { font-size: 0.8rem; opacity: 0.78; margin-top: 0.3rem; }
+.ctx-quote {
+  margin: 0.3rem 0 0; padding: 0; border: none;
+  font-size: 0.92rem; line-height: 1.55; font-style: italic; opacity: 0.95;
+}
+.ctx-src { font-size: 0.74rem; opacity: 0.66; margin-top: 0.45rem; }
+.ctx-kb { opacity: 0.8; }
+.ctx-para { opacity: 0.7; }
+@media (prefers-color-scheme: dark) {
+  .leagues-gate, .recon, .ctx-callout { background: rgba(148, 163, 184, 0.07); }
+}
+:root[data-theme="dark"] .leagues-gate,
+:root[data-theme="dark"] .recon,
+:root[data-theme="dark"] .ctx-callout { background: rgba(148, 163, 184, 0.07); }
+:root[data-theme="light"] .leagues-gate,
+:root[data-theme="light"] .recon,
+:root[data-theme="light"] .ctx-callout { background: var(--ark-bg-soft, #f7f8fa); }

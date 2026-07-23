@@ -12,6 +12,10 @@ import {
   type LeaguesResponse,
 } from "../lib/api";
 import ArchiveBadge from "../components/ArchiveBadge";
+import ConfidenceBadge from "../components/ConfidenceBadge";
+import { ContextCallouts } from "../components/ContextCallout";
+import KnowDontKnow from "../components/KnowDontKnow";
+import { archiveWindow } from "../lib/confidence";
 import ObsSubnav from "../components/ObsSubnav";
 
 const BOROUGH_ORDER = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "MTA Bus Co."];
@@ -122,30 +126,56 @@ export default function ObservatoryPage() {
       {routes && <ArchiveBadge archive={routes.archive} />}
       {err && <div className="nyc-note">Route list temporarily unavailable.</div>}
 
-      {leagues && (
+      {/* KB context: the Hub-Bound cordon series our live counts extend */}
+      <ContextCallouts anchor="observatory-landing" />
+
+      {leagues && (() => {
+        // Q2.3: the ranked route cards are gated on archive depth. Below 14 days
+        // we don't name winners/losers on the landing either — we point to the
+        // distribution. The Slowest-corridors card (MTA data) shows in both modes.
+        const unlocked = leagues.rankings_unlocked || leagues.archive.archive_depth_days >= 14;
+        return (
         <section className="nyc-section">
-          <h2>Reliability leagues (preliminary)</h2>
+          <h2 style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            Reliability leagues
+            <ConfidenceBadge claimKey="obs-leagues" window={archiveWindow(routes?.archive.archive_depth_days)} />
+          </h2>
           <div className="nyc-cards">
-            <LeagueCard
-              title="Most reliable"
-              metric="lowest bunching index"
-              to="/observatory/leagues"
-              rows={leagues.most_reliable.slice(0, 5).map((r) => ({
-                route_id: r.route_id,
-                short_name: r.short_name,
-                label: r.bunching_index.toFixed(3),
-              }))}
-            />
-            <LeagueCard
-              title="Least reliable"
-              metric="highest bunching index"
-              to="/observatory/leagues"
-              rows={leagues.least_reliable.slice(0, 5).map((r) => ({
-                route_id: r.route_id,
-                short_name: r.short_name,
-                label: r.bunching_index.toFixed(3),
-              }))}
-            />
+            {unlocked ? (
+              <>
+                <LeagueCard
+                  title="Most reliable"
+                  metric="lowest bunching index"
+                  to="/observatory/leagues"
+                  rows={leagues.most_reliable.slice(0, 5).map((r) => ({
+                    route_id: r.route_id,
+                    short_name: r.short_name,
+                    label: r.bunching_index.toFixed(3),
+                  }))}
+                />
+                <LeagueCard
+                  title="Least reliable"
+                  metric="highest bunching index"
+                  to="/observatory/leagues"
+                  rows={leagues.least_reliable.slice(0, 5).map((r) => ({
+                    route_id: r.route_id,
+                    short_name: r.short_name,
+                    label: r.bunching_index.toFixed(3),
+                  }))}
+                />
+              </>
+            ) : (
+              <div className="nyc-card obs-league-card">
+                <h3 style={{ marginTop: 0 }}>Reliability distribution</h3>
+                <div className="obs-league-metric">rankings unlock at 14 observed days</div>
+                <p style={{ margin: "0.2rem 0 0.8rem", fontSize: "0.9rem", opacity: 0.85 }}>
+                  With {leagues.archive.archive_depth_days} day{leagues.archive.archive_depth_days === 1 ? "" : "s"} of
+                  archive we show the <em>distribution</em> of bunching across {leagues.criteria.qualifying_routes}{" "}
+                  qualifying routes, not a most/least-reliable ranking — a short window would make the order an artifact.
+                </p>
+                <Link className="obs-league-more" to="/observatory/leagues">See the distribution →</Link>
+              </div>
+            )}
             <LeagueCard
               title="Slowest corridors"
               metric="weighted peak speed (mph)"
@@ -162,7 +192,8 @@ export default function ObservatoryPage() {
             as thin/gap-dominated ({leagues.criteria.note.split(".")[0]}).
           </p>
         </section>
-      )}
+        );
+      })()}
 
       <section className="nyc-section">
         <div className="obs-picker-head">
@@ -191,6 +222,24 @@ export default function ObservatoryPage() {
             </div>
           </div>
         ))}
+      </section>
+
+      <section className="nyc-section">
+        <h2>What we can and can&rsquo;t say yet</h2>
+        <KnowDontKnow
+          scope="the Bus Observatory"
+          dated="2026-07-23"
+          can={[
+            { text: "Which routes bunch and which run steadily over the days we have observed — bunching is measured positionally, as the evenness of gaps between consecutive buses at a stop." },
+            { text: "Each trip's actual path against its schedule (the Marey diagram) and the per-stop headway strip, for any route with observed history." },
+            { text: "The slowest bus corridors citywide, from MTA segment-speed data (administrative, not archive-gated)." },
+          ]}
+          cannot={[
+            { text: "Name a single “most” or “least” reliable route with confidence.", closes: "→ 14 days of continuous archive (currently building) turns the distribution into a stable ranking." },
+            { text: "Distinguish a true door-open arrival from a shape-offset crossing.", closes: "→ the bus feed's current_status is 100% NULL; a stop-event feed would settle it." },
+            { text: "Attribute a slow corridor to a specific cause (traffic vs dwell vs signal timing).", closes: "→ a matched segment-level travel-time decomposition." },
+          ]}
+        />
       </section>
     </div>
   );

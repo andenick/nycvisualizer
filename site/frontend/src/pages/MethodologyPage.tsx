@@ -1,6 +1,9 @@
 // Methodology & findings - pre-rendered HTML (build_content.py) per
 // CONTENT_RENDERING_STANDARD: no literal markdown ships or renders.
 import { useState } from "react";
+import ReconciliationNote from "../components/ReconciliationNote";
+import KnowDontKnow from "../components/KnowDontKnow";
+import { ContextCallouts } from "../components/ContextCallout";
 import methodsSai from "../content/methods_sai.html?raw";
 import findingsSai from "../content/findings_sai.html?raw";
 import methodsSidewalk from "../content/methods_sidewalk.html?raw";
@@ -91,6 +94,72 @@ export default function MethodologyPage() {
           __html: effectiveView === "findings" && cur.findings ? cur.findings : cur.methods,
         }}
       />
+
+      {/* Q2.4 reconciliation panels — bus tab: ACE (disagreement) + DOT (corroboration) */}
+      {tab === "bus" && (
+        <section className="nyc-section">
+          <h2>Reconciling our figures with the authorities</h2>
+          <ReconciliationNote
+            title="Does camera enforcement speed the bus up? Our reading vs the MTA's"
+            ours={{
+              label: "Our measurement",
+              value: "≈ 0 mph",
+              detail: "median change in per-segment through-speed on ACE vs non-ACE corridors (peak, weighted) — a blunt, unmatched citywide difference",
+              source: "nycvisualizer segment-speed analysis, 2026-07",
+            }}
+            authority={{
+              label: "MTA ACE program",
+              value: "+5% average",
+              detail: "reported speed-up across the 39 ACE-enforced routes, with some corridors up to +30%",
+              source: "MTA ACE program materials, 2024–25",
+            }}
+            why="These measure different things. Ours is the median difference in raw through-speed across every segment citywide — an unmatched comparison dominated by ordinary congestion and route mix, so the net difference washes out near zero. The MTA's is a targeted before-and-after on the specific corridors it enforces, where a blocked bus lane is the binding delay; on those corridors, and by that estimand, clearing the lane buys measurable speed."
+            closes="A matched difference-in-differences — ACE corridors before vs after enforcement against comparable control routes — rather than a citywide segment average. The congestion-pricing and ACE-evaluation acquisitions (campaign Q3) feed that design."
+            dated="2026-07 (MTA figures current to 2024–25)"
+          />
+          <ReconciliationNote
+            kind="corroborate"
+            title="Citywide bus speed: our observation lines up with NYC DOT"
+            ours={{
+              label: "Our Manhattan bus speed",
+              value: "≈ 6.2 mph",
+              detail: "median peak through-speed on Manhattan routes, from our segment-speed analysis",
+              source: "nycvisualizer, 2026-07",
+            }}
+            authority={{
+              label: "NYC DOT Mobility Report",
+              value: "7.44 mph",
+              detail: "average citywide bus speed, 2017",
+              source: "NYC DOT Citywide Mobility Report, 2018 — Jane KB DOC0326",
+            }}
+            why="Manhattan is the slow end of the city, so a Manhattan-only 6.2 mph sitting just under DOT's 7.44 mph citywide average — which blends in faster outer-borough corridors — is exactly the relationship you would expect. Two independent measurements, taken years apart with different pipelines, agree in magnitude and in the Manhattan-slow gradient."
+            closes="It confirms our segment-speed pipeline reproduces the official order of magnitude and the borough gradient. NYC DOT has tracked these speeds with MTA Bus Time data since 2012, so the comparison rests on a long official baseline."
+            dated="2026-07 (DOT figure: 2017)"
+          />
+        </section>
+      )}
+
+      {/* Q2.5 + Q2.6 access section: certainty audit + the ferry-access KB callout */}
+      {tab === "access" && (
+        <section className="nyc-section">
+          <h2>What access analysis can and can&rsquo;t say yet</h2>
+          <ContextCallouts anchor="access" />
+          <KnowDontKnow
+            scope="job access &amp; isochrones"
+            dated="2026-07-23"
+            can={[
+              { text: "How many jobs are reachable from any address in 45 minutes by transit at the weekday AM peak — from real OpenTripPlanner network routing over the street + transit graph, not straight-line distance." },
+              { text: "The income gradient in job access: higher-income blocks reach more jobs, quantified decile by decile." },
+              { text: "Where the outliers are — Staten Island's ferry-dependent access and the outer-borough middle-income gap." },
+            ]}
+            cannot={[
+              { text: "Whether the income gradient holds off-peak or in the evening.", closes: "→ midday and evening departure windows added to the isochrone runs." },
+              { text: "Access via commuter rail (LIRR / Metro-North) or to cross-border (NJ / Westchester) jobs.", closes: "→ those feeds added to the routing graph." },
+              { text: "Door-to-door reliability, not just scheduled travel time.", closes: "→ our live headway archive folded into the routing cost (schedule + observed delay)." },
+            ]}
+          />
+        </section>
+      )}
 
       <section className="nyc-section">
         <h2>Realtime &amp; basemap methods</h2>
