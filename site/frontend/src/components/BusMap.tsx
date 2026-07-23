@@ -21,6 +21,7 @@ import {
   type AlertItem,
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
+import { VehicleFlowLayer } from "./VehicleFlowLayer";
 
 // Stable fallback palette for bus route "groups" (borough prefix) when a route has
 // no GTFS color. Colorblind-aware, brand-neutral.
@@ -69,12 +70,10 @@ function ribbonSpeedColor(pct: number): string {
 export default function BusMap() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
-  const vehLayer = useRef<L.LayerGroup | null>(null);
-  const subLayer = useRef<L.LayerGroup | null>(null);
+  const flow = useRef<VehicleFlowLayer | null>(null);
   const stationLayer = useRef<L.LayerGroup | null>(null);
   const shapeLayer = useRef<L.LayerGroup | null>(null);
-  const markers = useRef<Map<string, L.CircleMarker>>(new Map());
-  const trainMarkers = useRef<Map<string, L.Marker>>(new Map());
+  const selectedShape = useRef<[number, number][][] | null>(null);
   const stationsLoaded = useRef(false);
 
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
@@ -94,6 +93,7 @@ export default function BusMap() {
   const [alertsDismissed, setAlertsDismissed] = useState(false);
   const [basemap, setBasemap] = useState<BasemapInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [perf, setPerf] = useState<{ ms: number; units: number; fps: number; tickJump: boolean } | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const showBusesRef = useRef(showBuses);
@@ -127,10 +127,12 @@ export default function BusMap() {
       zoomControl: true,
     });
     setBasemap(addBasemap(m));
-    vehLayer.current = L.layerGroup().addTo(m);
-    subLayer.current = L.layerGroup().addTo(m);
     stationLayer.current = L.layerGroup();
     shapeLayer.current = L.layerGroup().addTo(m);
+    // The animated true-scale vehicle canvas sits ABOVE the route shape/ribbon.
+    const fl = new VehicleFlowLayer({ busPopup: popupHtml, trainPopup: trainPopupHtml });
+    fl.addTo(m);
+    flow.current = fl;
     const syncStations = () => {
       if (!stationLayer.current) return;
       const want = showSubwayRef.current && m.getZoom() >= STATION_MIN_ZOOM;
@@ -158,94 +160,33 @@ export default function BusMap() {
     return () => clearInterval(aTimer);
   }, []);
 
-  // ---- render one BUS snapshot ----
+  // ---- render one BUS snapshot -> feed the animated flow layer ----
   const render = (data: VehiclesResponse) => {
     setAsOf(data.as_of);
     setSource(data.source);
     setStale(data.stale);
     setErr(null);
-    const layer = vehLayer.current;
-    if (!layer) return;
+    const fl = flow.current;
+    if (!fl) return;
     const sel = selectedRef.current;
-    const seen = new Set<string>();
-    let shown = 0;
-    if (showBusesRef.current) {
-      for (const v of data.vehicles) {
-        if (sel && v.route_id !== sel) continue;
-        seen.add(v.vehicle_id);
-        shown++;
-        const color = colorFor(v.route_id);
-        let mk = markers.current.get(v.vehicle_id);
-        if (!mk) {
-          mk = L.circleMarker([v.lat, v.lon], {
-            radius: 5,
-            weight: 1.5,
-            color: "#ffffff",
-            fillColor: color,
-            fillOpacity: 0.92,
-            className: "nyc-veh",
-          });
-          mk.addTo(layer);
-          markers.current.set(v.vehicle_id, mk);
-        } else {
-          mk.setLatLng([v.lat, v.lon]);
-          mk.setStyle({ fillColor: color });
-        }
-        mk.bindPopup(popupHtml(v));
-      }
-    }
-    // prune vehicles no longer present / filtered out / mode off
-    for (const [id, mk] of markers.current) {
-      if (!seen.has(id)) {
-        layer.removeLayer(mk);
-        markers.current.delete(id);
-      }
-    }
+    fl.setBuses(data.vehicles, sel, colorFor, sel ? selectedShape.current : null);
+    const shown = showBusesRef.current
+      ? sel
+        ? data.vehicles.filter((v) => v.route_id === sel).length
+        : data.vehicles.length
+      : 0;
     setCount(shown);
   };
 
-  // ---- render one SUBWAY snapshot ----
+  // ---- render one SUBWAY snapshot -> feed the animated flow layer ----
   const renderSubway = (data: SubwayResponse) => {
     setSubAsOf(data.as_of);
     setSubStale(data.stale);
     setSubSource(data.source);
-    const layer = subLayer.current;
-    if (!layer) return;
-    const seen = new Set<string>();
-    let shown = 0;
-    if (showSubwayRef.current) {
-      for (const t of data.trains) {
-        const key = t.feed + "|" + t.trip_id;
-        seen.add(key);
-        shown++;
-        const est = t.positional_basis === "interpolated";
-        const icon = L.divIcon({
-          className: "nyc-bullet-wrap",
-          html: `<div class="nyc-bullet${est ? " est" : ""}" style="background:${subwayColor(
-            t.route_id,
-          )};color:${subwayTextColor(t.route_id)}">${subwayLabel(t.route_id)}</div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9],
-        });
-        let mk = trainMarkers.current.get(key);
-        if (!mk) {
-          mk = L.marker([t.lat, t.lon], { icon, keyboard: false });
-          mk.addTo(layer);
-          trainMarkers.current.set(key, mk);
-        } else {
-          mk.setLatLng([t.lat, t.lon]);
-          mk.setIcon(icon);
-        }
-        mk.bindPopup(trainPopupHtml(t));
-      }
-    }
-    for (const [id, mk] of trainMarkers.current) {
-      if (!seen.has(id)) {
-        layer.removeLayer(mk);
-        trainMarkers.current.delete(id);
-      }
-    }
-    setSubCount(shown);
+    const fl = flow.current;
+    if (!fl) return;
+    fl.setTrains(data.trains);
+    setSubCount(showSubwayRef.current ? data.trains.length : 0);
   };
 
   // ---- live BUS feed: SSE + poll safety net ----
@@ -289,6 +230,21 @@ export default function BusMap() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSubway]);
+
+  // ---- flow-layer visibility + honest frame-time readout ----
+  useEffect(() => {
+    flow.current?.setVisibility(showBuses, showSubway);
+    if (!showBuses) setCount(0);
+    if (!showSubway) setSubCount(0);
+  }, [showBuses, showSubway]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const s = flow.current?.getStats();
+      if (s) setPerf({ ms: s.emaFrameMs, units: s.units, fps: s.fps, tickJump: s.tickJump });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // ---- station markers (tap -> live arrivals board), zoom-gated ----
   useEffect(() => {
@@ -354,10 +310,16 @@ export default function BusMap() {
     const sl = shapeLayer.current;
     if (!sl) return;
     sl.clearLayers();
+    selectedShape.current = null; // straight-glide until the shape loads
     getVehicles().then(render).catch(() => {});
     if (!selected) return;
     getRouteShape(selected)
       .then((s) => {
+        if (selectedRef.current !== selected) return;
+        // hand the polylines to the flow layer so THIS route's buses snap+glide
+        // along the shape (no corner-cutting on the featured route)
+        selectedShape.current = s.polylines;
+        getVehicles().then(render).catch(() => {});
         const color = colorFor(selected);
         // Q1.3: the shape becomes a quiet base; the reliability ribbon (segment
         // speeds) overlays it as the hero when segment data exists.
@@ -468,6 +430,7 @@ export default function BusMap() {
           {showBuses && showSubway ? " · " : ""}
           {showSubway ? `${subCount.toLocaleString()} train${subCount === 1 ? "" : "s"}` : ""}
           {selected && showBuses ? ` · route ${selected}` : ""}
+          {perf ? ` · ${perf.ms.toFixed(1)} ms/frame${perf.tickJump ? " (tick-jump)" : ""}` : ""}
         </div>
         {showSubway && <div className="muted">Zoom in to tap stations for live arrivals.</div>}
       </div>
@@ -541,6 +504,9 @@ export default function BusMap() {
             Trains: official line colors · faded&nbsp;=&nbsp;estimated position
           </div>
         )}
+        <div style={{ marginTop: 4, opacity: 0.75 }}>
+          Vehicle shapes drawn at true scale — positions between reports are estimated (glided).
+        </div>
         {showBuses && selected && (
           <div style={{ marginTop: 4 }}>
             {selected} speed:

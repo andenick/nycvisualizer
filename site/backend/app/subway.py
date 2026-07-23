@@ -218,6 +218,31 @@ def _subpath(shape_id: str, prev_parent: str, tgt_parent: str) -> tuple[tuple[fl
     return tuple(seg)
 
 
+def _seg_for_client(path: tuple[tuple[float, float], ...]) -> list[list[float]]:
+    """Round + decimate an inter-station sub-polyline for the wire.
+
+    The frontend lays the ~160 m train worm ALONG this segment (so it follows the
+    track, not a straight line through buildings) and animates the fraction along
+    it. Coordinates rounded to 5 dp (~1.1 m); capped to ~28 vertices (inter-station
+    hops are short) to keep the whole-fleet payload small.
+    """
+    if not path or len(path) < 2:
+        return []
+    pts = [[round(p[0], 5), round(p[1], 5)] for p in path]
+    # drop consecutive duplicates left by rounding
+    out = [pts[0]]
+    for p in pts[1:]:
+        if p != out[-1]:
+            out.append(p)
+    if len(out) <= 28:
+        return out
+    # uniform decimation, always keeping the two endpoints
+    step = (len(out) - 1) / 27.0
+    dec = [out[round(i * step)] for i in range(28)]
+    dec[-1] = out[-1]
+    return dec
+
+
 def _point_along(path: tuple[tuple[float, float], ...], frac: float) -> tuple[float, float] | None:
     if not path:
         return None
@@ -317,8 +342,12 @@ def _resolve_train(row: dict[str, Any], now: float) -> dict[str, Any] | None:
     pos = _point_along(path, frac)
     if pos is None:
         pos = (tgt["lat"], tgt["lon"])
+    # Attach the inter-station track segment + fraction so the client can lay the
+    # train worm ALONG the real shape (no straight lines through buildings) and
+    # animate its position along it between reports.
     return {**base, "lat": pos[0], "lon": pos[1],
-            "status": status, "positional_basis": "interpolated"}
+            "status": status, "positional_basis": "interpolated",
+            "seg": _seg_for_client(path), "frac": round(frac, 4)}
 
 
 # ------------------------------------------------------------------- data sources

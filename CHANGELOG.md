@@ -2,6 +2,48 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Live Transit Map "ant farm": animated true-scale vehicle canvas
+
+The `/bus` Live Transit Map now renders every bus and subway train as a
+TRUE-SCALE, bearing-oriented shape that MOVES CONTINUOUSLY, so at city zoom the
+fleet reads as flowing veins and zooming in reveals individual units gliding.
+Deployed and verified live (headless-Chrome CDP; light + dark; 1440 + 390).
+
+### New `VehicleFlowLayer` (single animated canvas overlay)
+- Replaces the discrete circle/bullet Leaflet markers with **one** rAF-driven
+  `<canvas>` overlay pinned to the map (same zoom-animation transform as
+  `L.Canvas`). Buses = true-scale rounded slabs (~12 m, 18 m for SBS/express)
+  rotated to bearing; subway trains = ~160 m worms lying ALONG the actual
+  inter-station GTFS track shape (backend now emits the segment + fraction).
+- **Continuous motion (ant farm):** dead-reckoning tween — each report starts a
+  ~30 s glide from the currently-displayed position toward the new one, so units
+  walk their last displacement smoothly instead of snapping every tick. Bearing
+  from the movement vector (payload bearing fallback). New units fade in; units
+  missing > 3 ticks fade out. The **selected** bus route snaps + glides its buses
+  ALONG the loaded shape polyline (no corner-cutting on the featured route).
+- **True scale:** meters→pixels via Web-Mercator m/px at the viewport latitude;
+  clamped to a ~3 px minimum (city zoom = moving specks / veins) with full shapes
+  at zoom ≥ 12 and cheap moving specks below. Subway interpolated positions keep
+  reduced opacity (honesty); official MTA line colors; theme-aware contrast
+  outline for light + dark basemaps.
+- **Performance:** one redraw/frame, viewport culling, alloc-free inline
+  projection + typed-array hit store. Measured (headless, no-GPU worst case):
+  **z11 default ~2.6 ms/frame @ ~4,450 units**, z14 ~4 ms, z16 ~1.8 ms, dark
+  ~2.5 ms, mobile-390 ~8.5 ms — all under the 12 ms budget (real GPU users
+  faster). Pauses on `document.hidden`; graceful **reversible** degrade to 30 fps
+  then tick-jump only as a last resort, auto-recovering when the view is cheaper.
+  An honest "N ms/frame" readout ships in the map's status line.
+- Interaction preserved: click/tap hit-tests the nearest unit (~8 px) → existing
+  popup; hover cursor; Buses/Subway toggles and the route filter keep working.
+  Legend gains a "vehicle shapes at true scale — positions between reports are
+  estimated" honesty line.
+
+### Backend (`/api/rt/subway`)
+- Interpolated trains now carry `seg` (rounded, ≤28-vertex inter-station track
+  polyline in travel order) + `frac` (0→1 progress), so the client can lay the
+  worm along the real shape and animate along it. Adds ~40 KB to the subway
+  payload; at-station trains are unchanged (drawn as line bullets).
+
 ## 2026-07-23 — Q4.1/Q4.2 structure, flow & performance deep pass
 
 IA/navigation rework + per-spoke code-split. Deployed and verified on the live
