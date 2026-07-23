@@ -132,6 +132,30 @@ charts["coverage"] = {
     "pct_none": [round(100 * r[1] / r[4], 1) for r in rows],
 }
 
+# Hub-Bound cordon series (Q3.3) — 24-hour persons entering the Manhattan CBD by
+# mode, 14 born-digital NYMTC report years. Long parquet -> per-mode arrays.
+hb = OUT_ROOT / "cordon" / "hub_bound_series.parquet"
+if hb.exists():
+    rows = con.execute(
+        f"SELECT year, mode, entering FROM read_parquet('{hb.as_posix()}') ORDER BY year"
+    ).fetchall()
+    years = sorted({int(r[0]) for r in rows})
+    modes = ["subway", "auto", "bus", "rail", "ferry", "bike", "tram"]
+    by = {(int(r[0]), r[1]): int(r[2]) for r in rows}
+    charts["hub_bound"] = {
+        "years": years,
+        "modes": modes,
+        "series": {m: [by.get((y, m), 0) for y in years] for m in modes},
+        "total": [sum(by.get((y, m), 0) for m in modes) for y in years],
+        "source": "NYMTC Hub Bound Travel Report (KB DOC0346-DOC0374); 24-hour persons "
+                  "entering the Manhattan CBD (south of 60th St) by mode. 14 born-digital "
+                  "report years; 2010-11 & pre-2007 await GPU re-extraction, 2021-22 not "
+                  "surveyed (COVID). Ferry excludes the Staten Island Ferry.",
+    }
+    print(f"  chartdata hub_bound: {len(years)} years")
+else:
+    print(f"  MISSING: {hb} (run analysis/cordon/build_hub_bound_series.py)")
+
 (CONTENT / "chartdata.json").write_text(json.dumps(charts, indent=0), encoding="utf-8")
 print("  chartdata.json written")
 

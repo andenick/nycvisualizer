@@ -49,7 +49,15 @@ export default function AboutPage() {
           speeds), <strong>NYC City Planning BYTES</strong> (PLUTO, NTA), and the{" "}
           <strong>U.S. Census Bureau</strong> (PL 94-171, ACS, LODES, TIGER). Basemap &copy;{" "}
           OpenStreetMap contributors via Protomaps, self-hosted. Sidewalk width method after Meli
-          Harvey's sidewalkwidths.nyc (2020).
+          Harvey's sidewalkwidths.nyc (2020). Long-run cordon history from the{" "}
+          <strong>NYMTC Hub Bound Travel Report</strong>.
+        </p>
+        <p>
+          Congestion-pricing context on the speed pages draws on two peer studies: Cook, Kreidieh,
+          Vasserman, Allcott et al., <em>The Short-Run Effects of Congestion Pricing in New York
+          City</em> (NBER Working Paper 33584, 2025), and Li, Zhuang et al. (MIT), <em>Public transit
+          gains and spatially uneven travel demand changes after NYC congestion pricing</em>{" "}
+          (arXiv:2606.17530, 2026).
         </p>
         <p className="nyc-note">
           Real data only: unbuilt views show an honestly-labeled roadmap; estimated positions and

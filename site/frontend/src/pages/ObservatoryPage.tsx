@@ -12,11 +12,63 @@ import {
   type LeaguesResponse,
 } from "../lib/api";
 import ArchiveBadge from "../components/ArchiveBadge";
+import ArkPlotly from "../components/ArkPlotly";
 import ConfidenceBadge from "../components/ConfidenceBadge";
 import { ContextCallouts } from "../components/ContextCallout";
 import KnowDontKnow from "../components/KnowDontKnow";
 import { archiveWindow } from "../lib/confidence";
 import ObsSubnav from "../components/ObsSubnav";
+import charts from "../content/chartdata.json";
+
+// Hub-Bound mode palette (categorical; validated to read in light + dark).
+const HB_MODES: { key: string; name: string; color: string }[] = [
+  { key: "subway", name: "Subway (incl. PATH)", color: "#2563eb" },
+  { key: "rail", name: "Commuter/intercity rail", color: "#9333ea" },
+  { key: "auto", name: "Auto / taxi / truck", color: "#6b7280" },
+  { key: "bus", name: "Bus", color: "#16a34a" },
+  { key: "ferry", name: "Ferry (excl. SI Ferry)", color: "#0891b2" },
+  { key: "bike", name: "Bicycle", color: "#ea580c" },
+  { key: "tram", name: "Tramway", color: "#db2777" },
+];
+
+function HubBoundChart() {
+  const hb = (charts as Record<string, unknown>).hub_bound as
+    | {
+        years: number[];
+        series: Record<string, number[]>;
+        total: number[];
+        source: string;
+      }
+    | undefined;
+  if (!hb) return null;
+  return (
+    <ArkPlotly
+      title="History meets live: who enters Manhattan's core, by mode"
+      subtitle="NYMTC Hub-Bound — persons entering the CBD (south of 60th St) on a fall business day. 1963–1995 digitization in progress — the series extends as scans are processed."
+      data={HB_MODES.map((m) => ({
+        type: "bar",
+        name: m.name,
+        x: hb.years,
+        y: hb.series[m.key],
+        marker: { color: m.color },
+      }))}
+      layout={{
+        barmode: "stack",
+        yaxis: { title: { text: "persons entering (24-hour)" } },
+        xaxis: { title: { text: "" }, dtick: 2, type: "linear" },
+      }}
+      csvRows={hb.years.map((y: number, i: number) => {
+        const row: Record<string, number> = { year: y };
+        for (const m of HB_MODES) row[m.key] = hb.series[m.key][i];
+        row.total = hb.total[i];
+        return row;
+      })}
+      csvName="hub_bound_cbd_entries_by_mode.csv"
+      height={420}
+      source={hb.source + " — Missing years: 2010–11 & pre-2007 await GPU re-extraction; 2021–22 not surveyed (COVID). We do NOT annotate a 'today' point: our live feeds count subway/bus systemwide, not cordon crossings south of 60th St, so they are not comparable to a Hub-Bound entry count. The congestion-pricing era (Jan 2025) is the newest chapter, measured by MTA's Central Business District Tolling entries — a distinct cordon count from a distinct program."}
+    />
+  );
+}
 
 const BOROUGH_ORDER = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "MTA Bus Co."];
 
@@ -128,6 +180,12 @@ export default function ObservatoryPage() {
 
       {/* KB context: the Hub-Bound cordon series our live counts extend */}
       <ContextCallouts anchor="observatory-landing" />
+
+      {/* Q3.3: the Hub-Bound "history meets live" hero chart — 60 years of CBD
+          entries by mode (the born-digital slice; the scanned decades follow). */}
+      <section className="nyc-section">
+        <HubBoundChart />
+      </section>
 
       {leagues && (() => {
         // Q2.3: the ranked route cards are gated on archive depth. Below 14 days

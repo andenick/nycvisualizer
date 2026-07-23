@@ -24,7 +24,18 @@ Reference method: sidewalkwidths.nyc (Meli Harvey, 2020; `github.com/meliharvey/
 - **Per-segment width** = median (and min, p90) of the proxies of polygons in the segment's search band (same band as 01), with proxies outside 2–120 ft discarded as non-corridor artifacts.
 - **Validation** (`fig02_width_validation.png`): against a **max-inscribed width** computed by 18-step binary search on the negative buffer (`ST_Buffer(poly, −r)` empty ⇔ 2r > max width) on a 300-polygon reservoir sample (seed 42): Pearson r = **0.47**, median proxy/inscribed ratio = **0.69**.
 
-**Honest limits:** the proxy and the inscribed width measure different things (typical vs widest point), so 0.69 is expected, not an error; but r = 0.47 means per-polygon noise is substantial. The proxy is biased LOW for L-shaped corner-wrapping polygons (perimeter inflated) and unreliable on plaza-like blobs (not corridors at all — Manhattan plazas are the worst case). Treat per-segment medians as a **relative** width signal (borough/NTA comparisons, narrow-vs-wide screening), not as engineering-grade clearance. A true medial-axis pass is the upgrade path.
+**Honest limits:** the proxy and the inscribed width measure different things (typical vs widest point), so 0.69 is expected, not an error; but r = 0.47 means per-polygon noise is substantial. The proxy is biased LOW for L-shaped corner-wrapping polygons (perimeter inflated) and unreliable on plaza-like blobs (not corridors at all — Manhattan plazas are the worst case). Treat per-segment medians as a **relative** width signal (borough/NTA comparisons, narrow-vs-wide screening), not as engineering-grade clearance.
+
+## 06 — Medial-axis width (Harvey method; ALTERNATIVE estimate, not promoted)
+
+`06_medial_axis_width.py` implements the **true medial-axis method** from Meli Harvey's *Sidewalk Widths NYC* (2020) on our own planimetric polygons, as the upgrade path flagged in 02. Per polygon: densify the boundary → **scipy Voronoi** → keep Voronoi vertices inside the polygon (the medial axis) → each vertex's distance to the boundary is the maximal-inscribed-circle radius (local half-width) → **typical width = 2 × median half-width**. All math is in EPSG:2263 (US survey feet), so no metre→foot conversion. Widths are aggregated onto CSCL segments with the same buffer band as 01/02. Ran on **50,773 polygons** (~71 s, 12 workers).
+
+**Validation — two independent references (honest r for both):**
+
+- vs **Harvey's own published widths** (`sidewalkwidths_nyc.geojson`, 101 MB): each polygon centroid matched to the nearest Harvey centerline within 25 ft → **Pearson r = 0.727** over **n = 17,895** matched pairs. Central tendency is very close — our median **8.6 ft** vs Harvey's **8.1 ft** (nearer Harvey than the 2A/P proxy's 9.7 ft).
+- vs the **02 proxy**: r = **0.937** per polygon, r = **0.943** per CSCL segment.
+
+**Decision — KEEP 2A/P as primary, do NOT promote.** The plan's promotion bar was **r > 0.75 vs Harvey**; the definitive full-population value is **0.727**, so the medial-axis is **not** promoted: the map's width channel (`w`) and the primary width download stay the 2A/P proxy, and the width confidence tier stays **🔵 exploratory**. The medial-axis is shipped as an **alternative estimate** (`06_medial_axis_segments.parquet`, `06_medial_axis_polys.parquet` on the Data page) with this comparison stated openly. Two honest reasons the correlation sits below the bar despite a near-identical median: (1) our planimetric vintage (DCP 2022) differs from Harvey's (NYC 2024 sidewalk dataset), so some polygons genuinely differ; (2) our estimator uses the **median** inscribed radius (robust to corner spurs) where Harvey averages along sampled centerline segments — a defensible difference we did **not** tune away to chase the threshold.
 
 ## 03 — Block equity
 
@@ -53,11 +64,11 @@ Intersection nodes derived from the CSCL network itself: endpoints of merged ped
 
 ```
 cd Technical/NYCPlatform/analysis/sidewalk
-PYTHONIOENCODING=utf-8 python 01_coverage_classes.py   # ~2 min
-PYTHONIOENCODING=utf-8 python 02_width_derivation.py   # ~35 s
-PYTHONIOENCODING=utf-8 python 03_block_equity.py       # ~30 s
-PYTHONIOENCODING=utf-8 python 04_condition.py          # ~1 min (needs 01 output)
-PYTHONIOENCODING=utf-8 python 05_accessibility.py      # ~2 min
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 01_coverage_classes.py   # ~2 min
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 02_width_derivation.py   # ~35 s
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 03_block_equity.py       # ~30 s
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 04_condition.py          # ~1 min (needs 01 output)
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 05_accessibility.py      # ~2 min
 ```
 
 ## Sources

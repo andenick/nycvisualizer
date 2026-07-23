@@ -59,13 +59,47 @@ _ITEMS: dict[str, tuple[str, str, str, str]] = {
     "coverage_segments.xlsx": (
         "sidewalk/01_coverage_segments.xlsx", "Segment coverage classes (XLSX)", "Sidewalk", ""),
     "width_segments.parquet": (
-        "sidewalk/02_width_segments.parquet", "Per-segment width estimates (Parquet)", "Sidewalk",
-        "width is a 2*Area/Perimeter proxy; validation r=0.47 vs inscribed width"),
+        "sidewalk/02_width_segments.parquet", "Per-segment width estimates — PRIMARY (Parquet)", "Sidewalk",
+        "width is a 2*Area/Perimeter proxy; validation r=0.47 vs inscribed width. This remains the "
+        "primary width layer; see the medial-axis alternative below."),
+    # Q3.3: medial-axis width (Meli Harvey method) — an ALTERNATIVE estimate. It
+    # did not clear the r>0.75-vs-Harvey promotion bar (r=0.727, n=17,895), so
+    # the 2A/P proxy above stays primary and the map `w` is unchanged; shipped
+    # here for transparency + reuse. Its level (median 8.6 ft) is actually nearer
+    # Harvey's published median (8.1 ft) than the 2A/P proxy (9.7 ft).
+    "medial_axis_width_segments.parquet": (
+        "sidewalk/06_medial_axis_segments.parquet",
+        "Per-segment medial-axis width — ALTERNATIVE estimate (Parquet)", "Sidewalk",
+        "Voronoi medial-axis width (Meli Harvey 2020 method) aggregated onto CSCL segments. "
+        "ALTERNATIVE to the 2A/P proxy: r=0.727 vs Harvey's published widths (n=17,895; below the "
+        "0.75 promotion bar, so not promoted), r=0.94 vs the 2A/P per-segment proxy. EPSG:2263 (ft)."),
+    "medial_axis_width_polys.parquet": (
+        "sidewalk/06_medial_axis_polys.parquet",
+        "Per-polygon medial-axis width — ALTERNATIVE estimate (Parquet)", "Sidewalk",
+        "Medial-axis typical width per planimetric sidewalk polygon (2 x median maximal-inscribed "
+        "radius), with the 2A/P proxy and area for comparison. Method: github.com/meliharvey/sidewalkwidths-nyc."),
     "block_equity.parquet": ("sidewalk/03_block_equity.parquet", "Block-level equity table (Parquet)", "Sidewalk", ""),
     "block_equity.xlsx": ("sidewalk/03_block_equity.xlsx", "Block-level equity workbook (XLSX)", "Sidewalk", ""),
     "nta_coverage.parquet": ("sidewalk/03_nta_coverage.parquet", "NTA coverage table (Parquet)", "Sidewalk", ""),
     "condition_cdta.xlsx": ("sidewalk/04_condition_cdta.xlsx", "Condition composite by community district (XLSX)", "Sidewalk", ""),
     "accessibility_nta.xlsx": ("sidewalk/05_accessibility_nta.xlsx", "Ramp coverage by NTA (XLSX)", "Sidewalk", ""),
+    # --- Hub-Bound cordon series (Q3.3, tabular) ---
+    "hub_bound_series.csv": (
+        "cordon/hub_bound_series.csv",
+        "NYMTC Hub-Bound CBD entries by mode, long form (CSV)", "Hub-Bound cordon",
+        "24-hour persons entering the Manhattan CBD (south of 60th St) by mode, 14 born-digital "
+        "NYMTC report years (2007-09, 2012-20, 2023-24). 2010-11 & pre-2007 await GPU re-extraction; "
+        "2021-22 not surveyed (COVID). Ferry excludes the Staten Island Ferry (omitted sector); the "
+        "other 6 modes reconcile exactly with NYMTC's all-modes summary."),
+    "hub_bound_series.parquet": (
+        "cordon/hub_bound_series.parquet",
+        "NYMTC Hub-Bound CBD entries by mode, long form (Parquet)", "Hub-Bound cordon",
+        "Same series as the CSV; year x mode x entering. Source: NYMTC Hub Bound Travel Report "
+        "(KB DOC0346-DOC0374)."),
+    "hub_bound_series_wide.csv": (
+        "cordon/hub_bound_series_wide.csv",
+        "NYMTC Hub-Bound CBD entries by mode, wide form (CSV)", "Hub-Bound cordon",
+        "One row per year, one column per mode + total. Companion to the long-form series."),
     # --- Bus (tabular) ---
     "bus_route_boardings.parquet": ("bus/01_route_total_boardings.parquet", "Lifetime boardings per route (Parquet)", "Bus", ""),
     "bus_route_boardings.xlsx": ("bus/01_route_total_boardings.xlsx", "Lifetime boardings per route (XLSX)", "Bus", ""),
