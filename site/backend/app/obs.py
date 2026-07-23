@@ -943,7 +943,8 @@ def _leagues_payload() -> dict[str, Any]:
                        avg(bunching_index)         AS bunching_index,
                        median(median_headway_s)    AS med_hw,
                        median(headway_deviation_s) AS med_dev,
-                       median(abs(headway_deviation_s)) AS med_abs_dev
+                       median(abs(headway_deviation_s)) AS med_abs_dev,
+                       avg(headway_cv)             AS headway_cv
                 FROM read_parquet({_plist(files)})
                 GROUP BY route_id
                 """
@@ -962,6 +963,7 @@ def _leagues_payload() -> dict[str, Any]:
                         "borough": m.get("borough") or "", "sbs": _is_sbs(r[0], m.get("short_name") or ""),
                         "observed_days": obs_days, "n_headways": nh,
                         "bunching_index": round(r[3], 3),
+                        "headway_cv": round(r[7], 3) if r[7] is not None else None,
                         "median_headway_min": round(r[4] / 60.0, 1) if r[4] is not None else None,
                         "median_deviation_s": round(r[5], 1) if r[5] is not None else None,
                         "median_abs_deviation_s": round(r[6], 1) if r[6] is not None else None,
@@ -1017,6 +1019,26 @@ def _leagues_payload() -> dict[str, Any]:
     finally:
         con.close()
 
+    archive = _archive_meta()
+    # Q2.3 league gating: below 14-day depth the ordinal winner/loser naming is
+    # NOT earned, so the frontend renders the DISTRIBUTION instead of the ranked
+    # boards. `distribution` is the FULL qualifying set, sorted by route short_name
+    # (natural, NOT by reliability) so it carries no implicit rank — the frontend
+    # table is client-sortable but shows no rank column and no most/least framing.
+    # The ranked boards (most/least reliable, most improved) still ride the payload
+    # so the page auto-flips to the leaderboard at depth ≥ 14 with no code change.
+    distribution = sorted(
+        (
+            {
+                "route_id": q["route_id"], "short_name": q["short_name"],
+                "borough": q["borough"], "sbs": q["sbs"],
+                "bunching_index": q["bunching_index"], "headway_cv": q["headway_cv"],
+                "observed_days": q["observed_days"], "n_headways": q["n_headways"],
+            }
+            for q in reliable_rows
+        ),
+        key=lambda x: (x["short_name"] or x["route_id"]),
+    )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "criteria": {
@@ -1029,11 +1051,14 @@ def _leagues_payload() -> dict[str, Any]:
             "excluded_thin_routes": excluded,
             "qualifying_routes": len(reliable_rows),
         },
+        # Q2.3: the boards are gated CLIENT-SIDE on archive.archive_depth_days ≥ 14.
+        "rankings_unlocked": archive["archive_depth_days"] >= 14,
         "most_reliable": reliable_rows[:15],
         "least_reliable": list(reversed(reliable_rows))[:15],
         "slowest_corridors": slowest,
         "most_improved_vs_schedule": improved_rows[:15],
-        "archive": _archive_meta(),
+        "distribution": distribution,
+        "archive": archive,
         "elapsed_ms": round((time.time() - t0) * 1000, 1),
     }
 

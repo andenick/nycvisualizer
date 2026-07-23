@@ -1,5 +1,6 @@
 import ArkTriad from "../chrome/ArkTriad";
 import ecosystem from "../chrome/ecosystem.json";
+import { ContextCallouts } from "../components/ContextCallout";
 
 export default function AboutPage() {
   const cdf = (ecosystem.sites as { key: string; cdf?: unknown }[]).find(
@@ -27,6 +28,16 @@ export default function AboutPage() {
           only if they fit the thesis at fine spatial grain.
         </p>
         <ArkTriad cdf={cdf} track={{ site: "nycvisualizer", endpoint: "/__track" }} />
+      </section>
+
+      <section className="nyc-section">
+        <h2>Why the network looks like this</h2>
+        <p style={{ maxWidth: "68ch" }}>
+          The map we render live is the residue of a century of argument about who the city is for —
+          Moses&rsquo;s highways and Jacobs&rsquo;s streets, and the subway that made a dense New York
+          possible in the first place. A few voices from the Jane Knowledge Base, beside the live data:
+        </p>
+        <ContextCallouts anchor="about" />
       </section>
 
       <section className="nyc-section">

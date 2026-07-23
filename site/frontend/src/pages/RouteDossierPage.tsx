@@ -17,6 +17,7 @@ import HeadwayStrip from "../components/HeadwayStrip";
 import ChartErrorBoundary from "../components/ChartErrorBoundary";
 import ArkPlotly from "../components/ArkPlotly";
 import ArchiveBadge from "../components/ArchiveBadge";
+import ReconciliationNote from "../components/ReconciliationNote";
 
 const fmtInt = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString());
 
@@ -112,6 +113,24 @@ function AcePanel({ ace, aceRoute }: { ace: AceInfo; aceRoute: string }) {
           source="Source: MTA Bus Automated Camera Enforcement Violations."
         />
       )}
+      <ReconciliationNote
+        title="Does camera enforcement speed the bus up? Our reading vs the MTA's"
+        ours={{
+          label: "Our measurement",
+          value: "≈ 0 mph",
+          detail: "median change in per-segment through-speed on ACE vs non-ACE corridors (peak, weighted) — a blunt, unmatched citywide difference",
+          source: "nycvisualizer segment-speed analysis, 2026-07",
+        }}
+        authority={{
+          label: "MTA ACE program",
+          value: "+5% average",
+          detail: "reported speed-up across the 39 ACE-enforced routes, with some corridors up to +30%",
+          source: "MTA ACE program materials, 2024–25",
+        }}
+        why="These measure different things. Ours is the median difference in raw through-speed across every segment citywide — an unmatched comparison dominated by ordinary congestion and route mix, so the net difference washes out near zero. The MTA's is a targeted before-and-after on the specific corridors it enforces, where a blocked bus lane is the binding delay; on those corridors, and by that estimand, clearing the lane buys measurable speed."
+        closes="A matched difference-in-differences — ACE corridors before vs after enforcement against comparable control routes — rather than a citywide segment average. The congestion-pricing and ACE-evaluation acquisitions (campaign Q3) are what feed that design."
+        dated="2026-07 (MTA figures current to 2024–25)"
+      />
     </section>
   );
 }

@@ -478,9 +478,22 @@ export interface LeagueReliableRow {
   observed_days: number;
   n_headways: number;
   bunching_index: number;
+  headway_cv?: number | null;
   median_headway_min: number | null;
   median_deviation_s: number | null;
   median_abs_deviation_s: number | null;
+}
+/** Q2.3 gating: one qualifying route in the unranked bunching distribution
+ *  shown until the archive earns the ordinal leaderboards (depth ≥ 14 days). */
+export interface LeagueDistributionRow {
+  route_id: string;
+  short_name: string;
+  borough: string;
+  sbs: boolean;
+  bunching_index: number;
+  headway_cv: number | null;
+  observed_days: number;
+  n_headways: number;
 }
 export interface LeagueSlowRow {
   route_id: string;
@@ -508,10 +521,14 @@ export interface LeaguesResponse {
     excluded_thin_routes: number;
     qualifying_routes: number;
   };
+  /** Q2.3: true only at archive depth ≥ 14 days; the frontend renders the
+   *  distribution view instead of the ranked boards while this is false. */
+  rankings_unlocked: boolean;
   most_reliable: LeagueReliableRow[];
   least_reliable: LeagueReliableRow[];
   slowest_corridors: LeagueSlowRow[];
   most_improved_vs_schedule: LeagueImprovedRow[];
+  distribution: LeagueDistributionRow[];
   archive: ObsArchive;
   elapsed_ms: number;
 }

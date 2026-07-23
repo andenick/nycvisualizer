@@ -11,6 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RentersMap from "../components/RentersMap";
 import RenterScorecard from "../components/RenterScorecard";
+import { ContextCallouts } from "../components/ContextCallout";
+import KnowDontKnow from "../components/KnowDontKnow";
 import { getRentersProfile, type RenterProfile } from "../lib/api";
 
 const A_COLOR = "#2563eb";
@@ -291,6 +293,26 @@ export default function RentersPage() {
           tenant-screening report. Sources and methods are on the{" "}
           <a href="/methodology">Methodology</a> page.
         </p>
+        {/* KB context: the city frames access as an equity question */}
+        <ContextCallouts anchor="renters" />
+      </section>
+
+      <section className="nyc-section">
+        <h2>What we can and can&rsquo;t say yet</h2>
+        <KnowDontKnow
+          scope="a place profile"
+          dated="2026-07-23"
+          can={[
+            { text: "For any address: how far transit gets you, how many jobs are reachable in 45 minutes, and how the block ranks citywide on noise, pedestrian safety, rodents, trees, and sidewalks — all from open NYC data." },
+            { text: "The real buildings on the block — units, age, owner portfolio, and open HPD/DOB records — joined by BBL." },
+            { text: "Flood exposure (FEMA firm + stormwater) at the parcel." },
+          ]}
+          cannot={[
+            { text: "Rent, availability, or listing prices.", closes: "→ no open, address-level rent feed exists; we describe the place, not the market." },
+            { text: "Anything about the people who live there.", closes: "→ by design — no demographic or protected-class variable feeds any score (the fair-housing bright line)." },
+            { text: "All-day or weekend transit access.", closes: "→ the isochrone is a weekday-8am snapshot; off-peak departure windows would round it out." },
+          ]}
+        />
       </section>
     </div>
   );

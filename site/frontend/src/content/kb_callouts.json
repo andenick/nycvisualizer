@@ -1,0 +1,101 @@
+[
+  {
+    "id": "hubbound-1963",
+    "anchor": "observatory-landing",
+    "verbatim": true,
+    "text": "The Hub Bound Travel Report has since 1963 documented the number and mode of all travelers entering Manhattan's Central Business District over the course of a single fall business day.",
+    "lead": "Our counts are the newest chapter of a very old series.",
+    "source": "NYMTC Hub Bound Travel Report",
+    "year": 2010,
+    "doc": "DOC0325"
+  },
+  {
+    "id": "bunching-def",
+    "anchor": "leagues",
+    "verbatim": true,
+    "text": "Bus bunching—when the distance between buses becomes highly uneven—reduces reliability, increases wait times, and contributes to crowding conditions, deteriorating the quality and speed of service.",
+    "lead": "What the bunching index measures:",
+    "source": "ITDP, The BRT Standard",
+    "year": 2016,
+    "doc": "DOC0093"
+  },
+  {
+    "id": "dot-since-2012",
+    "anchor": "leagues",
+    "verbatim": true,
+    "text": "NYC DOT has been using MTA Bus Time data to measure the speeds of individual buses along roadways since 2012.",
+    "lead": "Average citywide bus speeds in 2017 were 7.44 mph.",
+    "source": "NYC DOT Citywide Mobility Report",
+    "year": 2018,
+    "doc": "DOC0326"
+  },
+  {
+    "id": "vz-toll",
+    "anchor": "sidewalks-safety",
+    "verbatim": true,
+    "text": "Approximately 4,000 New Yorkers are seriously injured and more than 250 are killed each year in traffic crashes. Being struck by a vehicle is the leading cause of injury-related death for children under 14, and the second leading cause for seniors.",
+    "source": "NYC Vision Zero Action Plan",
+    "year": 2014,
+    "doc": "DOC0311"
+  },
+  {
+    "id": "vz-1910",
+    "anchor": "sidewalks-sai",
+    "verbatim": true,
+    "text": "Pedestrian fatalities on City streets are at their lowest levels since 1910.",
+    "lead": "The Vision Zero backdrop to pedestrian access:",
+    "source": "NYC Vision Zero Year One Report",
+    "year": 2015,
+    "doc": "DOC0312"
+  },
+  {
+    "id": "equity-capital",
+    "anchor": "renters",
+    "verbatim": true,
+    "text": "The City of New York is committed to pursuing equity through its capital decision-making in neighborhoods across all five boroughs.",
+    "lead": "The city frames access as an equity question:",
+    "source": "NYC Preliminary Ten-Year Capital Strategy",
+    "year": 2019,
+    "doc": "DOC0275"
+  },
+  {
+    "id": "ferry-access",
+    "anchor": "access",
+    "verbatim": true,
+    "text": "Since its launch in 2017, NYC Ferry has substantially improved transportation access and quality of life for residents living in 20 waterfront communities across our city.",
+    "lead": "On the waterfront-access outlier:",
+    "source": "NYC Ferry Expansion Feasibility Study (NYCEDC)",
+    "year": 2018,
+    "doc": "DOC0319"
+  },
+  {
+    "id": "jacobs-regenerate",
+    "anchor": "about",
+    "verbatim": true,
+    "text": "Never underestimate the power of a city to regenerate.",
+    "lead": "Jane Jacobs, as epigraph to The Battle for Gotham:",
+    "source": "R. B. Gratz, The Battle for Gotham (quoting Jane Jacobs)",
+    "year": 2010,
+    "doc": "DOC0040"
+  },
+  {
+    "id": "moses-rebuilding",
+    "anchor": "about",
+    "verbatim": true,
+    "text": "We are rebuilding New York, not dispersing and abandoning it.",
+    "lead": "Robert Moses, on his own program:",
+    "source": "Robert Moses and the Modern City (Ballon & Jackson, eds.)",
+    "year": 2007,
+    "doc": "DOC0049"
+  },
+  {
+    "id": "subway-dependence",
+    "anchor": "about",
+    "verbatim": true,
+    "text": "Because of its arduous physical geography and huge population, [New York City] had always been unusually dependent on mass transit — and rapid transit lines, not surface railways, carried the majority of riders.",
+    "lead": "Why the network looks like this:",
+    "source": "Clifton Hood, 722 Miles: The Building of the Subways",
+    "year": 1993,
+    "doc": "DOC0038"
+  }
+]
