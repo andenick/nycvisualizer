@@ -18,6 +18,7 @@ import ChartErrorBoundary from "../components/ChartErrorBoundary";
 import ArkPlotly from "../components/ArkPlotly";
 import ArchiveBadge from "../components/ArchiveBadge";
 import ReconciliationNote from "../components/ReconciliationNote";
+import { ContextCallouts } from "../components/ContextCallout";
 
 const fmtInt = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString());
 
@@ -247,6 +248,9 @@ export default function RouteDossierPage() {
                 </table>
               </div>
               <p className="nyc-note" style={{ fontSize: "0.78rem" }}>Source: bus segment-speed analysis (peak hours), weighted by trip count.</p>
+              {/* Q3.3: congestion-pricing context — our segment speeds are the
+                  post-CP era (CP began 5 Jan 2025). Quote-verified KB callouts. */}
+              <ContextCallouts anchor="dossier-speed" />
             </section>
           )}
 

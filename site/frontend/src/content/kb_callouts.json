@@ -20,6 +20,26 @@
     "doc": "DOC0093"
   },
   {
+    "id": "cp-nber-speeds",
+    "anchor": "dossier-speed",
+    "verbatim": true,
+    "text": "the policy increased speeds on CBD roads by 11%, with little-to-no effect on air quality, transactions at shops and restaurants, or overall foot traffic in the CBD.",
+    "lead": "Why speed trends matter now — NYC's congestion pricing began 5 January 2025, so our post-2025 segment speeds are the post-congestion-pricing era:",
+    "source": "Cook, Kreidieh, Vasserman, Allcott et al., \"The Short-Run Effects of Congestion Pricing in New York City\" (NBER w33584)",
+    "year": 2025,
+    "doc": "DOC0343"
+  },
+  {
+    "id": "cp-arxiv-spatial",
+    "anchor": "dossier-speed",
+    "verbatim": true,
+    "text": "The effects are spatially heterogeneous: while reductions in overall travel demand are concentrated within the Congestion Relief Zone, transit gains extend beyond Manhattan's core.",
+    "lead": "The effect is not uniform across the city:",
+    "source": "Li, Zhuang et al. (MIT), \"Public transit gains and spatially uneven travel demand changes after NYC congestion pricing\" (arXiv:2606.17530)",
+    "year": 2026,
+    "doc": "DOC0407"
+  },
+  {
     "id": "dot-since-2012",
     "anchor": "leagues",
     "verbatim": true,

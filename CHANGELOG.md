@@ -2,6 +2,51 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Q3.3 knowledge exploitation (history meets live)
+
+Ingested-KB knowledge surfaced on the live pages. Verified live (public site +
+API; observatory.nycvisualizer.com 200, `/api/downloads` = 47 items with the new
+keys resolving).
+
+### Hub-Bound "history meets live" chart (Observatory landing)
+- New `analysis/cordon/build_hub_bound_series.py` assembles the **NYMTC Hub Bound**
+  cordon series — 24-hour persons entering the Manhattan CBD (south of 60th St) by
+  mode — from the 85 verified born-digital cordon CSVs (KB DOC0346–DOC0374). Honest
+  coverage: **14 report years** carry the clean by-mode Quick-Reference table
+  (2007–09, 2012–20, 2023–24); 2010–11 & pre-2007 await GPU re-extraction, 2021–22
+  were not surveyed (COVID). Six major modes (subway/auto/bus/rail/bike/tram)
+  reconcile **exactly** with NYMTC's own all-modes summary (e.g. 2014 subway
+  2,252,428 = NYMTC's 2,252K); ferry excludes the Staten Island Ferry (omitted
+  sector) — documented, not silently patched.
+- Observatory landing gains a stacked-bar hero chart (contract-compliant: Download
+  CSV top-right, legend below). Gap years render as gaps (no fabricated
+  continuity). **No live "today" tie-in**: our feeds count subway/bus systemwide,
+  not cordon crossings — not comparable to a Hub-Bound entry count, stated plainly.
+- Mode-mapping audit trail: `cordon/MODE_MAPPING.json`.
+
+### Medial-axis sidewalk width — alternative estimate (NOT promoted)
+- New `analysis/sidewalk/06_medial_axis_width.py` implements Meli Harvey's true
+  **Voronoi medial-axis** width method on our planimetric polygons (50,773 polys).
+- Validation is honest: **r = 0.727 vs Harvey's published widths** (n = 17,895) —
+  **below** the r > 0.75 promotion bar — so the 2A/P proxy stays the **primary**
+  width layer, the map `w` channel is unchanged, and width confidence stays
+  **🔵 exploratory**. Shipped as an **alternative** download with the full
+  comparison (r = 0.94 vs the 2A/P proxy; our median 8.6 ft vs Harvey's 8.1 ft,
+  actually nearer Harvey than the proxy's 9.7 ft). Method + decision written into
+  the sidewalk METHODS.
+
+### Congestion-pricing framing (Jan 2025)
+- Bus methodology tab + route-dossier speed sections carry a dated congestion-
+  pricing context block: **NBER w33584** (CBD road speeds **+11%**; KB DOC0343) and
+  **arXiv:2606.17530** (transit gains + spatially-uneven demand; KB DOC0407), both
+  quote-verified. Notes that our 2025+ segment-speed panel is the post-CP era.
+  Both papers added to the About sources & credit.
+
+### Downloads
+- `/api/downloads` gains `hub_bound_series.{csv,parquet}`, `hub_bound_series_wide.csv`,
+  and the medial-axis `medial_axis_width_{segments,polys}.parquet` (alternative
+  estimate), each with an honest note.
+
 ## 2026-07-23 — Q2.3–2.7 editorial calibration (honesty as a feature)
 
 Certainty, commentary, and reconciliation surfaced site-wide. Verified live
