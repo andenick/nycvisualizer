@@ -22,6 +22,10 @@ import {
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
 import { VehicleFlowLayer } from "./VehicleFlowLayer";
+import MapLegend, { Swatch, Bullet } from "./MapLegend";
+
+// Representative trunk bullets for the "official line colors" legend row.
+const TRUNK_LINES = ["1", "4", "7", "A", "B", "G", "J", "L", "N", "S"];
 
 // Stable fallback palette for bus route "groups" (borough prefix) when a route has
 // no GTFS color. Colorblind-aware, brand-neutral.
@@ -207,8 +211,11 @@ export default function BusMap() {
       unsub();
       clearInterval(poll);
     };
+    // NOTE: intentionally NOT keyed on showBuses — visibility is handled by
+    // setVisibility(); re-subscribing the SSE on every toggle was the ERR_ABORTED
+    // console churn. Only routeColorByShort (loads once) legitimately re-keys it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeColorByShort, showBuses]);
+  }, [routeColorByShort]);
 
   // ---- live SUBWAY feed: SSE + poll safety net ----
   useEffect(() => {
@@ -228,8 +235,10 @@ export default function BusMap() {
       unsub();
       clearInterval(poll);
     };
+    // NOTE: not keyed on showSubway (visibility handled by setVisibility); keeping
+    // the subway SSE alive across toggles avoids needless reconnect/ERR_ABORTED.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSubway]);
+  }, []);
 
   // ---- flow-layer visibility + honest frame-time readout ----
   useEffect(() => {
@@ -257,11 +266,11 @@ export default function BusMap() {
         .then((sts) => {
           for (const s of sts) {
             const mk = L.circleMarker([s.lat, s.lon], {
-              radius: 3.5,
+              radius: 2.5,
               weight: 1.5,
               color: "#1f2937",
               fillColor: "#ffffff",
-              fillOpacity: 1,
+              fillOpacity: 0.85,
             });
             mk.bindPopup(
               `<strong>${s.name}</strong><br/><span style="opacity:.75">${s.routes.join(
@@ -478,49 +487,64 @@ export default function BusMap() {
         {err ? err : stampParts.length ? `as of ${stampParts.join(" · ")}` : "—"}
       </div>
 
-      <div className="nyc-legend">
-        {showBuses && (
+      <MapLegend
+        defaultOpen
+        items={[
+          <span>
+            <strong>Vehicles drawn true-to-scale</strong> — a bus&nbsp;≈&nbsp;12&nbsp;m, a
+            train&nbsp;≈&nbsp;160&nbsp;m; zoom in.
+          </span>,
+          showBuses && (
+            <span>
+              Buses by borough: <Swatch color="#2563eb" />Man <Swatch color="#16a34a" />Bklyn{" "}
+              <Swatch color="#d97706" />Qns <Swatch color="#dc2626" />Bx <Swatch color="#7c3aed" />SI{" "}
+              <Swatch color="#0891b2" />Exp
+            </span>
+          ),
+          showSubway && (
+            <span>
+              Subway — official line colors:{" "}
+              {TRUNK_LINES.map((k) => (
+                <Bullet key={k} label={subwayLabel(k)} bg={subwayColor(k)} fg={subwayTextColor(k)} />
+              ))}
+            </span>
+          ),
+          <span>
+            Positions update ~30&nbsp;s · movement between updates is <em>estimated</em>.
+          </span>,
+          <span>
+            State: <Swatch color="#3b82f6" />solid observed ·{" "}
+            <Swatch color="#3b82f6" faded />faded estimated
+            {showSubway && (
+              <>
+                {" · "}
+                <Swatch color="#6b7280" shape="ring" />ring docked at stop
+              </>
+            )}
+          </span>,
+        ]}
+        details={
+          showBuses && selected
+            ? [
+                <span>
+                  {selected} segment speed: <Swatch color="#c1272d" shape="line" />slow{" "}
+                  <Swatch color="#cfcfcf" shape="line" />on-pace <Swatch color="#1a6fb5" shape="line" />
+                  fast
+                </span>,
+              ]
+            : undefined
+        }
+        stamps={
           <>
-            <div>
-              <span className="swatch" style={{ background: "#2563eb" }} />
-              Manhattan
-              <span className="swatch" style={{ background: "#16a34a", marginLeft: 8 }} />
-              Brooklyn
-              <span className="swatch" style={{ background: "#d97706", marginLeft: 8 }} />
-              Queens
-            </div>
-            <div>
-              <span className="swatch" style={{ background: "#dc2626" }} />
-              Bronx
-              <span className="swatch" style={{ background: "#7c3aed", marginLeft: 8 }} />
-              Staten Is.
-              <span className="swatch" style={{ background: "#0891b2", marginLeft: 8 }} />
-              Express
-            </div>
+            {basemap && (
+              <div>
+                {basemap.vintageNote} · {basemap.attribution}
+              </div>
+            )}
+            <div>Live positions served via this site's backend.</div>
           </>
-        )}
-        {showSubway && (
-          <div style={{ marginTop: showBuses ? 4 : 0 }}>
-            Trains: official line colors · faded&nbsp;=&nbsp;estimated position
-          </div>
-        )}
-        <div style={{ marginTop: 4, opacity: 0.75 }}>
-          Vehicle shapes drawn at true scale — positions between reports are estimated (glided).
-        </div>
-        {showBuses && selected && (
-          <div style={{ marginTop: 4 }}>
-            {selected} speed:
-            <span className="swatch" style={{ background: "#c1272d", marginLeft: 6 }} /> slow
-            <span className="swatch" style={{ background: "#cfcfcf", marginLeft: 6 }} /> on-pace
-            <span className="swatch" style={{ background: "#1a6fb5", marginLeft: 6 }} /> fast
-          </div>
-        )}
-        {basemap && (
-          <div className="attr">
-            {basemap.vintageNote} · {basemap.attribution}
-          </div>
-        )}
-      </div>
+        }
+      />
     </div>
   );
 }

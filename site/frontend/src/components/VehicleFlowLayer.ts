@@ -71,6 +71,8 @@ interface Unit {
   lenM: number;
   widM: number;
   est: boolean; // subway interpolated
+  atStation?: boolean; // subway train docked at a station (rendered as a ring)
+  segBasis?: string; // "straight" (prev→next line) vs shape-derived polyline
   label: string;
   // subway worm geometry (travel-ordered inter-station segment):
   seg?: [number, number][];
@@ -225,7 +227,18 @@ export class VehicleFlowLayer extends L.Layer {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2D canvas unsupported");
     this._ctx = ctx;
-    map.getPanes().overlayPane.appendChild(canvas);
+    // Dedicated pane ABOVE the station SVG so moving units (worms) and at-station
+    // rings paint OVER the station discs instead of hiding beneath them (the 58%
+    // at-station occlusion fix). Stations/route-shapes ride the default overlayPane
+    // (z 400); this pane sits just above at 450, below markers/popups (600/700).
+    const paneName = "nycvFlowPane";
+    let pane = map.getPane(paneName);
+    if (!pane) {
+      pane = map.createPane(paneName);
+      pane.style.zIndex = "450";
+      pane.style.pointerEvents = "none";
+    }
+    pane.appendChild(canvas);
     this._reset();
     this._loop = this._loop.bind(this);
     this._onVis = this._onVis.bind(this);
@@ -360,6 +373,10 @@ export class VehicleFlowLayer extends L.Layer {
       seen.add(id);
       const color = subwayColor(t.route_id);
       const est = t.positional_basis === "interpolated";
+      const atStation = t.status === "at_station";
+      // Consume the backend's new seg_basis when present ("straight" = a prev→next
+      // glide line, "shape" = real track polyline). Non-breaking if absent.
+      const segBasis = (t as { seg_basis?: string }).seg_basis;
       const hasSeg = !!(t.seg && t.seg.length >= 2);
       const segKey = hasSeg ? t.seg![0].join(",") + "~" + t.seg![t.seg!.length - 1].join(",") : "";
       let u = this._units.get(id);
@@ -378,6 +395,8 @@ export class VehicleFlowLayer extends L.Layer {
           lenM: TRAIN_LEN_M,
           widM: TRAIN_W_M,
           est,
+          atStation,
+          segBasis,
           label: subwayLabel(t.route_id),
           appearT: now,
           missing: 0,
@@ -387,6 +406,8 @@ export class VehicleFlowLayer extends L.Layer {
       } else {
         u.color = color;
         u.est = est;
+        u.atStation = atStation;
+        u.segBasis = segBasis;
         u.missing = 0;
         u.goneT = undefined;
         u.data = t;
@@ -767,7 +788,14 @@ export class VehicleFlowLayer extends L.Layer {
     this._pushHit(cx, cy, Math.max(8, lenPx / 2), 0, u.data);
   }
 
-  // subway train stopped at a station (observed point, no segment): a bullet dot
+  // Subway train with no inter-station segment. Two honest states:
+  //   * DOCKED (status at_station): a line-colored RING around the station disc.
+  //     The ring rides this canvas (pane z-450) ABOVE the station SVG, so a docked
+  //     train is legible on top of the white disc instead of hidden beneath it —
+  //     the at-station occlusion fix. Radius is a small constant (px), a touch
+  //     larger than the 2.5 px station disc, so it reads as "wrapped around" it.
+  //   * OTHERWISE (approaching / point estimate, no seg): the small bullet dot,
+  //     already dimmed via the `est` alpha.
   private _drawStationTrain(u: Unit, alpha: number) {
     this._project(u.curLat, u.curLon);
     const x = this._plx - this._fminx,
@@ -776,9 +804,28 @@ export class VehicleFlowLayer extends L.Layer {
       cy = this._ply + this._fpaney;
     if (cx < -20 || cy < -20 || cx > this._fwpx + 20 || cy > this._fhpx + 20) return;
     const ctx = this._ctx;
+    ctx.globalAlpha = alpha;
+
+    if (u.atStation) {
+      // ring: radius slightly larger than the station disc (r≈2.5); constant px
+      const rr = 4.5;
+      ctx.beginPath();
+      ctx.arc(x, y, rr, 0, Math.PI * 2);
+      // faint contrast underlay so the ring survives on light OR dark basemaps
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = this._foutline;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, rr, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = u.color;
+      ctx.stroke();
+      this._pushHit(cx, cy, Math.max(9, rr + 3), 1, u.data);
+      return;
+    }
+
     const wPx = Math.max(MIN_W_PX + 0.6, TRAIN_W_M / this._fmpp);
     const r = Math.max(4, wPx * 1.15);
-    ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = u.color;
@@ -842,7 +889,9 @@ export class VehicleFlowLayer extends L.Layer {
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.strokeStyle = this._foutline; // contrast underlay
-    ctx.lineWidth = wPx + 1.4;
+    // straight-basis segments are a simple prev→next glide line (no real track
+    // curvature) — draw a marginally thinner underlay so they read a touch simpler.
+    ctx.lineWidth = wPx + (u.segBasis === "straight" ? 0.8 : 1.4);
     ctx.stroke();
     ctx.strokeStyle = u.color;
     ctx.lineWidth = wPx;

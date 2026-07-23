@@ -176,6 +176,93 @@
 .nyc-legend .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
 .nyc-legend .attr { margin-top: 0.4rem; opacity: 0.65; font-size: 0.68rem; }
 
+/* ---------- MapLegend: the shared collapsible corner "Legend" chip ---------- */
+.maplegend {
+  position: absolute; z-index: 1000; bottom: 10px; right: 10px;
+  display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 6px;
+  max-width: min(84vw, 322px);
+}
+.maplegend-chip {
+  display: inline-flex; align-items: center; gap: 0.32rem; cursor: pointer;
+  font: 600 0.76rem/1 system-ui, sans-serif;
+  padding: 0.34rem 0.62rem; border-radius: 999px;
+  background: var(--ark-surface, #fff);
+  border: 1px solid var(--ark-border, #d4d8dd);
+  color: var(--ark-fg, #1a1f26);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.maplegend-chip:hover { border-color: var(--ark-accent, #2563eb); }
+.maplegend-chip-ic { opacity: 0.7; font-size: 0.9em; }
+.maplegend-caret { opacity: 0.55; font-size: 0.7em; }
+.maplegend-body {
+  background: var(--ark-surface, #fff);
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 10px; padding: 0.5rem 0.62rem;
+  font-size: 0.75rem; line-height: 1.5; color: var(--ark-fg, #1a1f26);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  max-height: min(58dvh, 420px); overflow-y: auto;
+}
+.maplegend-row + .maplegend-row { margin-top: 3px; }
+.maplegend-det { margin-top: 0.35rem; }
+.maplegend-detbtn {
+  font: inherit; font-size: 0.72rem; cursor: pointer;
+  background: none; border: none; padding: 0.15rem 0; color: var(--ark-accent, #2563eb);
+}
+.maplegend-detbtn:hover { text-decoration: underline; }
+.maplegend-stamps {
+  margin-top: 0.45rem; padding-top: 0.4rem;
+  border-top: 1px solid var(--ark-line, #e2e6ea);
+  opacity: 0.72; font-size: 0.68rem; line-height: 1.45;
+}
+/* swatch shapes — one visual vocabulary shared by every surface */
+.mlg-sw { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: middle; }
+.mlg-sw--dot { border-radius: 50%; }
+.mlg-sw--sq { border-radius: 2px; }
+.mlg-sw--line { height: 3px; width: 16px; border-radius: 2px; }
+.mlg-sw--ring { background: transparent; border-style: solid; border-width: 1.6px; border-radius: 50%; box-sizing: border-box; }
+.mlg-faded { opacity: 0.55; }
+.mlg-bullet {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 50%;
+  font: 700 8px/1 system-ui, sans-serif; margin-right: 2px; vertical-align: middle;
+}
+
+/* immersive variant: same translucent chrome as the other imm overlays, parked
+   above the corner (i) button (bottom-right), expanding upward when opened. */
+.maplegend--imm {
+  z-index: 1250;
+  bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 3rem);
+  right: max(0.7rem, env(safe-area-inset-right));
+  max-width: min(86vw, 320px);
+}
+.maplegend--imm .maplegend-chip,
+.maplegend--imm .maplegend-body {
+  background: color-mix(in srgb, var(--ark-bg-soft, #161b22) 82%, transparent);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  border-color: color-mix(in srgb, var(--ark-line, #2a313b) 85%, transparent);
+  color: var(--ark-fg, #e7edf3);
+  box-shadow: var(--ark-shadow, 0 6px 22px -12px rgba(0, 0, 0, 0.4));
+}
+.maplegend--imm .maplegend-stamps { border-top-color: color-mix(in srgb, var(--ark-line, #2a313b) 85%, transparent); }
+@media (max-width: 720px) {
+  .maplegend--imm { bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 2.9rem); }
+}
+
+/* inline variant (ops control room): sits in the flow, not floating over a map */
+.maplegend--inline {
+  position: static; align-items: stretch; margin-top: 0.45rem; max-width: 100%;
+}
+.maplegend--inline .maplegend-body { max-height: none; }
+.maplegend--ops .maplegend-chip,
+.maplegend--ops .maplegend-body {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--ops-dim, #cbd5e1);
+  box-shadow: none;
+}
+.maplegend--ops .maplegend-stamps { border-top-color: rgba(255, 255, 255, 0.14); }
+
 /* vehicle marker */
 .nyc-veh {
   border-radius: 50%;

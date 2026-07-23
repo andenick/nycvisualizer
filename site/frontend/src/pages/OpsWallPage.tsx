@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { getWall, streamWall, type WallResponse, type WallTrailBin } from "../lib/api";
 import OpsSparkline from "../components/OpsSparkline";
 import OpsHotspotMap from "../components/OpsHotspotMap";
+import MapLegend, { Swatch } from "../components/MapLegend";
+import ConfidenceBadge from "../components/ConfidenceBadge";
+import { archiveWindow } from "../lib/confidence";
 
 function fmtClock(epoch: number | null | undefined): string {
   if (!epoch) return "—";
@@ -159,7 +162,10 @@ export default function OpsWallPage() {
 
         {/* routes bunching */}
         <section className="ops-tile">
-          <div className="ops-tile-label">Routes with active bunching</div>
+          <div className="ops-tile-label">
+            Routes with active bunching{" "}
+            <ConfidenceBadge claimKey="ops-derived" window={archiveWindow(data.archive.archive_depth_days)} compact />
+          </div>
           <div className="ops-big">
             {n.bunching.pct_routes_bunching}%
             <span className="ops-big-sub">
@@ -175,7 +181,10 @@ export default function OpsWallPage() {
 
         {/* mean headway deviation (parquet rollup) */}
         <section className="ops-tile">
-          <div className="ops-tile-label">Mean headway deviation</div>
+          <div className="ops-tile-label">
+            Mean headway deviation{" "}
+            <ConfidenceBadge claimKey="ops-derived" window={archiveWindow(data.archive.archive_depth_days)} compact />
+          </div>
           <div className="ops-big">
             {fmtDev(devNow)}
             <span className="ops-big-sub">|observed − scheduled|, trailing 60 min</span>
@@ -219,14 +228,22 @@ export default function OpsWallPage() {
             <Stamp label="live" epoch={n.buses.as_of} stale={n.buses.stale} />
           </div>
           <OpsHotspotMap hotspots={n.bunching.hotspots} />
-          <div className="ops-map-legend">
-            <span className="lg high">high</span>
-            <span className="lg medium">medium</span>
-            <span className="lg low">low</span>
-            <span className="lg-note">
-              pair midpoints · showing {n.bunching.hotspots.length} of {n.bunching.pairs}
-            </span>
-          </div>
+          <MapLegend
+            defaultOpen
+            className="maplegend--inline maplegend--ops"
+            items={[
+              <span>
+                Bunching severity: <Swatch color="#ef4444" />high <Swatch color="#f59e0b" />medium{" "}
+                <Swatch color="#eab308" />low
+              </span>,
+              <span>Each mark is the midpoint between two bunched buses; line width also encodes severity.</span>,
+            ]}
+            stamps={
+              <div>
+                pair midpoints · showing {n.bunching.hotspots.length} of {n.bunching.pairs}
+              </div>
+            }
+          />
         </section>
 
         <section className="ops-panel ops-ticker-panel">
