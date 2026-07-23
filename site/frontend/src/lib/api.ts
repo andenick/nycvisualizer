@@ -60,6 +60,12 @@ export interface SubwayTrain {
   stop_name: string;
   prev_stop_name: string | null;
   timestamp: number | null;
+  /** Inter-station track polyline [[lat,lon],…] in travel order (prev→target
+   *  station). Present only on interpolated trains; the client lays the train
+   *  worm ALONG this and animates the fraction. Absent for at-station trains. */
+  seg?: [number, number][];
+  /** Fraction (0→1) of `seg` the train has travelled (prev=0, target=1). */
+  frac?: number;
 }
 export interface SubwayResponse {
   as_of: number | null;
