@@ -9,6 +9,9 @@ const SEV_COLOR: Record<string, string> = {
   medium: "#f59e0b",
   low: "#eab308",
 };
+// Q1.5: connector-line width by severity (redundant channel — the amber/yellow
+// medium↔low hues are close, so weight also carries severity, not color alone).
+const SEV_WEIGHT: Record<string, number> = { high: 5, medium: 3.5, low: 2.5 };
 
 // Small ops map: live bunching-pair midpoints as pulsing markers colored by severity.
 // Reuses the shared pmtiles basemap plumbing (no CDN). Degrades to an empty basemap
@@ -48,6 +51,24 @@ export default function OpsHotspotMap({ hotspots }: { hotspots: WallHotspot[] })
     layer.clearLayers();
     for (const h of hotspots) {
       const color = SEV_COLOR[h.severity] ?? "#eab308";
+      // Q1.5: the bunching CONNECTOR — the gap between the two buses becomes the
+      // mark. Drawn under the pulsing midpoint dot; degrades gracefully when an
+      // older cached payload lacks the per-bus coords.
+      if (h.lat_a != null && h.lon_a != null && h.lat_b != null && h.lon_b != null) {
+        L.polyline(
+          [
+            [h.lat_a, h.lon_a],
+            [h.lat_b, h.lon_b],
+          ],
+          {
+            color,
+            weight: SEV_WEIGHT[h.severity] ?? 2.5,
+            opacity: 0.85,
+            lineCap: "round",
+            interactive: false,
+          },
+        ).addTo(layer);
+      }
       const icon = L.divIcon({
         className: "ops-hot-wrap",
         html: `<span class="ops-hot ${h.severity}" style="--hc:${color}"></span>`,

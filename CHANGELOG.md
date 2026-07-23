@@ -2,6 +2,45 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Q1 map visualization overhaul (dots → centerlines)
+
+Streets become the canvas: sidewalk coverage and bus reliability now read ON the
+road lines, not in dots. Verified live (containers serving new dist + retiled
+tiles + new endpoints).
+
+### Sidewalk Explorer
+- Coverage centerlines are the HERO layer, ON by default, from a vector-tile
+  overlay (`/layers/coverage.pmtiles`, Z10–16) via protomaps-leaflet paint rules
+  — replacing the multi-MB per-borough GeoJSON fetch (files kept for downloads).
+- Deficiency-forward: no-sidewalk = loud red + dashed (CVD redundancy), one-side
+  = amber, both-sides = quiet thin green; zoom-scaled widths.
+- Width-mode toggle: thickness ∝ √(median sidewalk width) — new `w` attribute
+  joined from `02_width_segments` into the tiles (97% of segments measured).
+- One-hot color law: SAI is mutually exclusive with hot coverage (coverage →
+  neutral hairline when SAI active); SAI ramp swapped viridis → green-free
+  magma-style; theme-aware paint; per-layer vintage stamps from the tile sidecar.
+
+### Bus Observatory / dossier
+- Reliability ribbon: stop-pair segments colored by within-route speed percentile
+  (diverging red→gray→blue); live buses as oriented arrow markers. New additive
+  `GET /api/obs/ribbon?route=` (parquet-only; `02_segment_geometry.parquet`).
+  Width is color-only — per-segment ridership is not derivable, so none is faked.
+- The /bus selected-route line is upgraded to the same ribbon coloring.
+
+### Renter's Map
+- Nested 15/30/45/60-min isochrone bands (darkest = nearest); compare mode =
+  outlines only (A accent, B violet).
+
+### Ops Wall
+- Bunching connector line between the two paired buses (severity color + width);
+  pulsing midpoint dot stays. `/api/wall` hotspots now carry both bus positions.
+
+### Palette discipline
+- Every ramp run through the dataviz `validate_palette.js` (light + dark); the
+  one categorical risk (coverage amber↔green) is covered by the redundant width +
+  dash channels.
+
+
 ## 2026-07-23 — Q0 hotfix wave
 
 Refinement-campaign hotfix wave. Small, root-caused fixes; no map-rendering

@@ -560,12 +560,50 @@ export const getDossier = (route: string) => {
 
 export const getLeagues = () => getJSON<LeaguesResponse>("/api/obs/leagues");
 
+// --- Reliability ribbon (S5/Q1.3) ---
+export interface RibbonSegment {
+  from_stop: string;
+  to_stop: string;
+  wt_speed_mph: number;
+  /** within-route speed percentile: 0 = slowest segment, 1 = fastest. */
+  speed_pctile: number;
+  n_trips: number | null;
+  seg_miles: number | null;
+  borough: string | null;
+  coords: [number, number][]; // [[lat,lon],[lat,lon]]
+}
+export interface RibbonResponse {
+  route: string;
+  meta: DossierMeta;
+  n_segments: number;
+  n_placed: number;
+  route_median_speed_mph: number | null;
+  speed_domain: { basis: string; min_mph: number | null; max_mph: number | null };
+  width_basis: "constant_color_only" | string;
+  width_note: string;
+  color_note: string;
+  segments: RibbonSegment[];
+  archive: ObsArchive;
+  elapsed_ms: number;
+}
+export const getRibbon = (route: string) => {
+  const p = new URLSearchParams();
+  p.set("route", route);
+  return getJSON<RibbonResponse>("/api/obs/ribbon?" + p.toString());
+};
+
 // ===========================================================================
 // Live Ops Wall (S6) — /api/wall
 // ===========================================================================
 export interface WallHotspot {
   lat: number;
   lon: number;
+  /** Q1.5: both bus positions for the bunching connector line (may be absent on
+   *  older cached payloads — fall back to the midpoint dot only). */
+  lat_a?: number;
+  lon_a?: number;
+  lat_b?: number;
+  lon_b?: number;
   route: string;
   direction: number;
   severity: "high" | "medium" | "low";
