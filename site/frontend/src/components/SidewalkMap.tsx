@@ -26,6 +26,7 @@ import { leafletLayer, LineSymbolizer } from "protomaps-leaflet";
 // minimal shape of a protomaps-leaflet vector-tile feature (only props are read)
 interface CovFeat { props?: Record<string, unknown> }
 import { addBasemap, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import MapLegend, { Swatch } from "./MapLegend";
 
 // ---- palettes (all run through the dataviz validate_palette.js; see wrap-up) ----
 // Coverage: 3 ordered classes drawn as lines. Deficiency-forward. The amber↔green
@@ -471,56 +472,67 @@ export default function SidewalkMap() {
         {zoomNote && <div className="muted">{zoomNote}</div>}
       </div>
 
-      <div className="nyc-legend" style={{ maxWidth: "min(76vw, 330px)" }}>
-        {covHot && (
-          <div>
-            <span className="swatch" style={{ background: COV[theme].n, height: 5, width: 16, borderRadius: 1 }} />
-            no sidewalk
-            <span className="swatch" style={{ background: COV[theme].o, height: 4, width: 16, marginLeft: 8, borderRadius: 1 }} />
-            one side
-            <span className="swatch" style={{ background: COV[theme].b, height: 2, width: 16, marginLeft: 8, borderRadius: 1 }} />
-            both sides
-            {widthMode && <div style={{ opacity: 0.7, fontSize: "0.72rem", marginTop: 2 }}>line thickness ∝ √(sidewalk width)</div>}
-          </div>
-        )}
-        {on.sai && (
-          <div style={{ marginTop: covHot ? 4 : 0 }}>
-            SAI:
-            <span className="swatch" style={{ background: saiColor(10), marginLeft: 6 }} /> low
-            <span className="swatch" style={{ background: saiColor(50), marginLeft: 6 }} /> mid
-            <span className="swatch" style={{ background: saiColor(90), marginLeft: 6 }} /> high
-            {on.coverage && <div style={{ opacity: 0.7, fontSize: "0.72rem", marginTop: 2 }}>coverage lines dimmed to neutral while SAI is active</div>}
-          </div>
-        )}
-        {on.nta && (
-          <div style={{ marginTop: 4 }}>
-            Equity (soft bg):
-            <span className="swatch" style={{ background: ntaColor(2, ntaMetric), marginLeft: 6 }} /> low
-            <span className="swatch" style={{ background: ntaColor(ntaMetric === "ratio" ? 8 : 80, ntaMetric), marginLeft: 6 }} /> mid
-            <span className="swatch" style={{ background: ntaColor(ntaMetric === "ratio" ? 13 : 140, ntaMetric), marginLeft: 6 }} /> high
-          </div>
-        )}
-        {on.ada && (
-          <div style={{ marginTop: 4 }}>
-            <span className="swatch" style={{ background: "#fecaca", border: "1.4px solid #dc2626" }} />
-            intersection lacking any ramp (50 ft)
-          </div>
-        )}
-        {/* Per-layer data-vintage stamps (ARKMAP §3) */}
-        <div className="attr">
-          {covHot || (on.coverage && on.sai) ? (
-            <div>
-              Coverage: DCP planimetric 2022 · CSCL inkn-q76z (src {covMeta?.source_vintage ?? "2026-07"})
-              {covMeta?.generated ? ` · tiled ${covMeta.generated.slice(0, 10)}` : ""}
-            </div>
-          ) : null}
-          {on.sai && <div>SAI: analysis {saiMeta?.source_vintage ?? "2026-07-17"} · stops 2ucp-7wg5 · shelters t4f2-8md7</div>}
-          {on.nta && <div>Equity: NTA 2020 · pop PL 94-171 (2020) · income ACS 2019-23</div>}
-          {on.ada && <div>Ramps: DOT ufzp-rrqu (2026-07) · gaps = no ramp within 50 ft</div>}
-          {basemap && <div>{basemap.vintageNote} · {basemap.attribution}</div>}
-          <div>Coverage centerlines: vector tiles ({covMeta?.tippecanoe ?? "tippecanoe"}). Full resolution in the downloads below.</div>
-        </div>
-      </div>
+      <MapLegend
+        defaultOpen
+        items={[
+          covHot && (
+            <span>
+              Coverage:{" "}
+              <Swatch color={COV[theme].n} shape="line" style={{ height: 5 }} />no sidewalk{" "}
+              <Swatch color={COV[theme].o} shape="line" style={{ height: 4 }} />one side{" "}
+              <Swatch color={COV[theme].b} shape="line" style={{ height: 2 }} />both sides
+              {widthMode && (
+                <span style={{ opacity: 0.7 }}> · line thickness ∝ √(sidewalk width)</span>
+              )}
+            </span>
+          ),
+          on.sai && (
+            <span>
+              SAI: <Swatch color={saiColor(10)} />low <Swatch color={saiColor(50)} />mid{" "}
+              <Swatch color={saiColor(90)} />high
+              {on.coverage && (
+                <span style={{ opacity: 0.7 }}> · coverage dimmed to neutral while SAI is active</span>
+              )}
+            </span>
+          ),
+          on.nta && (
+            <span>
+              Equity (soft bg): <Swatch color={ntaColor(2, ntaMetric)} />low{" "}
+              <Swatch color={ntaColor(ntaMetric === "ratio" ? 8 : 80, ntaMetric)} />mid{" "}
+              <Swatch color={ntaColor(ntaMetric === "ratio" ? 13 : 140, ntaMetric)} />high
+            </span>
+          ),
+          on.ada && (
+            <span>
+              <Swatch color="#fecaca" style={{ border: "1.4px solid #dc2626" }} />
+              intersection lacking any ramp (50&nbsp;ft)
+            </span>
+          ),
+        ]}
+        details={[
+          <span>
+            Coverage centerlines are vector tiles ({covMeta?.tippecanoe ?? "tippecanoe"}). Full
+            resolution in the downloads below.
+          </span>,
+        ]}
+        stamps={
+          <>
+            {covHot || (on.coverage && on.sai) ? (
+              <div>
+                Coverage: DCP planimetric 2022 · CSCL inkn-q76z (src{" "}
+                {covMeta?.source_vintage ?? "2026-07"})
+                {covMeta?.generated ? ` · tiled ${covMeta.generated.slice(0, 10)}` : ""}
+              </div>
+            ) : null}
+            {on.sai && (
+              <div>SAI: analysis {saiMeta?.source_vintage ?? "2026-07-17"} · stops 2ucp-7wg5 · shelters t4f2-8md7</div>
+            )}
+            {on.nta && <div>Equity: NTA 2020 · pop PL 94-171 (2020) · income ACS 2019-23</div>}
+            {on.ada && <div>Ramps: DOT ufzp-rrqu (2026-07) · gaps = no ramp within 50 ft</div>}
+            {basemap && <div>{basemap.vintageNote} · {basemap.attribution}</div>}
+          </>
+        }
+      />
     </div>
   );
 }

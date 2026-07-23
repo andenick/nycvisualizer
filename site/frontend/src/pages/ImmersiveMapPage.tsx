@@ -36,6 +36,10 @@ import {
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
 import { VehicleFlowLayer } from "../components/VehicleFlowLayer";
+import MapLegend, { Swatch, Bullet } from "../components/MapLegend";
+
+// Representative trunk bullets for the subway "official line colors" legend row.
+const TRUNK_LINES = ["1", "4", "7", "A", "B", "G", "J", "L", "N", "S"];
 
 export type ImmersiveMode = "buses" | "subway";
 
@@ -414,11 +418,11 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
       .then((sts) => {
         for (const s of sts) {
           const mk = L.circleMarker([s.lat, s.lon], {
-            radius: 3.5,
+            radius: 2.5,
             weight: 1.5,
             color: "#1f2937",
             fillColor: "#ffffff",
-            fillOpacity: 1,
+            fillOpacity: 0.85,
           });
           mk.bindPopup(
             `<strong>${s.name}</strong><br/><span style="opacity:.75">${s.routes.join(
@@ -699,6 +703,63 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
           </div>
         )}
       </div>
+
+      {/* ---- shared MapLegend (collapsed by default on immersive) ---- */}
+      <MapLegend
+        className="maplegend--imm"
+        items={
+          mode === "buses"
+            ? [
+                <span>
+                  <strong>Buses drawn true-to-scale</strong> — a bus&nbsp;≈&nbsp;12&nbsp;m; zoom in.
+                </span>,
+                colorMode === "borough" ? (
+                  <span>
+                    By borough: <Swatch color="#2563eb" />Man <Swatch color="#16a34a" />Bklyn{" "}
+                    <Swatch color="#d97706" />Qns <Swatch color="#dc2626" />Bx <Swatch color="#7c3aed" />
+                    SI <Swatch color="#0891b2" />Exp
+                  </span>
+                ) : (
+                  <span>Each bus takes its official route color (borough colors when unfiltered).</span>
+                ),
+                <span>
+                  Positions update ~30&nbsp;s · movement between updates is <em>estimated</em>.
+                </span>,
+                <span>
+                  State: <Swatch color="#3b82f6" />solid observed (GPS) ·{" "}
+                  <Swatch color="#3b82f6" faded />faded estimated
+                </span>,
+              ]
+            : [
+                <span>
+                  <strong>Trains drawn true-to-scale</strong> — a train&nbsp;≈&nbsp;160&nbsp;m; zoom in.
+                </span>,
+                <span>
+                  Official line colors:{" "}
+                  {TRUNK_LINES.map((k) => (
+                    <Bullet key={k} label={subwayLabel(k)} bg={subwayColor(k)} fg={subwayTextColor(k)} />
+                  ))}
+                </span>,
+                <span>
+                  Positions update ~30&nbsp;s · movement between updates is <em>estimated</em>.
+                </span>,
+                <span>
+                  State: <Swatch color="#3b82f6" />solid observed ·{" "}
+                  <Swatch color="#3b82f6" faded />faded estimated ·{" "}
+                  <Swatch color="#6b7280" shape="ring" />ring docked at stop
+                </span>,
+              ]
+        }
+        stamps={
+          <>
+            <div>
+              Data as of {fmtClock(asOf)} · source {source}
+              {stale ? " (stale)" : ""}
+            </div>
+            {basemap && <div>{basemap.vintageNote} · {basemap.attribution}</div>}
+          </>
+        }
+      />
     </div>
   );
 }

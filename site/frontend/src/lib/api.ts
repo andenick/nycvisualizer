@@ -66,6 +66,10 @@ export interface SubwayTrain {
   seg?: [number, number][];
   /** Fraction (0→1) of `seg` the train has travelled (prev=0, target=1). */
   frac?: number;
+  /** How `seg` was derived: "shape" = real GTFS track polyline; "straight" =
+   *  a prev→next station glide line (honest fallback when no shape matched).
+   *  Added by the backend seg-coverage work; optional for forward-compat. */
+  seg_basis?: "shape" | "straight";
 }
 export interface SubwayResponse {
   as_of: number | null;
@@ -218,10 +222,17 @@ function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => voi
       }
     };
     es.onerror = () => {
-      onError?.();
-      // Take over reconnection ourselves rather than let the browser hammer.
-      es?.close();
+      // Detach every handler BEFORE closing so the aborted stream can't re-fire
+      // onerror in a tight loop (the ERR_ABORTED console churn): one clean close,
+      // one bounded retry, and the caller's poll timer covers the gap silently.
+      if (es) {
+        es.onopen = null;
+        es.onmessage = null;
+        es.onerror = null;
+        es.close();
+      }
       es = null;
+      onError?.();
       scheduleRetry();
     };
   };
@@ -241,7 +252,14 @@ function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => voi
   return () => {
     stopped = true;
     if (retryTimer) clearTimeout(retryTimer);
-    es?.close();
+    if (es) {
+      // Detach handlers first: an unmount close aborts the in-flight GET; without
+      // this, onerror fires during teardown and schedules a doomed reconnect.
+      es.onopen = null;
+      es.onmessage = null;
+      es.onerror = null;
+      es.close();
+    }
     es = null;
   };
 }
