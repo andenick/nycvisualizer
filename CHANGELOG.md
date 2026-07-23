@@ -2,6 +2,38 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Ant Farm v2 Wave 1: at-station train rings + shared legend
+
+Trains reported *at a station* (~54% of the fleet at rush hour) were hidden under the
+opaque white station discs at zoom ≥ 13 — the map looked like most trains had vanished.
+
+- **At-station rings:** docked trains now render as a **line-colored ring** around the
+  station position, drawn on the vehicle canvas which was raised to its own Leaflet pane
+  at `z-index 450` (above the station SVG at 400). Moving units — in-transit worms and
+  buses — now pass cleanly *over* stations instead of under them. Station discs shrink
+  (r 3.5 → 2.5, fill-opacity 1 → 0.85) so the ring reads as "wrapped around" the stop.
+  Every train now has a visible, distinct state: solid worm (moving) · faded (estimated
+  between stations) · ring (docked).
+- **Shared `MapLegend`:** one collapsible corner "Legend" chip across `/bus`,
+  `/live/bus`, `/live/subway`, `/sidewalks`, and `/ops` (replacing the ad-hoc per-map
+  legends). Shows true-scale shapes, color meanings (subway line bullets / borough
+  colors / coverage classes / bunching severity), motion semantics ("updates ~30 s;
+  movement between updates is estimated"), and a state row; folds the data-vintage /
+  as-of stamps in. ≤ 8 visible lines with a "Details" expander; collapsed by default on
+  immersive `/live/*`, expanded elsewhere. Both themes, verified at 390 px.
+- **SSE console noise:** the `/api/rt/*/stream` `ERR_ABORTED` churn is silenced — the
+  EventSource handlers are detached before each close, and the bus/subway streams no
+  longer re-subscribe on visibility toggles (visibility is handled separately).
+- **`seg_basis` (forward-compat):** the client consumes the backend's new
+  `seg_basis` field ("straight" prev→next glide vs real "shape" polyline) when present,
+  with a marginally simpler underlay for straight-basis worms; fully backward-compatible
+  when the field is absent.
+
+Verified with a real paint check (headless CDP; all five surfaces, both themes, 390 +
+1280) locally and live on nycvisualizer.com: docked trains render as visible rings at
+z13–15, worms pass over stations, legends present on every surface. Frontend-only deploy;
+the paired subway seg-coverage backend change ships separately.
+
 ## 2026-07-23 — P0 fix: basemap now paints on every map page
 
 The Protomaps vector basemap was fetching tiles but painting nothing on every map
