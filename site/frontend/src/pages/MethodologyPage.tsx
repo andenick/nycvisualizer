@@ -52,7 +52,7 @@ export default function MethodologyPage() {
   return (
     <div>
       <h1 style={{ margin: "0.6rem 0" }}>Methodology &amp; findings</h1>
-      <p className="nyc-note" style={{ marginTop: 0 }}>
+      <p className="nyc-note" style={{ marginTop: 0, fontSize: "0.95rem", maxWidth: "72ch" }}>
         Every claim below carries its caveat and a pointer to the exact output table or query.
         Key honest limits up front: bus APC ridership is <strong>route-level only</strong>;{" "}
         <strong>SAI walksheds are Euclidean 400&nbsp;m</strong> (straight-line, not network distance) —
@@ -94,7 +94,7 @@ export default function MethodologyPage() {
 
       <section className="nyc-section">
         <h2>Realtime &amp; basemap methods</h2>
-        <p>
+        <p style={{ maxWidth: "72ch" }}>
           A single supervised poller pulls MTA GTFS-RT (bus VehiclePositions/TripUpdates/Alerts with
           a server-side key at a 31-second floor; the 8 key-free NYCT subway feeds + SIR; LIRR/MNR,
           Citi Bike, NYC Ferry) and appends hourly-partitioned Parquet. The site backend serves the

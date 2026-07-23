@@ -49,7 +49,8 @@ const WINDOWS: { key: string; label: string }[] = [
   { key: "today", label: "Today" },
 ];
 
-const MARGIN = { top: 18, right: 14, bottom: 30, left: 60 };
+// Q0.5: widened left gutter (60→86) so stop labels aren't chopped to 8 chars.
+const MARGIN = { top: 18, right: 14, bottom: 30, left: 86 };
 
 interface Theme {
   fg: string;
@@ -338,7 +339,10 @@ export default function MareyChart({ route, displayName, accent = "#2563eb" }: P
       if (i % labelEvery === 0 || i === stops.length - 1) {
         ctx.fillStyle = theme.fg;
         ctx.textAlign = "right";
-        const nm = stops[i].name.length > 9 ? stops[i].name.slice(0, 8) + "…" : stops[i].name;
+        // Q0.5: wider gutter fits ~14 chars; middle-truncate beyond so the
+        // distinguishing tail of a cross-street name (…/2 AV vs …/1 AV) survives.
+        const raw = stops[i].name;
+        const nm = raw.length > 14 ? raw.slice(0, 7) + "…" + raw.slice(-5) : raw;
         ctx.fillText(nm, MARGIN.left - 5, y);
       }
     }
@@ -621,6 +625,9 @@ export default function MareyChart({ route, displayName, accent = "#2563eb" }: P
           <div className="obs-marey-legend">
             <span><i className="ln solid" style={{ background: accent }} /> observed</span>
             <span><i className="ln dash" /> scheduled (ghost)</span>
+            {/* Q0.5: the live-trip trajectory renders in theme.live (near-white in
+                dark, deep navy in light) — previously an unlegended "black diagonal". */}
+            <span><i className="ln solid" style={{ background: theme.live }} /> live trip</span>
             <span><i className="dot live" style={{ background: accent }} /> live vehicle</span>
             <span><i className="dot bunch" /> bunching</span>
           </div>

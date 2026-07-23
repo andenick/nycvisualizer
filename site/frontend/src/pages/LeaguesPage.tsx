@@ -165,7 +165,7 @@ export default function LeaguesPage() {
                       <td>{r.borough}</td>
                       <td style={{ textAlign: "right" }}>{r.early_abs_dev_s}</td>
                       <td style={{ textAlign: "right" }}>{r.late_abs_dev_s}</td>
-                      <td style={{ textAlign: "right", color: r.improvement_s > 0 ? "#16a34a" : "#dc2626" }}>{r.improvement_s > 0 ? "+" : ""}{r.improvement_s}</td>
+                      <td style={{ textAlign: "right", color: r.improvement_s > 0 ? "#1a7f37" : "#dc2626" }}>{r.improvement_s > 0 ? "+" : ""}{r.improvement_s}</td>
                     </tr>
                   ))}
                 </tbody>

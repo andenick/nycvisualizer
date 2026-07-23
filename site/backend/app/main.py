@@ -36,8 +36,33 @@ app.add_middleware(
 )
 
 
-@app.get("/healthz")
-def healthz() -> dict:
+# Q0.6.3: keep /api/wall warm so a cold visitor gets the cached aggregate
+# (~ms) instead of paying the full 2-3s build. The Caddy edge does not cache
+# /api/*, so warming happens here, just under the 25s cache TTL.
+_wall_warm_task: "asyncio.Task | None" = None
+
+
+@app.on_event("startup")
+async def _start_wall_warmer() -> None:
+    async def loop() -> None:
+        while True:
+            try:
+                await asyncio.to_thread(opswall.get_wall, True)  # force refresh
+            except Exception:
+                pass  # never let the warmer die on a transient build error
+            await asyncio.sleep(25)
+
+    global _wall_warm_task
+    _wall_warm_task = asyncio.create_task(loop())
+
+
+@app.on_event("shutdown")
+async def _stop_wall_warmer() -> None:
+    if _wall_warm_task is not None:
+        _wall_warm_task.cancel()
+
+
+def _healthz_payload() -> dict:
     archive_ok = config.REALTIME_ARCHIVE.exists()
     gtfs_ok = config.GTFS_STATIC_ROOT.exists()
     return {
@@ -49,6 +74,20 @@ def healthz() -> dict:
         "bustime_key_configured": bool(config.MTA_BUSTIME_KEY),
         "ts": int(time.time()),
     }
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    return _healthz_payload()
+
+
+# Q0.7: edge-reachable health alias. Caddy's SPA try_files shadows a bare
+# /healthz at the edge, so probes/runbook use /api/healthz (already inside the
+# proxied /api/* prefix). The Caddyfile also rewrites /api/healthz -> /healthz;
+# defining it here too keeps local/dev (no Caddy) consistent.
+@app.get("/api/healthz")
+def api_healthz() -> dict:
+    return _healthz_payload()
 
 
 @app.get("/api/rt/vehicles")

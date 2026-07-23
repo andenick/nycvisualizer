@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   getDossier,
+  getObsRoutes,
   type DossierResponse,
   type AceInfo,
 } from "../lib/api";
@@ -17,6 +18,30 @@ import ArkPlotly from "../components/ArkPlotly";
 import ArchiveBadge from "../components/ArchiveBadge";
 
 const fmtInt = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString());
+
+// Q0.6.4: cache the set of base route ids that actually HAVE an SBS "+" sibling,
+// derived once from the routes catalog. The dossier previously fired a second
+// heavy getDossier(routeId + "+") for EVERY non-SBS route (most have no sibling),
+// doubling dossier traffic. We now probe the sibling only when the catalog
+// confirms it exists. Robust to id form: "M15+" and "M15-SBS" both map to base
+// "M15".
+let _sbsBasesPromise: Promise<Set<string>> | null = null;
+function sbsSiblingBases(): Promise<Set<string>> {
+  if (!_sbsBasesPromise) {
+    _sbsBasesPromise = getObsRoutes()
+      .then((resp) => {
+        const bases = new Set<string>();
+        for (const r of resp.routes) {
+          if (!r.sbs) continue;
+          const base = r.route_id.replace(/\+$/, "").replace(/[-\s]?SBS$/i, "").trim();
+          if (base) bases.add(base);
+        }
+        return bases;
+      })
+      .catch(() => new Set<string>());
+  }
+  return _sbsBasesPromise;
+}
 
 // MTA alert descriptions arrive with literal HTML; render as clean plain text
 // (Carson CONTENT_RENDERING: never ship literal markup). Block tags → line breaks.
@@ -105,14 +130,19 @@ export default function RouteDossierPage() {
       .then((res) => {
         setD(res);
         setStatus("ok");
-        // If no ACE here and this isn't the "+" variant, probe the sibling.
+        // If no ACE here and this isn't the "+" variant, probe the sibling —
+        // but ONLY when the routes catalog confirms an SBS sibling exists
+        // (Q0.6.4: avoids a wasted heavy dossier fetch for every plain route).
         if ((!res.ace || !res.ace.ace_enabled) && !routeId.endsWith("+")) {
           const sib = routeId + "+";
-          getDossier(sib)
-            .then((s2) => {
-              if (s2.ace && s2.ace.ace_enabled) setSblAce({ ace: s2.ace, route: s2.meta.short_name || sib });
-            })
-            .catch(() => {});
+          sbsSiblingBases().then((bases) => {
+            if (!bases.has(routeId)) return; // no SBS sibling — skip the probe
+            getDossier(sib)
+              .then((s2) => {
+                if (s2.ace && s2.ace.ace_enabled) setSblAce({ ace: s2.ace, route: s2.meta.short_name || sib });
+              })
+              .catch(() => {});
+          });
         }
       })
       .catch(() => setStatus("err"));
