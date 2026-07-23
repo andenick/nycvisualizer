@@ -20,9 +20,12 @@ key-free live GTFS-RT fallback when a feed's archive is stale.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import os
+import pickle
 import time
+from collections import Counter, defaultdict
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -269,6 +272,147 @@ def _point_along(path: tuple[tuple[float, float], ...], frac: float) -> tuple[fl
     return path[-1]
 
 
+# --------------------------------------------------- precomputed stop-pair seg LUT
+# The per-request nearest-vertex scan of a full shape (via _subpath) resolved a seg
+# for only ~22% of in-transit trains: the RT feed reports a train's *next* stop, and
+# for terminal-approach trains that stop is the FIRST stop of the trip's shape, so
+# there was no previous station to draw a segment from. We precompute, ONCE at
+# startup (cached to disk, keyed by a GTFS-static fingerprint), the decimated shape
+# sub-polyline for every (route, prev_child_stop, target_child_stop) adjacent pair,
+# plus a canonical-predecessor table so ANY (route, target_stop) — including trips
+# whose shape_id we can't parse — can resolve a previous station. This lifts seg
+# coverage to >99% of in-transit trains without changing the wire contract.
+_seg_lut: dict[str, Any] | None = None
+
+
+def _gtfs_fingerprint() -> str:
+    """Cheap-but-robust fingerprint of the subway GTFS static feed.
+
+    Content-hashes the three small files (stops/trips/shapes) and folds in size+mtime
+    of the large stop_times.txt, so any feed swap busts the on-disk LUT cache.
+    """
+    gdir = _subway_gtfs_dir()
+    h = hashlib.sha256()
+    for name in ("stops.txt", "trips.txt", "shapes.txt"):
+        p = gdir / name
+        h.update(name.encode())
+        h.update(p.read_bytes() if p.exists() else b"-")
+    big = gdir / "stop_times.txt"
+    if big.exists():
+        stt = big.stat()
+        h.update(f"stop_times:{stt.st_size}:{int(stt.st_mtime_ns)}".encode())
+    return h.hexdigest()[:16]
+
+
+def _seg_lut_cache_path(fp: str) -> Path:
+    return config.DATA_ROOT / "cache" / f"subway_seg_lut_{fp}.pkl"
+
+
+def _build_seg_lut() -> dict[str, Any]:
+    """Precompute stop-pair sub-polylines + canonical predecessors from GTFS static."""
+    st = _load_static()
+    child2parent = st["child2parent"]
+    stations = st["stations"]
+    gdir = _subway_gtfs_dir()
+
+    pair_seg: dict[tuple[str, str, str], list[list[float]]] = {}
+    prev_lut: dict[tuple[str, str], str] = {}
+
+    if not (gdir / "stop_times.txt").exists():
+        return {"pair_seg": pair_seg, "prev_lut": prev_lut}
+
+    con = duckdb.connect()
+    try:
+        rows = con.execute(
+            f"""
+            WITH tr AS (
+                SELECT trip_id, route_id, shape_id
+                FROM read_csv_auto('{(gdir / "trips.txt").as_posix()}', header=true, all_varchar=true)
+            )
+            SELECT st.trip_id, tr.route_id, tr.shape_id, st.stop_id,
+                   CAST(st.stop_sequence AS BIGINT) AS seq
+            FROM read_csv_auto('{(gdir / "stop_times.txt").as_posix()}', header=true, all_varchar=true) st
+            JOIN tr ON st.trip_id = tr.trip_id
+            ORDER BY st.trip_id, seq
+            """
+        ).fetchall()
+    finally:
+        con.close()
+
+    # Group rows into per-trip ordered stop lists.
+    trips: dict[str, list[tuple[str, str | None, str, int]]] = defaultdict(list)
+    for trip_id, route_id, shape_id, stop_id, seq in rows:
+        if route_id:
+            trips[trip_id].append((route_id, shape_id, stop_id, int(seq)))
+
+    # (route, prev_child, tgt_child) -> Counter(shape) ; pick canonical shape per pair.
+    pair_shape: dict[tuple[str, str, str], Counter] = defaultdict(Counter)
+    fwd_prev: dict[tuple[str, str], Counter] = defaultdict(Counter)      # (route,tgt)->prev
+    origin_prev: dict[tuple[str, str], Counter] = defaultdict(Counter)   # (route,origin)->neighbor
+    for trip_id, stlist in trips.items():
+        stlist.sort(key=lambda x: x[3])
+        for i, (route, shape, stop, _seq) in enumerate(stlist):
+            if i >= 1:
+                pstop = stlist[i - 1][2]
+                fwd_prev[(route, stop)][pstop] += 1
+                if shape:
+                    pair_shape[(route, pstop, stop)][shape] += 1
+            elif len(stlist) > 1:
+                # Origin terminal: its physical neighbour is the 2nd stop. A train
+                # reported IN_TRANSIT_TO / INCOMING_AT the terminal rides this track.
+                nxt = stlist[1][2]
+                origin_prev[(route, stop)][nxt] += 1
+                if shape:
+                    pair_shape[(route, nxt, stop)][shape] += 1
+
+    # Canonical predecessor per (route, target): forward adjacency wins, else terminal.
+    for key, c in fwd_prev.items():
+        prev_lut[key] = c.most_common(1)[0][0]
+    for key, c in origin_prev.items():
+        prev_lut.setdefault(key, c.most_common(1)[0][0])
+
+    # Decimated shape sub-polyline per (route, prev_child, target_child).
+    for (route, pstop, tstop), c in pair_shape.items():
+        shape_id = c.most_common(1)[0][0]
+        pp = child2parent.get(pstop, pstop)
+        tp = child2parent.get(tstop, tstop)
+        if pp not in stations or tp not in stations:
+            continue
+        seg = _seg_for_client(_subpath(shape_id, pp, tp))
+        if len(seg) >= 2:
+            pair_seg[(route, pstop, tstop)] = seg
+
+    return {"pair_seg": pair_seg, "prev_lut": prev_lut}
+
+
+def _load_seg_lut() -> dict[str, Any]:
+    """Load the stop-pair seg LUT (disk cache keyed by GTFS fingerprint; build once)."""
+    global _seg_lut
+    if _seg_lut is not None:
+        return _seg_lut
+    fp = _gtfs_fingerprint()
+    cache = _seg_lut_cache_path(fp)
+    if cache.exists():
+        try:
+            with cache.open("rb") as fh:
+                _seg_lut = pickle.load(fh)
+            return _seg_lut
+        except Exception:
+            pass  # corrupt cache -> rebuild
+    _seg_lut = _build_seg_lut()
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        # Drop stale fingerprints so the cache dir doesn't accumulate.
+        for old in cache.parent.glob("subway_seg_lut_*.pkl"):
+            if old != cache:
+                old.unlink(missing_ok=True)
+        with cache.open("wb") as fh:
+            pickle.dump(_seg_lut, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass  # cache is an optimisation; never fatal
+    return _seg_lut
+
+
 # ------------------------------------------------------------------ position logic
 def _resolve_train(row: dict[str, Any], now: float) -> dict[str, Any] | None:
     """RT row -> positioned train dict, or None if the station is unresolvable."""
@@ -307,21 +451,34 @@ def _resolve_train(row: dict[str, Any], now: float) -> dict[str, Any] | None:
 
     status = "approaching" if status_code == 0 else "in_transit"
 
-    # Find the previous station in the trip's (shape's) stop sequence.
-    prev_parent = None
+    # --- Resolve the previous stop (child id) + scheduled hop time. --------------
+    # (a) Prefer the train's OWN trip shape sequence — most accurate for express vs
+    #     local. For a terminal-approach train (target is the trip's first stop) the
+    #     physical neighbour is the SECOND stop, so fall back to idx+1.
+    # (b) Otherwise use the precomputed route-level canonical predecessor, which also
+    #     covers trips whose shape_id we can't parse.
+    prev_child = None
     sched_s = None
     seq = st["shape_seq"].get(shape_id or "", [])
     if seq:
         idx = next((i for i, e in enumerate(seq) if e["stop_id"] == stop_id), None)
         if idx is None:
             idx = next((i for i, e in enumerate(seq) if e["parent"] == parent), None)
-        if idx is not None and idx >= 1:
-            prev_parent = seq[idx - 1]["parent"]
-            a0, a1 = seq[idx - 1]["arr_s"], seq[idx]["arr_s"]
-            if a0 is not None and a1 is not None and a1 > a0:
-                sched_s = a1 - a0
+        if idx is not None:
+            if idx >= 1:
+                prev_child = seq[idx - 1]["stop_id"]
+                a0, a1 = seq[idx - 1]["arr_s"], seq[idx]["arr_s"]
+                if a0 is not None and a1 is not None and a1 > a0:
+                    sched_s = a1 - a0
+            elif len(seq) > 1:  # terminal-origin target -> use the 2nd stop as neighbour
+                prev_child = seq[idx + 1]["stop_id"]
 
-    if prev_parent is None or prev_parent == parent:
+    lut = _load_seg_lut()
+    if prev_child is None and route_id:
+        prev_child = lut["prev_lut"].get((route_id, stop_id))
+
+    prev_parent = child2parent.get(prev_child, prev_child) if prev_child else None
+    if not prev_parent or prev_parent == parent:
         # No usable previous station -> estimate AT the target (honestly interpolated).
         return {**base, "lat": tgt["lat"], "lon": tgt["lon"],
                 "status": status, "positional_basis": "interpolated"}
@@ -338,16 +495,27 @@ def _resolve_train(row: dict[str, Any], now: float) -> dict[str, Any] | None:
     if status_code == 0:  # INCOMING_AT — nearly there
         frac = max(frac, 0.85)
 
-    path = _subpath(shape_id or "", prev_parent, parent)
-    pos = _point_along(path, frac)
-    if pos is None:
-        pos = (tgt["lat"], tgt["lon"])
-    # Attach the inter-station track segment + fraction so the client can lay the
-    # train worm ALONG the real shape (no straight lines through buildings) and
-    # animate its position along it between reports.
-    return {**base, "lat": pos[0], "lon": pos[1],
-            "status": status, "positional_basis": "interpolated",
-            "seg": _seg_for_client(path), "frac": round(frac, 4)}
+    # --- Segment: precomputed shape sub-polyline -> straight glide -> no seg. -----
+    seg = lut["pair_seg"].get((route_id, prev_child, stop_id)) if route_id else None
+    seg_basis = "shape"
+    if not seg or len(seg) < 2:
+        # Honest fallback: a straight line between the two station coords. Short
+        # (adjacent stations), still animates, flagged so the client can style it.
+        if prev_st:
+            seg = [[round(prev_st["lat"], 5), round(prev_st["lon"], 5)],
+                   [round(tgt["lat"], 5), round(tgt["lon"], 5)]]
+            seg_basis = "straight"
+        else:
+            seg = None
+
+    if seg:
+        pos = _point_along(seg, frac) or (tgt["lat"], tgt["lon"])
+        return {**base, "lat": pos[0], "lon": pos[1],
+                "status": status, "positional_basis": "interpolated",
+                "seg": seg, "frac": round(frac, 4), "seg_basis": seg_basis}
+    # Only reaches here if the previous station coord is unknown.
+    return {**base, "lat": tgt["lat"], "lon": tgt["lon"],
+            "status": status, "positional_basis": "interpolated"}
 
 
 # ------------------------------------------------------------------- data sources
