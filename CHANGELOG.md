@@ -2,7 +2,11 @@
 
 All notable changes to nycvisualizer are recorded here.
 
-## 2026-07-23 — Immersive full-window ant-farm views (`/live/buses` + `/live/subway`)
+## 2026-07-23 — Immersive full-window ant-farm views (`/live/bus` + `/live/subway`)
+
+_Bus view canonical path is `/live/bus` (singular) on `bus.nycvisualizer.com`; the legacy
+`/live/buses` path redirects to it client-side and `buses.` is a silent host alias, so nothing
+previously shared breaks._
 
 Two new chrome-less, full-window homes for the live ant farm — one for buses, one
 for the subway — each on its own route and additive vanity subdomain. They REUSE
@@ -21,7 +25,7 @@ Built, deployed, and verified live end-to-end (headless Chrome; both themes;
 - **Corner ⓘ overlay** carries the mandated **dual anchors** (heterodata.org +
   nickanderson.us), basemap attribution, the data-vintage / honesty stamp (with a live
   ms/frame readout), and a **theme toggle** — so identity/D9 pass without page chrome.
-- **Mode scoping:** `/live/buses` = ant-farm buses only, with a route filter (loads the
+- **Mode scoping:** `/live/bus` = ant-farm buses only, with a route filter (loads the
   shape + shape-snapped glide) and a borough-vs-route color toggle; `/live/subway` =
   track-worms only, with line filter chips (official MTA bullets), station dots at
   zoom ≥ 13, and estimated positions honestly faded.
@@ -29,14 +33,15 @@ Built, deployed, and verified live end-to-end (headless Chrome; both themes;
   `canonical` link to the apex path (the subdomains are additive — no duplicate content).
 
 ### Wiring (I2.1)
-- SPA boot host→path map extended: `buses.` → `/live/buses`, `subway.` → `/live/subway`.
+- SPA boot host→path map extended: `bus.` (and silent alias `buses.`) → `/live/bus`,
+  `subway.` → `/live/subway`.
 
 ### Integration (I3)
 - Landing + Maps hub gain Bus/Subway Ant Farm cards; `/bus` links "full-window view →"
   for each mode; ecosystem manifest lists both immersive pages.
 
-_The `buses.` / `subway.` Cloudflare Public Hostnames are a user-side (DNS/tunnel) step;
-the apex paths `/live/buses` and `/live/subway` work standalone without them._
+_The `bus.` / `subway.` Cloudflare Public Hostnames are a user-side (DNS/tunnel) step;
+the apex paths `/live/bus` and `/live/subway` work standalone without them._
 
 ## 2026-07-23 — Live Transit Map "ant farm": animated true-scale vehicle canvas
 

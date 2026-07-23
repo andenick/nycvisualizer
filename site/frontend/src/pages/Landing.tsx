@@ -22,7 +22,7 @@ const SPOKES = [
   {
     key: "live-buses",
     title: "Bus Ant Farm",
-    to: "/live/buses",
+    to: "/live/bus",
     status: "live" as const,
     blurb:
       "Watch every MTA bus in the city move at once, full screen — a live 'ant farm' of true-scale vehicles gliding between reports. Filter to any route and the map fills the whole window.",

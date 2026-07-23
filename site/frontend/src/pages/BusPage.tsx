@@ -11,7 +11,7 @@ export default function BusPage() {
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Live</span>
       </div>
       <p className="nyc-feedlinks" style={{ margin: "0 0 0.2rem" }}>
-        <Link to="/live/buses">Buses — full-window view &rarr;</Link>
+        <Link to="/live/bus">Buses — full-window view &rarr;</Link>
         <Link to="/live/subway">Subway — full-window view &rarr;</Link>
       </p>
       <p className="nyc-note" style={{ marginTop: 0 }}>

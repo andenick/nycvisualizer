@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ArcanumChrome from "./chrome/ReactChrome";
 import ecosystem from "./chrome/ecosystem.json";
 import Landing from "./pages/Landing";
@@ -62,7 +62,9 @@ export default function App() {
     return (
       <Suspense fallback={<div className="nyc-note" style={{ margin: "1.5rem" }}>Loading…</div>}>
         <Routes>
-          <Route path="/live/buses" element={<ImmersiveMapPage mode="buses" />} />
+          <Route path="/live/bus" element={<ImmersiveMapPage mode="buses" />} />
+          {/* legacy alias: keep shared /live/buses URLs working */}
+          <Route path="/live/buses" element={<Navigate to={"/live/bus" + location.search} replace />} />
           <Route path="/live/subway" element={<ImmersiveMapPage mode="subway" />} />
           <Route path="*" element={<ImmersiveMapPage mode="buses" />} />
         </Routes>

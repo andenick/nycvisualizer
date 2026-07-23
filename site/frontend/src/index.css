@@ -1046,7 +1046,7 @@ i.obs-hw-obs.key { border-radius: 50%; }
 :root[data-theme="light"] .badge-taxonomy { background: var(--ark-bg-soft, #f7f8fa); }
 
 /* =========================================================================
-   Immersive ant-farm map (I1) — /live/buses + /live/subway.
+   Immersive ant-farm map (I1) — /live/bus + /live/subway.
    Full-window (100dvw x 100dvh, safe-area padded), zero page scroll, no site
    header/footer. Floating translucent chrome over the map; kit-token themed so
    both prefers-color-scheme AND the [data-theme] toggle read correctly. The

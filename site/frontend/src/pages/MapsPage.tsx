@@ -16,7 +16,7 @@ const MAPS = [
   {
     key: "live-buses",
     title: "Bus Ant Farm — full screen",
-    to: "/live/buses",
+    to: "/live/bus",
     blurb:
       "The live bus map with nothing else on screen: every vehicle gliding at true scale, the map filling the whole window, route filter and borough/route color in a floating overlay.",
   },

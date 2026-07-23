@@ -18,7 +18,8 @@ import "./index.css";
       "renters.": "/renters",
       "changes.": "/observatory/changes",
       // I2.1: immersive full-window ant-farm subdomains
-      "buses.": "/live/buses",
+      "bus.": "/live/bus",
+      "buses.": "/live/bus", // silent alias — catches typed plural URLs
       "subway.": "/live/subway",
     };
     for (const prefix in SPOKES) {
