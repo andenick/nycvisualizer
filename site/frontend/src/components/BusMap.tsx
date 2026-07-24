@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import { trackMapError } from "../lib/beacon";
 import {
   getVehicles,
   getRoutes,
@@ -174,16 +175,35 @@ export default function BusMap() {
   // ---- map init ----
   useEffect(() => {
     if (map.current || !mapRef.current) return;
-    const m = L.map(mapRef.current, {
-      center: NYC_CENTER,
-      zoom: 11,
-      minZoom: 9,
-      maxZoom: 17,
-      maxBounds: NYC_BOUNDS,
-      maxBoundsViscosity: 0.6,
-      zoomControl: true,
-    });
-    setBasemap(addBasemap(m));
+    let m: L.Map;
+    try {
+      m = L.map(mapRef.current, {
+        center: NYC_CENTER,
+        zoom: 11,
+        minZoom: 9,
+        maxZoom: 17,
+        maxBounds: NYC_BOUNDS,
+        maxBoundsViscosity: 0.6,
+        zoomControl: true,
+      });
+      // F5: reliability guard — auto-engage raster fallback on a broken basemap and
+      // beacon the degradation (guard-triggered fallback + zero-painted-tiles).
+      setBasemap(
+        addBasemap(m, {
+          page: window.location.pathname,
+          onFallback: (info, reason) => {
+            setBasemap(info);
+            trackMapError("fallback:" + reason);
+          },
+          onZeroTiles: (detail) => trackMapError("zero_tiles:" + detail),
+        }),
+      );
+    } catch (e) {
+      // F5: caught map-init error → beacon (kind=map_error, detail=init:*).
+      trackMapError("init:" + (e instanceof Error ? e.message : String(e)));
+      setErr("The map failed to initialize.");
+      return;
+    }
     stationLayer.current = L.layerGroup();
     shapeLayer.current = L.layerGroup().addTo(m);
     focusLayer.current = L.layerGroup().addTo(m);
@@ -258,11 +278,13 @@ export default function BusMap() {
     setSubCount(showSubwayRef.current ? data.trains.length : 0);
   };
 
-  // ---- live BUS feed: SSE + poll safety net ----
+  // ---- live BUS feed: SSE + poll safety net (F5: bbox-slimmed polls) ----
   useEffect(() => {
     let cancelled = false;
+    // F5/F3: poll the viewport only (SSE stays full-payload). fetch-on-moveend so
+    // buses entering the viewport on a pan/zoom appear without waiting for the tick.
     const pull = () =>
-      getVehicles()
+      getVehicles(map.current ? bboxParam(map.current) : undefined)
         .then((d) => !cancelled && render(d))
         .catch(() => !cancelled && setErr("Live bus feed unavailable."));
     pull();
@@ -271,10 +293,18 @@ export default function BusMap() {
       () => {},
     );
     const poll = setInterval(pull, 30000);
+    let moveTimer: ReturnType<typeof setTimeout> | null = null;
+    const onMove = () => {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(pull, 400); // debounce settle
+    };
+    map.current?.on("moveend", onMove);
     return () => {
       cancelled = true;
       unsub();
       clearInterval(poll);
+      if (moveTimer) clearTimeout(moveTimer);
+      map.current?.off("moveend", onMove);
     };
     // NOTE: intentionally NOT keyed on showBuses — visibility is handled by
     // setVisibility(); re-subscribing the SSE on every toggle was the ERR_ABORTED
@@ -282,11 +312,11 @@ export default function BusMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeColorByShort]);
 
-  // ---- live SUBWAY feed: SSE + poll safety net ----
+  // ---- live SUBWAY feed: SSE + poll safety net (F5: bbox-slimmed polls) ----
   useEffect(() => {
     let cancelled = false;
     const pull = () =>
-      getSubway()
+      getSubway(map.current ? bboxParam(map.current) : undefined)
         .then((d) => !cancelled && renderSubway(d))
         .catch(() => {});
     pull();
@@ -295,10 +325,18 @@ export default function BusMap() {
       () => {},
     );
     const poll = setInterval(pull, 30000);
+    let moveTimer: ReturnType<typeof setTimeout> | null = null;
+    const onMove = () => {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(pull, 400);
+    };
+    map.current?.on("moveend", onMove);
     return () => {
       cancelled = true;
       unsub();
       clearInterval(poll);
+      if (moveTimer) clearTimeout(moveTimer);
+      map.current?.off("moveend", onMove);
     };
     // NOTE: not keyed on showSubway (visibility handled by setVisibility); keeping
     // the subway SSE alive across toggles avoids needless reconnect/ERR_ABORTED.

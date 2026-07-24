@@ -1155,8 +1155,11 @@ i.obs-hw-obs.key { border-radius: 50%; }
 /* Leaflet's default container background is #ddd — wrong-colored void in dark
    mode before tiles paint. Use the theme bg token so the void matches. */
 .imm-map .leaflet-container { background: var(--ark-bg, #0e1116); }
-/* Regression-guard chip: shown only if the basemap style fails to resolve. */
-.imm-basemap-warn {
+/* Regression-guard chip: shown only if the basemap style fails to resolve.
+   .imm-basemap-fallback (F5) is the visible "simplified basemap" chip shown when the
+   reliability guard auto-swaps the broken vector basemap for the OSM raster fallback. */
+.imm-basemap-warn,
+.imm-basemap-fallback {
   position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
   z-index: 1300; padding: 0.4rem 0.75rem; border-radius: 8px;
   font-size: 0.8rem; font-weight: 600; pointer-events: none;
@@ -1164,7 +1167,8 @@ i.obs-hw-obs.key { border-radius: 50%; }
   box-shadow: 0 6px 22px -12px rgba(0,0,0,.5);
 }
 @media (prefers-color-scheme: dark) {
-  .imm-basemap-warn { background: #3a2e0c; color: #fcd34d; border-color: #5c4a12; }
+  .imm-basemap-warn,
+  .imm-basemap-fallback { background: #3a2e0c; color: #fcd34d; border-color: #5c4a12; }
 }
 
 /* shared translucent panel look */

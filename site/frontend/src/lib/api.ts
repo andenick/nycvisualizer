@@ -3,6 +3,8 @@
 // never sees any server-side key. Base URL is same-origin by default (dev proxy
 // or same host in prod); override with VITE_API_BASE for a split deploy.
 
+import { trackMapError } from "./beacon";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export interface Vehicle {
@@ -169,7 +171,12 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-export const getVehicles = () => getJSON<VehiclesResponse>("/api/rt/vehicles");
+// F5/F3: immersive pages send ?bbox=minLon,minLat,maxLon,maxLat on rt POLLS to slim
+// the payload to the current viewport (backend filter is strictly additive — a bad or
+// absent bbox serves the full payload). SSE is intentionally left unfiltered.
+const bboxQuery = (bbox?: string) => (bbox ? `?bbox=${encodeURIComponent(bbox)}` : "");
+export const getVehicles = (bbox?: string) =>
+  getJSON<VehiclesResponse>("/api/rt/vehicles" + bboxQuery(bbox));
 export const getRoutes = () => getJSON<RouteInfo[]>("/api/routes");
 export const getRouteShape = (routeId: string) =>
   getJSON<RouteShape>(`/api/routes/${encodeURIComponent(routeId)}`);
@@ -179,7 +186,8 @@ export const getArrivals = (stopId: string) =>
     `/api/stops/${encodeURIComponent(stopId)}/arrivals`,
   );
 
-export const getSubway = () => getJSON<SubwayResponse>("/api/rt/subway");
+export const getSubway = (bbox?: string) =>
+  getJSON<SubwayResponse>("/api/rt/subway" + bboxQuery(bbox));
 export const getStations = () => getJSON<StationInfo[]>("/api/stations");
 export const getStationArrivals = (stationId: string) =>
   getJSON<StationArrivals>(`/api/stations/${encodeURIComponent(stationId)}/arrivals`);
@@ -198,8 +206,18 @@ function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => voi
   let es: EventSource | null = null;
   let stopped = false;
   let attempt = 0;
+  // F5: consecutive-failure counter for the SSE-permanently-down beacon (>5 in a row).
+  // Separate from `attempt` so we can fire exactly once per down-episode.
+  let consecutiveFail = 0;
+  let downBeaconed = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const MAX_BACKOFF_MS = 30_000;
+
+  const healthy = () => {
+    attempt = 0; // reset backoff
+    consecutiveFail = 0;
+    downBeaconed = false;
+  };
 
   const connect = () => {
     if (stopped) return;
@@ -207,14 +225,15 @@ function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => voi
       es = new EventSource(API_BASE + path);
     } catch {
       onError?.();
+      noteFailure();
       scheduleRetry();
       return;
     }
     es.onopen = () => {
-      attempt = 0; // healthy connection — reset backoff
+      healthy(); // healthy connection
     };
     es.onmessage = (ev) => {
-      attempt = 0; // a good frame also proves liveness
+      healthy(); // a good frame also proves liveness
       try {
         onData(JSON.parse(ev.data) as T);
       } catch {
@@ -233,8 +252,19 @@ function streamJSON<T>(path: string, onData: (v: T) => void, onError?: () => voi
       }
       es = null;
       onError?.();
+      noteFailure();
       scheduleRetry();
     };
+  };
+
+  // F5 beacon: SSE permanently down (>5 consecutive failures with no good frame). The
+  // caller's 30s poll timer keeps the page live; this only records the degradation.
+  const noteFailure = () => {
+    consecutiveFail++;
+    if (consecutiveFail > 5 && !downBeaconed) {
+      downBeaconed = true;
+      trackMapError("sse_down:" + path);
+    }
   };
 
   const scheduleRetry = () => {
