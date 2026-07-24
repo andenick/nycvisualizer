@@ -2,6 +2,29 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Ant Farm v2 F4: restrained live-map enhancements
+
+Four subtle, intelligibility-serving additions to the live maps — nothing else (the
+not-overcrowding pact holds). All four ride the shared `VehicleFlowLayer`, so /bus and
+/live/* get them at once; theme-aware; verified live on nycvisualizer.com in both themes + 390px.
+
+- **Follow mode** — click a vehicle → its popup gains a **▸ Follow** action; the camera then
+  eases to track it (`panTo` easing, zoom kept) while a minimal *"Following M15 bus 4821 —
+  tap map or press ESC to stop"* pill shows. Works for buses **and** subway worms (tracks the
+  worm's head). Dismisses on ESC, map-tap, or the unit going away. No standing UI otherwise.
+- **Focus dim** — from the vehicle popup (and the follow pill) **◎ Focus route/line** drops all
+  other units to **25 % alpha with their trails off**, so the chosen flow pops; the focused
+  bus route's **shape overlays** (subway is dim-only — line shape isn't cheap). One-tap clear
+  chip. Plays with the legend + filters.
+- **Motion trails** — a ~20 s fading tail per moving unit (thin, theme-aware, rendered from a
+  per-unit ring buffer into the same canvas; ≤12 points, alpha ramp to 0, **banded** to ≤3
+  strokes/unit). Perf-budgeted and measured headless at **3,000 units**: trails-on stays
+  ≤ **8.9 ms/frame** at z11–13 (the ~9 ms at z12 is the base all-visible shape draw, not
+  trails). Trails are the **first** thing the degrade ladder sheds (before dropping fps).
+  Legend **"Motion trails"** toggle — default **ON** for /live/*, **OFF** for /bus.
+- **Honest clock** — the as-of chip promoted to an always-visible, glanceable *"live · updated
+  mm:ss ago"* corner chip on /live/*, stacked by the legend chip; real age, stale/error dot.
+
 ## 2026-07-23 — Ant Farm v2 F3: capacity hardening (origin O(1) in users)
 
 Load-testing the live edge showed the RT poll endpoints re-read parquet/GTFS-RT via

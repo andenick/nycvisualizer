@@ -35,8 +35,9 @@ import {
   type SubwayTrain,
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
-import { VehicleFlowLayer } from "../components/VehicleFlowLayer";
+import { VehicleFlowLayer, type FlowSelection } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "../components/MapLegend";
+import FlowControls, { type FollowInfo, type FocusInfo } from "../components/FlowControls";
 
 // Representative trunk bullets for the subway "official line colors" legend row.
 const TRUNK_LINES = ["1", "4", "7", "A", "B", "G", "J", "L", "N", "S"];
@@ -96,6 +97,13 @@ function fmtClock(epoch: number | null): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+// "updated mm:ss ago" for the always-visible honest clock (F4).
+function fmtAge(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 
 // ---- theme (kit-compatible): mirror arcanum-chrome.js setTheme ----
@@ -169,6 +177,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   const flow = useRef<VehicleFlowLayer | null>(null);
   const stationLayer = useRef<L.LayerGroup | null>(null);
   const shapeLayer = useRef<L.LayerGroup | null>(null);
+  const focusLayer = useRef<L.LayerGroup | null>(null);
   const selectedShape = useRef<[number, number][][] | null>(null);
   const stationsLoaded = useRef(false);
 
@@ -193,6 +202,26 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [, forceThemeTick] = useState(0);
 
+  // F4: follow mode · focus dim · motion trails · honest clock
+  const [follow, setFollow] = useState<FollowInfo | null>(null);
+  const [focus, setFocus] = useState<(FocusInfo & { key: string; routeId: string | null }) | null>(null);
+  const [trails, setTrails] = useState(true); // immersive /live/* default ON
+  const followingRef = useRef(false);
+  const followIdRef = useRef<string | null>(null);
+  const followSelRef = useRef<FlowSelection | null>(null);
+  const focusRef = useRef<typeof focus>(null);
+  focusRef.current = focus;
+  const stopFollowRef = useRef(() => {});
+  const onFollowRef = useRef<(s: FlowSelection) => void>(() => {});
+  const onFocusRef = useRef<(s: FlowSelection) => void>(() => {});
+
+  // now-ticker for the always-visible honest clock ("updated mm:ss ago")
+  const [nowSec, setNowSec] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const t = setInterval(() => setNowSec(Date.now() / 1000), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const colorModeRef = useRef(colorMode);
@@ -215,6 +244,34 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   };
   const colorForRef = useRef(colorFor);
   colorForRef.current = colorFor;
+
+  // ---- F4 handlers (kept in refs so the once-constructed layer calls latest) ----
+  const stopFollow = () => {
+    followingRef.current = false;
+    followIdRef.current = null;
+    followSelRef.current = null;
+    setFollow(null);
+  };
+  stopFollowRef.current = stopFollow;
+
+  const applyFocus = (sel: FlowSelection) => {
+    const key = sel.kind === "train" ? lineKey(sel.routeId) : sel.routeId ?? "";
+    setFocus({ label: sel.label, kind: sel.kind, key, routeId: sel.routeId });
+  };
+  const clearFocus = () => setFocus(null);
+
+  onFollowRef.current = (sel: FlowSelection) => {
+    followingRef.current = true;
+    followIdRef.current = sel.id;
+    followSelRef.current = sel;
+    setFollow({ label: sel.label, sub: sel.sub });
+  };
+  onFocusRef.current = (sel: FlowSelection) => applyFocus(sel);
+
+  const toggleTrails = (on: boolean) => {
+    setTrails(on);
+    flow.current?.setTrails(on);
+  };
 
   // ---- one-time page setup: theme, title, canonical, body-scroll lock ----
   useEffect(() => {
@@ -263,6 +320,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   const writeUrl = useRef(() => {
     const m = map.current;
     if (!m) return;
+    if (followingRef.current) return; // don't spam history while the camera tracks
     const c = m.getCenter();
     const p = new URLSearchParams();
     p.set("ll", `${c.lat.toFixed(4)},${c.lng.toFixed(4)}`);
@@ -288,10 +346,25 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     setBasemap(addBasemap(m));
     stationLayer.current = L.layerGroup();
     shapeLayer.current = L.layerGroup().addTo(m);
-    const fl = new VehicleFlowLayer({ busPopup: popupHtml, trainPopup: trainPopupHtml });
+    focusLayer.current = L.layerGroup().addTo(m);
+    const fl = new VehicleFlowLayer({
+      busPopup: popupHtml,
+      trainPopup: trainPopupHtml,
+      onFollow: (s) => onFollowRef.current(s),
+      onFocus: (s) => onFocusRef.current(s),
+    });
     fl.addTo(m);
     fl.setVisibility(mode === "buses", mode === "subway");
+    fl.setTrails(true); // immersive /live/* default ON
     flow.current = fl;
+    // opt-in perf harness hook (headless frame-time measurement only)
+    if (new URLSearchParams(window.location.search).has("perf")) {
+      const w = window as unknown as Record<string, unknown>;
+      w.__nycvFlow = fl;
+      w.__nycvMap = m;
+    }
+    // tap the map (empty) stops follow mode (the pill's other exit is ESC)
+    m.on("click", () => stopFollowRef.current());
     const syncStations = () => {
       if (!stationLayer.current || mode !== "subway") return;
       const want = m.getZoom() >= STATION_MIN_ZOOM;
@@ -390,6 +463,72 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     }, 1000);
     return () => clearInterval(t);
   }, []);
+
+  // ---- F4 follow: ease the camera to the tracked unit, keep zoom ----
+  useEffect(() => {
+    if (!follow) return;
+    const m = map.current;
+    const fl = flow.current;
+    if (!m || !fl) return;
+    const id = followIdRef.current;
+    const tick = () => {
+      if (!id) return;
+      const ll = fl.getDisplayLatLng(id);
+      if (!ll) {
+        stopFollowRef.current(); // vehicle gone → release + dismiss pill
+        return;
+      }
+      const target = L.latLng(ll[0], ll[1]);
+      // only pan when the unit has drifted off-center (avoids constant micro-pans)
+      const cp = m.latLngToContainerPoint(target);
+      const cc = m.getSize().divideBy(2);
+      if (cp.distanceTo(cc) > 12) {
+        m.panTo(target, { animate: true, duration: 0.45, easeLinearity: 0.5 });
+      }
+    };
+    tick();
+    const iv = setInterval(tick, 350);
+    return () => clearInterval(iv);
+  }, [follow]);
+
+  // ---- ESC releases follow mode ----
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") stopFollowRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ---- F4 focus dim: predicate to the layer + (bus) overlay the route shape ----
+  useEffect(() => {
+    const fl = flow.current;
+    const fx = focusLayer.current;
+    if (!fl) return;
+    fx?.clearLayers();
+    if (!focus) {
+      fl.setFocus(null);
+      return;
+    }
+    if (focus.kind === "train") {
+      const key = focus.key;
+      fl.setFocus((k, rid) => k === "train" && lineKey(rid) === key); // dim-only (line shape not cheap)
+    } else {
+      const rid = focus.routeId;
+      fl.setFocus((k, r) => k === "bus" && r === rid);
+      if (rid && fx) {
+        getRouteShape(rid)
+          .then((s) => {
+            if (focusRef.current?.routeId !== rid) return; // focus moved on
+            const color = colorForRef.current(rid);
+            for (const line of s.polylines) {
+              L.polyline(line, { color, weight: 3, opacity: 0.7 }).addTo(fx);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [focus]);
 
   // ---- re-color buses immediately on colorMode change ----
   useEffect(() => {
@@ -515,6 +654,12 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
 
   const dark = currentDark();
   const asOfCls = err ? "error" : stale ? "stale" : "";
+  const trailsToggle = (
+    <label className="mlg-toggle">
+      <input type="checkbox" checked={trails} onChange={(e) => toggleTrails(e.target.checked)} />
+      Motion trails <span className="mlg-toggle-hint">(~20 s fading tail)</span>
+    </label>
+  );
 
   return (
     <div className={"imm-root" + (dark ? " imm-dark" : "")} data-mode={mode}>
@@ -704,6 +849,28 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
         )}
       </div>
 
+      {/* ---- F4 follow pill / focus chip (only while active) ---- */}
+      <FlowControls
+        follow={follow}
+        onStopFollow={stopFollow}
+        onFocusFromFollow={() => followSelRef.current && applyFocus(followSelRef.current)}
+        focus={focus ? { label: focus.label, kind: focus.kind } : null}
+        onClearFocus={clearFocus}
+      />
+
+      {/* ---- F4 honest clock: always-visible, glanceable "updated mm:ss ago" ---- */}
+      <div className={"imm-clock " + asOfCls} title="Time since the freshest live snapshot">
+        <span className="imm-clock-dot" aria-hidden="true" />
+        {asOf ? (
+          <>
+            live<span className="imm-clock-sep"> · </span>
+            <span className="imm-clock-age">updated {fmtAge(Math.max(0, Math.round(nowSec - asOf)))} ago</span>
+          </>
+        ) : (
+          "connecting…"
+        )}
+      </div>
+
       {/* ---- shared MapLegend (collapsed by default on immersive) ---- */}
       <MapLegend
         className="maplegend--imm"
@@ -729,6 +896,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                   State: <Swatch color="#3b82f6" />solid observed (GPS) ·{" "}
                   <Swatch color="#3b82f6" faded />faded estimated
                 </span>,
+                trailsToggle,
               ]
             : [
                 <span>
@@ -748,6 +916,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                   <Swatch color="#3b82f6" faded />faded estimated ·{" "}
                   <Swatch color="#6b7280" shape="ring" />ring docked at stop
                 </span>,
+                trailsToggle,
               ]
         }
         stamps={

@@ -1350,3 +1350,94 @@ i.obs-hw-obs.key { border-radius: 50%; }
   .imm-links.open { display: flex; }
   .imm-link { padding: 0.5rem 0.6rem; font-size: 0.95rem; }
 }
+
+/* =========================================================================
+   F4 — restrained enhancements: follow pill · focus chip · trails toggle ·
+   honest clock. Each is subtle and appears only when active (the not-crowding
+   pact). Shared by /bus and /live/*; theme-aware.
+   ========================================================================= */
+
+/* Vehicle-popup action buttons (Follow / Focus route|line) injected by the layer */
+.flow-pop-actions { display: flex; gap: 0.4rem; margin-top: 0.55rem; }
+.flow-pop-btn {
+  font: inherit; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  padding: 0.26rem 0.55rem; border-radius: 7px;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  background: var(--ark-surface, #fff); color: var(--ark-fg, #1a1f26);
+}
+.flow-pop-btn:hover { border-color: var(--ark-accent, #2563eb); color: var(--ark-accent, #2563eb); }
+
+/* Follow pill + focus chip — floats bottom-center, above the map */
+.flowctl {
+  position: absolute; z-index: 1260;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 0.9rem);
+  display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  max-width: min(94vw, 480px); pointer-events: none;
+}
+.flowctl-pill {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  max-width: 100%;
+  padding: 0.4rem 0.5rem 0.4rem 0.75rem; border-radius: 999px;
+  font-size: 0.8rem; line-height: 1.2;
+  background: rgba(17, 24, 39, 0.9); color: #fff;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.flowctl-pill--focus { background: rgba(37, 99, 235, 0.92); }
+.flowctl-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flowctl-hint { opacity: 0.6; }
+.flowctl-live {
+  width: 8px; height: 8px; border-radius: 50%; background: #34d399; flex: none;
+  animation: flowctl-pulse 2s infinite;
+}
+@keyframes flowctl-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+.flowctl-act, .flowctl-x {
+  font: inherit; cursor: pointer; color: inherit; flex: none;
+  background: rgba(255, 255, 255, 0.14); border: none; border-radius: 999px;
+}
+.flowctl-act { font-size: 0.74rem; padding: 0.22rem 0.5rem; }
+.flowctl-x {
+  font-size: 0.78rem; width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.flowctl-act:hover, .flowctl-x:hover { background: rgba(255, 255, 255, 0.28); }
+@media (max-width: 480px) { .flowctl-hint { display: none; } }
+
+/* Legend "Motion trails" toggle row */
+.mlg-toggle {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  font-size: inherit; margin: 0; font-weight: 600;
+}
+.mlg-toggle input { width: auto; margin: 0; }
+.mlg-toggle-hint { opacity: 0.6; font-weight: 400; }
+
+/* Honest clock chip — immersive only, always visible, stacked above the legend
+   chip (bottom-right column: info button · legend chip · clock). */
+.imm-clock {
+  position: absolute; z-index: 1100;
+  right: max(0.7rem, env(safe-area-inset-right));
+  bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.3rem);
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.26rem 0.6rem; border-radius: 999px;
+  font-size: 0.72rem; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--ark-bg-soft, #161b22) 82%, transparent);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  border: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 85%, transparent);
+  color: var(--ark-fg, #e7edf3);
+  box-shadow: var(--ark-shadow, 0 6px 22px -12px rgba(0, 0, 0, 0.4));
+}
+.imm-clock-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; flex: none; }
+.imm-clock.stale .imm-clock-dot { background: #fbbf24; }
+.imm-clock.error .imm-clock-dot { background: #f87171; }
+.imm-clock-sep { opacity: 0.4; }
+.imm-clock-age { opacity: 0.85; }
+@media (max-width: 720px) {
+  .imm-clock { bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.2rem); }
+}
