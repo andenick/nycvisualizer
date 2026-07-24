@@ -73,16 +73,20 @@ export default function App() {
     );
   }
 
-  // W3: the planner workstations (/workstation/*) are their OWN isolated full-window
-  // family — same immersive-chrome pattern, rendered OUTSIDE the standard chrome, with
-  // NO cross-family SPA links (bus↔subway and dossier hops are plain <a> full loads).
-  if (/^\/workstation\//.test(location.pathname)) {
+  // C3: the UNIFIED Planner Workstation (/workstation) is a full-window family — same
+  // immersive-chrome pattern, rendered OUTSIDE the standard chrome, with NO cross-family
+  // SPA links (dossier hops are plain <a> full loads). It merges the two former single-mode
+  // workstations: bus routes and subway lines are selectable together. The legacy paths
+  // /workstation/bus?routes=… and /workstation/subway?lines=… redirect here (client-side
+  // Navigate, query-preserving) so any shared workstation URL keeps its selection.
+  if (/^\/workstation(\/|$)/.test(location.pathname)) {
     return (
       <Suspense fallback={<div className="nyc-note" style={{ margin: "1.5rem" }}>Loading…</div>}>
         <Routes>
-          <Route path="/workstation/bus" element={<WorkstationPage mode="bus" />} />
-          <Route path="/workstation/subway" element={<WorkstationPage mode="subway" />} />
-          <Route path="*" element={<WorkstationPage mode="bus" />} />
+          <Route path="/workstation" element={<WorkstationPage />} />
+          <Route path="/workstation/bus" element={<Navigate to={"/workstation" + location.search} replace />} />
+          <Route path="/workstation/subway" element={<Navigate to={"/workstation" + location.search} replace />} />
+          <Route path="*" element={<Navigate to={"/workstation" + location.search} replace />} />
         </Routes>
       </Suspense>
     );

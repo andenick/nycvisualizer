@@ -2,6 +2,38 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — C3: unified Planner Workstation (`/workstation`, host `work.`)
+
+Merges the two former single-mode planner workstations (`/workstation/bus` + `/workstation/subway`,
+plural hosts `buses.`/`subways.`) into ONE unified Planner Workstation at `/workstation`. Bus routes
+and subway lines are now freely mixable in a single selection (e.g. the Bx12 and the D together).
+Reuses existing endpoints only — no new dataset, metric, or analytical claim.
+
+- **One left panel, two sections** — Bus routes (borough-grouped, Bronx-first, select-all per borough,
+  search) AND Subway lines (official-bullet checkboxes, group select-alls). The count chip and clear-all
+  span both selections.
+- **One map, all selected populations** — bus stop dots (validated colourblind-safe palette, "colours
+  repeat" note past 12) + subway station dots (official MTA colour), NO connecting lines (route-lines
+  toggle default OFF), live buses + subway track-worms via the SAME `VehicleFlowLayer` motion model
+  (`setVisibility(true, true)`), each selection its own colour — so bus + subway populations are always
+  visually distinct.
+- **One unified right rail** — one sortable row per selection: buses show active-now · observed vs
+  scheduled headway · bunching · on-route position quality; subway lines show trains-active · active
+  alerts (still NO fabricated subway headway). A per-row expandable detail drawer reuses
+  `/api/obs/dossier` headline fields (buses) / active alerts (lines) — no new claims. Mixed-selection
+  CSV export (`text/csv`, no JSON).
+- **URL state `?routes=BX12,B44&lines=D,7`** (+ `ll`/`z`), shareable, restored on load.
+- **Redirects** — `/workstation/bus?routes=…` → `/workstation?routes=…` and `/workstation/subway?lines=…`
+  → `/workstation?lines=…` (client-side, query-preserving), so any shared workstation URL keeps its
+  selection.
+- **Host map** — the SPA boot map routes `work.nycvisualizer.com` → `/workstation`; the plural
+  `buses.`/`subways.` host mappings were **removed** (their CF hostnames were never created and are no
+  longer wanted). The singular `bus.`/`subway.` immersive ant-farm hosts are unchanged.
+- Full-window immersive-chrome pattern (floating strip + ⓘ overlay + legend chip + honest clock), both
+  themes, 390 px bottom-sheet. Landing + Maps hub now show ONE "Planner Workstation" card. Engine
+  (`src/flow/`) and backend untouched. `tsc`+build clean; vitest 55/55 green; deployed + verified live
+  (mixed Bx12+D two-population render; legacy-path redirects preserve selection; paint canary 10/10).
+
 ## 2026-07-24 — nycviz-flow C1: continuous motion (shape-residency fix + hold-last-speed + per-vehicle anchoring)
 
 Makes the live bus "ant farm" actually crawl continuously instead of freezing-and-jumping, and
