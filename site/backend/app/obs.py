@@ -1158,3 +1158,105 @@ def _ribbon_payload(route_id: str) -> dict[str, Any]:
 async def obs_ribbon(route: str) -> JSONResponse:
     data = _cached(f"ribbon|{route}", 600, lambda: _ribbon_payload(route))
     return JSONResponse(data)
+
+
+# --------------------------------------------------------------------------- #
+# route adherence (geographic on-route) — derive2 stage 3b (adherence2.py)
+# --------------------------------------------------------------------------- #
+_ADHERENCE_NOTE = (
+    "On-route % = share of GPS pings within 100 ft of the trip's GTFS shape, first/last 500 ft "
+    "of each trip excluded (terminal/layover noise). IMPORTANT: MTA BusTime reports positions "
+    "already map-matched (snapped) to the route path — ~97% of pings sit within 1 ft of the "
+    "shape — so this metric reads ~100% for virtually every route and chiefly confirms position "
+    "quality; only genuine detours/reroutes (or wrong-shape trip assignments) push a bus beyond "
+    "100 ft. Read a route BELOW ~99.9% as the real signal."
+)
+
+
+def _route_adherence_dates() -> list[str]:
+    base = config.DERIVED_ROOT / "route_adherence"
+    if not base.exists():
+        return []
+    return sorted(p.name.split("=", 1)[1] for p in base.glob("date=*")
+                  if (p / "part-000.parquet").exists())
+
+
+def _adherence_payload(route: str | None) -> dict[str, Any]:
+    dates = _route_adherence_dates()
+    files = _part_files("route_adherence", dates, stem="part-000")
+    base = {"note": _ADHERENCE_NOTE, "observed_dates": dates,
+            "gap_note": _GAP_NOTE, "onroute_threshold_ft": 100, "terminal_excluded_ft": 500}
+    if not files:
+        return {**base, "route": route, "routes": [], "no_data": True}
+    con = _con()
+    try:
+        if route:
+            summ = con.execute(
+                f"""SELECT sum(n_on_route), sum(n_pings), sum(n_trips),
+                           median(median_perp_ft), max(p90_perp_ft), count(*)
+                    FROM read_parquet({_plist(files)}) WHERE route_id = ?""",
+                [route],
+            ).fetchone()
+            if not summ or summ[1] in (None, 0):
+                return {**base, "route": route, "no_data": True, "daily": []}
+            daily = con.execute(
+                f"""SELECT day, n_pings, n_on_route,
+                           100.0*n_on_route/nullif(n_pings,0) AS adh, median_perp_ft, n_trips
+                    FROM read_parquet({_plist(files)}) WHERE route_id = ? ORDER BY day""",
+                [route],
+            ).fetchall()
+            return {
+                **base,
+                "route": route,
+                "summary": {
+                    "adherence_pct": round(100.0 * summ[0] / summ[1], 4),
+                    "n_pings": int(summ[1]), "n_on_route": int(summ[0]),
+                    "n_trips": int(summ[2]) if summ[2] is not None else None,
+                    "median_perp_ft": round(summ[3], 2) if summ[3] is not None else None,
+                    "worst_day_p90_perp_ft": round(summ[4], 1) if summ[4] is not None else None,
+                    "observed_days": int(summ[5]),
+                },
+                "daily": [
+                    {"day": d[0], "n_pings": int(d[1]), "n_on_route": int(d[2]),
+                     "adherence_pct": round(d[3], 4) if d[3] is not None else None,
+                     "median_perp_ft": round(d[4], 2) if d[4] is not None else None,
+                     "n_trips": int(d[5]) if d[5] is not None else None}
+                    for d in daily
+                ],
+            }
+        # no route -> citywide distribution (median route %, worst 10), pooled across days
+        rows = con.execute(
+            f"""SELECT route_id, sum(n_on_route) onr, sum(n_pings) np, sum(n_trips) trips,
+                       median(median_perp_ft) med_perp
+                FROM read_parquet({_plist(files)})
+                GROUP BY route_id HAVING sum(n_pings) >= 500
+                ORDER BY 100.0*onr/np ASC""",
+        ).fetchall()
+        pooled = [
+            {"route_id": r[0], "adherence_pct": round(100.0 * r[1] / r[2], 4),
+             "n_pings": int(r[2]), "n_trips": int(r[3]) if r[3] is not None else None,
+             "median_perp_ft": round(r[4], 2) if r[4] is not None else None}
+            for r in rows
+        ]
+        tot = con.execute(
+            f"SELECT sum(n_on_route), sum(n_pings) FROM read_parquet({_plist(files)})"
+        ).fetchone()
+        adh_vals = sorted(p["adherence_pct"] for p in pooled)
+        median_route = adh_vals[len(adh_vals) // 2] if adh_vals else None
+        return {
+            **base,
+            "route": None,
+            "n_routes": len(pooled),
+            "citywide_adherence_pct": round(100.0 * tot[0] / tot[1], 4) if tot and tot[1] else None,
+            "median_route_adherence_pct": round(median_route, 4) if median_route is not None else None,
+            "worst_10": pooled[:10],
+            "routes": pooled,
+        }
+    finally:
+        con.close()
+
+
+@router.get("/adherence")
+async def obs_adherence(route: str | None = None) -> JSONResponse:
+    data = _cached(f"adh|{route}", 600, lambda: _adherence_payload(route))
+    return JSONResponse(data)

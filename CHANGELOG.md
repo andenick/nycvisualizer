@@ -2,6 +2,44 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Ant Farm v3 W1 (server): shape-following motion model + route adherence
+
+Backend half of the "make the ant farm appear continuous — simply, honestly" motion upgrade.
+The client glide (W1-client) lands separately; this ships the data it needs. Deployed +
+verified live (paint canary 10/10 PASS).
+
+- **Bus route→shape LUT, built once at startup** (`app/busshapes.py`) — mirrors the subway
+  seg-LUT pattern: a disk-cached pickle keyed by a GTFS-static content fingerprint, holding
+  per (route_id, direction_id) the canonical (most-detailed) shape decimated with a
+  Ramer–Douglas–Peucker pass in **EPSG:2263 feet**, carrying each kept vertex's *full-shape*
+  cumulative offset so a projected offset stays in the same ft space as derive2's speed table.
+  **683 route×directions / 345 routes**, median 47 verts/shape; build ~4 s cold, ~0 ms warm.
+- **`/api/rt/vehicles` additive fields** (`app/motion.py`, enrichment folded into the existing
+  10 s TTL cache — runs once per build, not per request): `shape_id`, `route_offset_ft`
+  (nearest-point projection of the GPS onto the route shape), `speed_est_fps` + `speed_basis`.
+  Honesty guards ported from `trajectories.py`: **off-shape > 200 ft** or a **> 500 ft backward
+  (non-monotonic) offset jump** between a bus's prev and latest ping → shape fields **omitted
+  and counted** (surfaced in a new `motion` summary block). Shape coverage **~99.5 %** of live
+  buses. Projection validated: reconstructing a bus's position from `route_offset_ft` lands
+  within **p50 2.3 ft / p99 12.5 ft** of its actual GPS.
+- **Blended `speed_est_fps`** — observed displacement/Δt (archive path, sane 1–90 fps) →
+  per-route×half-mile-segment median → per-route median → 12 fps citywide default, tagged by
+  `speed_basis`. Medians come from a new consolidated **speed table** (`route_segment_speeds/`,
+  13,396 segment rows over 23.1 M along-shape observations, citywide median **10.4 fps ≈ 7.1 mph**).
+- **Route-adherence metric** (`pipeline/realtime/derive2/adherence2.py`, new stage folded into
+  `run_derive.py`; backfilled all 8 archive days) — per route×day share of pings within 100 ft
+  of the trip shape, first/last 500 ft excluded. **Honest finding: MTA BusTime reports positions
+  already map-matched to the route path** (97 % of pings within 1 ft), so on-route reads
+  **≈99.999 % citywide / 100 % median route** and chiefly confirms position quality; only genuine
+  reroutes push a bus past 100 ft (worst routes BX46/S98/M8 ≈ 99.98 %). Exposed at
+  **`/api/obs/adherence?route=`** (summary + daily series; citywide distribution when no route),
+  with the snapping caveat baked into the payload.
+- **`/api/rt/route_shapes?route=&direction=`** — the exact decimated lat/lon polyline
+  `route_offset_ft` is measured against, with a cumulative `offset_ft` per vertex, so the motion
+  client can place a bus along the same geometry.
+- **Dep:** the API image now installs **pyproj** (coordinate transform only; projection +
+  decimation are hand-rolled in numpy — no shapely in the API).
+
 ## 2026-07-23 — Ant Farm v2 F5: reliability (never ship a blank map silently)
 
 Graceful degradation + observability + a mechanical deploy gate, so the F0 blank-basemap

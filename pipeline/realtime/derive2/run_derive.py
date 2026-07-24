@@ -34,6 +34,7 @@ from _common import (ARCHIVE, COVERAGE_PARTIAL_FRAC, DERIVED, DERIVE2, HIGH_VOLU
 import trajectories
 import headways
 import adherence
+import adherence2
 import kpis
 from gtfs_index import ensure_index, load_cache
 
@@ -176,6 +177,7 @@ def process_day(day: str, cache: dict, con, baseline: dict, depth_days: int) -> 
     res["trajectories"] = trajectories.process_day(day, cache=cache)
     res["headways"] = headways.process_day(day, cache=cache)
     res["adherence"] = adherence.process_day(day, cache=cache)
+    res["route_adherence"] = adherence2.process_day(day, cache=cache)
     res["kpis"] = kpis.process_day(day, cache=cache)
     # stamp archive depth into the headway aggregate (PRELIMINARY consumers key off this)
     hw = DERIVED / "observed_headways" / f"date={day}" / "part-000.parquet"
@@ -235,8 +237,13 @@ def main():
             "traj_rows": r["trajectories"].get("output_rows"),
             "unmatched_trip_rate": r["trajectories"].get("unmatched_trip_rate"),
             "headway_agg_rows": r["headways"].get("agg_rows"),
+            "route_adherence": r["route_adherence"].get("citywide_adherence_pct"),
             "kpi_bins": r["kpis"].get("bins"),
         }
+    # Rebuild the consolidated per-route x segment speed table when any day was (re)processed
+    # (it pools ALL trajectory days; the API loads it once to blend speed_est_fps).
+    if summary["days"]:
+        summary["speed_table"] = adherence2.build_speed_table()
     _save_state(state)
     print(json.dumps(summary, indent=2))
 

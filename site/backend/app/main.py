@@ -14,7 +14,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import changes, config, downloads, gtfs, isochrone, obs, opswall, realtime, renters, runtime, siri, subway
+from . import (busshapes, changes, config, downloads, gtfs, isochrone, obs, opswall,
+               realtime, renters, runtime, siri, subway)
 
 app = FastAPI(title="nycvisualizer API", version="0.1.0")
 
@@ -210,6 +211,15 @@ async def routes() -> JSONResponse:
 async def route_shape(route_id: str) -> JSONResponse:
     data = await asyncio.to_thread(gtfs.get_route_shape, route_id)
     return JSONResponse(data)
+
+
+@app.get("/api/rt/route_shapes")
+async def rt_route_shapes(route: str, direction: int | None = None) -> JSONResponse:
+    """The exact decimated shape polyline(s) that /api/rt/vehicles' route_offset_ft is measured
+    against, with a cumulative offset_ft per vertex — so the motion client can place a bus at
+    its route_offset_ft along the same geometry. Served from the startup bus-shape LUT."""
+    data = await asyncio.to_thread(busshapes.route_shape_latlon, route, direction)
+    return JSONResponse(data, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/stops/{stop_id}/arrivals")

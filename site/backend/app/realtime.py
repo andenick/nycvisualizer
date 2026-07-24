@@ -14,7 +14,7 @@ from typing import Any
 
 import duckdb
 
-from . import config
+from . import config, motion
 
 
 def _clean_text(s: str) -> str:
@@ -48,41 +48,55 @@ def _vehicles_from_archive() -> dict[str, Any] | None:
     lst = ",".join("'" + f + "'" for f in files)
     con = duckdb.connect()
     try:
-        # Freshest snapshot per vehicle over the last ~90s window (robust to partial flushes).
+        # Freshest snapshot per vehicle over the last ~120s window (robust to partial flushes),
+        # PLUS the immediately-preceding ping (rn=2) so the motion model can derive an observed
+        # speed (displacement/Δt) and check the along-shape offset is monotonic.
         rows = con.execute(
             f"""
             WITH t AS (SELECT * FROM read_parquet([{lst}])),
-                 m AS (SELECT max(poll_ts) AS mx FROM t)
+                 m AS (SELECT max(poll_ts) AS mx FROM t),
+                 r AS (
+                    SELECT vehicle_id, route_id, trip_id, lat, lon, bearing, timestamp,
+                           stop_id, direction_id, coalesce(timestamp, poll_ts) AS eff_ts,
+                           row_number() OVER (
+                               PARTITION BY vehicle_id
+                               ORDER BY coalesce(timestamp, poll_ts) DESC
+                           ) AS rn
+                    FROM t, m
+                    WHERE t.poll_ts >= m.mx - 120 AND t.lat IS NOT NULL AND t.lon IS NOT NULL
+                 )
             SELECT vehicle_id, route_id, trip_id, lat, lon, bearing, timestamp,
-                   stop_id, direction_id, (SELECT mx FROM m) AS as_of
-            FROM t, m
-            WHERE t.poll_ts >= m.mx - 90 AND t.lat IS NOT NULL AND t.lon IS NOT NULL
-            QUALIFY row_number() OVER (
-                PARTITION BY vehicle_id ORDER BY coalesce(timestamp, poll_ts) DESC
-            ) = 1
+                   stop_id, direction_id, rn, eff_ts, (SELECT mx FROM m) AS as_of
+            FROM r WHERE rn <= 2
             """
         ).fetchall()
     finally:
         con.close()
     if not rows:
         return None
-    as_of = int(rows[0][9]) if rows[0][9] is not None else None
-    vehicles = [
-        {
-            "vehicle_id": r[0],
-            "route_id": r[1],
-            "trip_id": r[2],
-            "lat": r[3],
-            "lon": r[4],
-            "bearing": r[5],
-            "timestamp": int(r[6]) if r[6] is not None else None,
-            "stop_id": r[7],
-            "direction_id": int(r[8]) if r[8] is not None else None,
-        }
-        for r in rows
-    ]
+    as_of = int(rows[0][11]) if rows[0][11] is not None else None
+    vehicles = []
+    prev: dict[str, tuple] = {}
+    for r in rows:
+        if r[9] == 1:  # rn=1 -> freshest snapshot
+            vehicles.append(
+                {
+                    "vehicle_id": r[0],
+                    "route_id": r[1],
+                    "trip_id": r[2],
+                    "lat": r[3],
+                    "lon": r[4],
+                    "bearing": r[5],
+                    "timestamp": int(r[6]) if r[6] is not None else None,
+                    "stop_id": r[7],
+                    "direction_id": int(r[8]) if r[8] is not None else None,
+                }
+            )
+        else:  # rn=2 -> previous ping (lat, lon, eff_ts) for the motion model
+            prev[r[0]] = (r[3], r[4], int(r[10]) if r[10] is not None else None)
     stale = as_of is not None and (time.time() - as_of) > config.STALE_AFTER_S
-    return {"as_of": as_of, "source": "archive", "count": len(vehicles), "stale": stale, "vehicles": vehicles}
+    return {"as_of": as_of, "source": "archive", "count": len(vehicles), "stale": stale,
+            "vehicles": vehicles, "_prev": prev}
 
 
 def _vehicles_from_live() -> dict[str, Any] | None:
@@ -133,16 +147,23 @@ def _vehicles_from_live() -> dict[str, Any] | None:
 
 
 def get_vehicles() -> dict[str, Any]:
-    """Freshest vehicles: archive first, live GTFS-RT fallback if archive is stale/absent."""
+    """Freshest vehicles: archive first, live GTFS-RT fallback if archive is stale/absent.
+
+    The payload is enriched with the W1 motion fields (shape_id, route_offset_ft,
+    speed_est_fps, speed_basis) here so the enrichment runs once per RT_CACHE_TTL_S build,
+    NOT per request (main.py wraps this in the TTL cache). The live-fallback path has no
+    previous ping, so its speed falls back to the derive2 median tables / default (honest).
+    """
     arch = _vehicles_from_archive()
     if arch is not None and not arch["stale"]:
-        return arch
+        return motion.enrich(arch)
     live = _vehicles_from_live()
     if live is not None:
-        return live
+        return motion.enrich(live)
     if arch is not None:
-        return arch  # stale archive beats nothing — honestly flagged stale
-    return {"as_of": None, "source": "none", "count": 0, "stale": True, "vehicles": []}
+        return motion.enrich(arch)  # stale archive beats nothing — honestly flagged stale
+    return {"as_of": None, "source": "none", "count": 0, "stale": True, "vehicles": [],
+            "motion": {"n": 0}}
 
 
 def get_alerts() -> dict[str, Any]:
