@@ -2,6 +2,39 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — C4: visual re-shoot fixes (floating-chrome collisions + clipped rail column)
+
+CSS-only. A 24-shot re-shoot of the changed surfaces (unified `/workstation` with a mixed bus+subway
+selection, a 15-selection stress case, and both post-C1 ant farms) at 1440 / 834 / 390 px × light/dark
+found four measured layout defects. All four are fixed; no behaviour, data or copy changed.
+
+- **Unified rail clipped its last column at every width.** C3 added a kind badge, an expand chevron and
+  an ALERTS column to the old 7-column bus table, taking its natural width to ~441 px — but the rail was
+  still `min(92vw, 400px)`, so the INFO (dossier / live-map link) column sat outside the visible box at
+  1440 and 834 px (43 px hidden) and 390 px (69 px). Rail widened to `min(92vw, 460px)`, restoring the
+  stated intent of "show the dossier link without horizontal scroll". At 390 px the table still has to
+  scroll; `.ws-table-wrap` now uses `scrollbar-width: thin` so that scroll is visible rather than an
+  invisible overlay.
+- **Workstation as-of chip collided with the rail and the panel at tablet widths.** Below ~1330 px the
+  viewport-centred chip cannot clear a 300 px panel and a 460 px rail: measured at 834 px it covered the
+  rail by 164×56 px (hiding the "Selection data" title) and the panel head by 64×56 px (hiding "Clear
+  all"). In the 391–1329 px band the chip now drops to the bottom corridor between the panel and the
+  bottom-right chip column.
+- **Workstation as-of chip overlapped the rail at 390 px** by 272×38 px. The rail's `max-height` goes
+  34dvh → 30dvh and the chip becomes full-width (wrapping to ~2 lines instead of 4), giving a clean
+  rail → clock → as-of → bottom-sheet stack.
+- **Ant-farm as-of chip covered the route/line filter at narrow widths.** At 390 px the top-right chip
+  overlapped the top-left filter card by 221×36 px (`/live/bus`) and 209×36 px (`/live/subway`),
+  obscuring the selector. Below 720 px it now sits in the bottom-right column above the clock chip.
+  Scoped `:not(.ws-asof)` so the workstation keeps its own placement.
+- Also at 390 px the workstation clock chip landed on the bottom-sheet route grid (160×29 px); it moves
+  into the free band between the rail and the as-of chip. The corner ⓘ button and legend chip stay in
+  the corner — they are z-lifted above the sheet, fully visible and tappable.
+
+Verified: `tsc --noEmit` clean, vite build clean, vitest 55/55 green, paint canary 10/10 PASS against
+the live edge, and a 24-shot live re-shoot with zero geometry findings other than the two accepted
+corner-furniture overlaps at 390 px.
+
 ## 2026-07-24 — C3: unified Planner Workstation (`/workstation`, host `work.`)
 
 Merges the two former single-mode planner workstations (`/workstation/bus` + `/workstation/subway`,

@@ -1444,6 +1444,15 @@ i.obs-hw-obs.key { border-radius: 50%; }
 .imm-clock-age { opacity: 0.85; }
 @media (max-width: 720px) {
   .imm-clock { bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.2rem); }
+  /* The top-right as-of chip (max 340 px) and the top-left filter card (~340 px) cannot
+     both sit on the 3.4rem row once the viewport drops below ~700 px — measured at 390 px
+     the chip covered the filter head by 221x36 px (/live/bus) and 209x36 px (/live/subway),
+     obscuring the route/line selector. Drop it into the bottom-right column, stacked above
+     the clock chip. Scoped away from the workstation, whose own .ws-asof rules place it. */
+  .imm-asof:not(.ws-asof) {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.2rem + 2.5rem);
+  }
 }
 
 /* =========================================================================
@@ -1547,10 +1556,12 @@ i.obs-hw-obs.key { border-radius: 50%; }
   position: absolute; z-index: 1100;
   top: calc(env(safe-area-inset-top) + 3.4rem);
   right: max(0.7rem, env(safe-area-inset-right));
-  /* wide enough for the 7-column bus table (Route·Now·Hw·Sched·Bunch·On-rt·Dossier)
-     to show the dossier link without horizontal scroll; the subway table is narrower
-     and simply spreads. */
-  width: min(92vw, 400px);
+  /* Wide enough for the UNIFIED 8-column table (Route/Line · Now · Hw · Sched · Bunch ·
+     On-rt · Alerts · Info) to show the dossier link without horizontal scroll. C3 added
+     the kind badge, the expand chevron and the Alerts column to the old 7-column bus
+     table — its natural width is ~441 px, so the former 400 px rail silently clipped the
+     Info (dossier) column at EVERY width. 460 px restores the stated intent. */
+  width: min(92vw, 460px);
   border-radius: 12px;
   display: flex; flex-direction: column;
   max-height: calc(100dvh - 12rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
@@ -1569,7 +1580,9 @@ i.obs-hw-obs.key { border-radius: 50%; }
 }
 .ws-dl:hover { border-color: var(--ark-accent, #2563eb); color: var(--ark-accent, #2563eb); }
 .ws-rail-empty { padding: 0.7rem 0.6rem; font-size: 0.78rem; }
-.ws-table-wrap { overflow: auto; }
+/* `thin` (not overlay) so that when the table DOES have to scroll — the 390 px rail is
+   narrower than the 8-column table — the affordance is visible instead of invisible. */
+.ws-table-wrap { overflow: auto; scrollbar-width: thin; }
 .ws-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
 .ws-table th {
   position: sticky; top: 0; z-index: 1;
@@ -1662,9 +1675,37 @@ i.obs-hw-obs.key { border-radius: 50%; }
   .ws-rail {
     top: calc(env(safe-area-inset-top) + 3.2rem);
     left: max(0.5rem, env(safe-area-inset-left)); right: max(0.5rem, env(safe-area-inset-right));
-    width: auto; max-height: 34dvh;
+    /* 34dvh put the rail's lower edge at ~338 px, INSIDE the as-of chip that rides just
+       above the 52dvh bottom sheet (measured 272x38 px of occlusion) — 30dvh clears it. */
+    width: auto; max-height: 30dvh;
   }
   .ws-asof {
-    top: auto; bottom: calc(52dvh + 0.5rem); /* sit just above the bottom-sheet panel */
+    /* sit in the gap between the rail and the bottom-sheet panel; full-width so the chip
+       wraps to ~2 lines instead of 4 and cannot climb back into the rail. */
+    top: auto; bottom: calc(52dvh + 0.6rem);
+    left: max(0.5rem, env(safe-area-inset-left)); right: max(0.5rem, env(safe-area-inset-right));
+    transform: none; max-width: none; justify-content: center;
+  }
+  /* The bottom sheet owns the lower 52dvh, so the clock chip's usual bottom-right
+     berth lands ON the route grid (measured 160x29 px over the chips). Stack it in
+     the free band between the rail and the as-of chip instead. (The ⓘ button and the
+     legend chip stay in the corner: they are z-lifted above the sheet, fully visible
+     and tappable — corner furniture, not hidden content.) */
+  .ws-clock { top: auto; bottom: calc(52dvh + 0.6rem + 3.2rem); }
+}
+
+/* ---- 391–1329px: the top row cannot hold panel + centred chip + rail ----
+   Below ~1330 px the centred as-of chip collides with the data rail (measured at 834 px:
+   164x56 px over the rail — hiding the "Selection data" title — and 64x56 px over the
+   panel head, hiding "Clear all"). In that band the chip drops to the bottom corridor
+   between the left panel and the bottom-right chip column (clock · legend · ⓘ). */
+@media (min-width: 391px) and (max-width: 1329px) {
+  .ws-asof {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.3rem);
+    left: calc(max(0.7rem, env(safe-area-inset-left)) + 300px + 0.5rem);
+    right: auto;
+    transform: none;
+    max-width: min(340px, calc(100vw - 300px - 13rem));
   }
 }
