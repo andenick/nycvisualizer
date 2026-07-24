@@ -858,9 +858,9 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
             </div>
             <p className="imm-info-honesty">
               {mode === "buses"
-                ? "Every MTA bus, refreshed ~30s from the GTFS-RT feed via our server-side poller. Buses carry GPS; shapes are drawn at true scale. "
+                ? "Every MTA bus, refreshed ~31s from the GTFS-RT feed via our server-side poller. Buses carry GPS; shapes are drawn at true scale. Between reports, each bus's movement is modeled from that route's recorded behavior (per-segment speeds we've logged since July), never fabricated. "
                 : "Trains report by station; between stations a train's position is an honest estimate interpolated along the track (shown faded). "}
-              Positions between reports are estimated (glided) — no easing gimmicks.
+              Estimated between reports — no easing gimmicks.
             </p>
             <div className="imm-info-stamp">
               Data as of {fmtClock(asOf)} · source {source}
@@ -933,7 +933,8 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                   <span>Each bus takes its official route color (borough colors when unfiltered).</span>
                 ),
                 <span>
-                  Positions update ~30&nbsp;s · movement between updates is <em>estimated</em>.
+                  Reports arrive ~31&nbsp;s apart · between them movement is <em>modeled</em> from each
+                  route&rsquo;s recorded behavior.
                 </span>,
                 <span>
                   State: <Swatch color="#3b82f6" />solid observed (GPS) ·{" "}
@@ -952,7 +953,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                   ))}
                 </span>,
                 <span>
-                  Positions update ~30&nbsp;s · movement between updates is <em>estimated</em>.
+                  Reports arrive ~31&nbsp;s apart · between them position is estimated along the track.
                 </span>,
                 <span>
                   State: <Swatch color="#3b82f6" />solid observed ·{" "}

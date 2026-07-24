@@ -692,7 +692,8 @@ export default function BusMap() {
             </span>
           ),
           <span>
-            Positions update ~30&nbsp;s · movement between updates is <em>estimated</em>.
+            Reports arrive ~31&nbsp;s apart · between them movement is <em>modeled</em> from each
+            route&rsquo;s recorded behavior{showSubway ? " (trains: interpolated along the track)" : ""}.
           </span>,
           <span>
             State: <Swatch color="#3b82f6" />solid observed ·{" "}

@@ -1002,9 +1002,11 @@ export default function WorkstationPage({ mode }: { mode: WorkstationMode }) {
             </div>
             <p className="imm-info-honesty">
               A monitoring tool: select any {noun} and watch their live {unit} at true scale, each in its own
-              colour, with the numbers a planner reaches for in the right rail. Positions update ~30 s from the
-              MTA feed; movement between reports is <em>estimated</em> (glided along each route’s shape), never
-              fabricated.
+              colour, with the numbers a planner reaches for in the right rail. Reports arrive ~31 s apart from
+              the MTA feed;{" "}
+              {mode === "bus"
+                ? "between them each bus's movement is modeled from that route’s recorded behavior (glided along its shape), never fabricated."
+                : "between them each train's position is estimated along the track, never fabricated."}
             </p>
             <div className="imm-info-stamp">
               Data as of {fmtClock(asOf)} · source {source}
@@ -1064,8 +1066,8 @@ export default function WorkstationPage({ mode }: { mode: WorkstationMode }) {
                   <Swatch color="#59a14f" /> two routes = two visibly distinct populations.
                 </span>,
                 <span>
-                  Positions update ~30&nbsp;s · movement between updates is <em>estimated</em> along each route’s
-                  shape.
+                  Reports arrive ~31&nbsp;s apart · between them movement is <em>modeled</em> from each
+                  route&rsquo;s recorded behavior (glided along its shape).
                 </span>,
               ]
             : [
@@ -1074,7 +1076,7 @@ export default function WorkstationPage({ mode }: { mode: WorkstationMode }) {
                   as track-worms.
                 </span>,
                 <span>
-                  Positions update ~30&nbsp;s · between stations a train’s position is an honest estimate (faded).
+                  Reports arrive ~31&nbsp;s apart · between stations a train’s position is an honest estimate (faded).
                 </span>,
               ]
         }

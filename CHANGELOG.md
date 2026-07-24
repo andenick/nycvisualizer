@@ -2,6 +2,24 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — Ant Farm v3 W5: motion-model legend honesty + close-out gates
+
+Wording-only fix closing the Ant Farm v3 gate pass. The map legends and info overlays now state
+the motion model honestly and consistently: for buses, movement between reports is **modeled from
+each route's recorded behavior** (the per-segment speeds logged since July), not a naive tween;
+for trains it stays an honest **estimate along the track**. The report cadence is stated as the
+real **~31 s** everywhere (was an inconsistent "~30 s").
+
+- `/bus`, `/live/bus`, `/workstation/bus` legends + immersive/workstation ⓘ overlays: "Reports
+  arrive ~31 s apart · between them movement is **modeled** from each route's recorded behavior."
+- `/live/subway`, `/workstation/subway`: "…between them position is estimated along the track"
+  (subway motion is interpolation, not per-segment speed telemetry — kept accurate, no overclaim).
+- Full carson-visual re-shoot of all eight map surfaces × {1440, 834, 390} × {light, dark}
+  (48 screenshots): zero rendering defects; paint canary 10/10 PASS; motion-honesty watch of
+  `/live/bus` over 3+ ticks showed no on-screen teleports (large moves are off-viewport eased
+  data-jumps), smooth steady-state glide (median between-tick prediction error ~34 ft), plus
+  docked-pulse and decay-to-stop behavior confirmed.
+
 ## 2026-07-24 — Ant Farm v3 W3/W4: Planner Workstations
 
 Two new full-window planner tools — an analytical monitoring workstation for a professional
