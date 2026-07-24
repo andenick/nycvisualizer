@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import { trackMapError } from "../lib/beacon";
 import {
   getVehicles,
   getRoutes,
@@ -333,17 +334,35 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   // ---- map init ----
   useEffect(() => {
     if (map.current || !mapRef.current) return;
-    const m = L.map(mapRef.current, {
-      center: init.current.center ?? NYC_CENTER,
-      zoom: init.current.zoom ?? 12,
-      minZoom: 9,
-      maxZoom: 17,
-      maxBounds: NYC_BOUNDS,
-      maxBoundsViscosity: 0.6,
-      zoomControl: true,
-    });
+    let m: L.Map;
+    try {
+      m = L.map(mapRef.current, {
+        center: init.current.center ?? NYC_CENTER,
+        zoom: init.current.zoom ?? 12,
+        minZoom: 9,
+        maxZoom: 17,
+        maxBounds: NYC_BOUNDS,
+        maxBoundsViscosity: 0.6,
+        zoomControl: true,
+      });
+    } catch (e) {
+      // F5: caught map-init error → beacon (kind=map_error, detail=init:*).
+      trackMapError("init:" + (e instanceof Error ? e.message : String(e)));
+      setErr("The map failed to initialize.");
+      return;
+    }
     m.zoomControl.setPosition("bottomleft");
-    setBasemap(addBasemap(m));
+    // F5: reliability guard — raster fallback auto-engage + degradation beacon.
+    setBasemap(
+      addBasemap(m, {
+        page: window.location.pathname,
+        onFallback: (info, reason) => {
+          setBasemap(info);
+          trackMapError("fallback:" + reason);
+        },
+        onZeroTiles: (detail) => trackMapError("zero_tiles:" + detail),
+      }),
+    );
     stationLayer.current = L.layerGroup();
     shapeLayer.current = L.layerGroup().addTo(m);
     focusLayer.current = L.layerGroup().addTo(m);
@@ -417,40 +436,56 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     setCount(trains.length);
   };
 
-  // ---- BUS live feed ----
+  // ---- BUS live feed (F5: bbox-slimmed polls + fetch-on-moveend) ----
   useEffect(() => {
     if (mode !== "buses") return;
     let cancelled = false;
     const pull = () =>
-      getVehicles()
+      getVehicles(map.current ? bboxParam(map.current) : undefined)
         .then((d) => !cancelled && renderBuses(d))
         .catch(() => !cancelled && setErr("Live bus feed unavailable."));
     pull();
     const unsub = streamVehicles((d) => !cancelled && renderBuses(d), () => {});
     const poll = setInterval(pull, 30000);
+    let moveTimer: ReturnType<typeof setTimeout> | null = null;
+    const onMove = () => {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(pull, 400);
+    };
+    map.current?.on("moveend", onMove);
     return () => {
       cancelled = true;
       unsub();
       clearInterval(poll);
+      if (moveTimer) clearTimeout(moveTimer);
+      map.current?.off("moveend", onMove);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, routeColorByShort]);
 
-  // ---- SUBWAY live feed ----
+  // ---- SUBWAY live feed (F5: bbox-slimmed polls + fetch-on-moveend) ----
   useEffect(() => {
     if (mode !== "subway") return;
     let cancelled = false;
     const pull = () =>
-      getSubway()
+      getSubway(map.current ? bboxParam(map.current) : undefined)
         .then((d) => !cancelled && renderSubway(d))
         .catch(() => !cancelled && setErr("Live subway feed unavailable."));
     pull();
     const unsub = streamSubway((d) => !cancelled && renderSubway(d), () => {});
     const poll = setInterval(pull, 30000);
+    let moveTimer: ReturnType<typeof setTimeout> | null = null;
+    const onMove = () => {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(pull, 400);
+    };
+    map.current?.on("moveend", onMove);
     return () => {
       cancelled = true;
       unsub();
       clearInterval(poll);
+      if (moveTimer) clearTimeout(moveTimer);
+      map.current?.off("moveend", onMove);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);

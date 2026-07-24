@@ -2,6 +2,40 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Ant Farm v2 F5: reliability (never ship a blank map silently)
+
+Graceful degradation + observability + a mechanical deploy gate, so the F0 blank-basemap
+class of bug can never ship or persist unseen. Deployed + verified live on nycvisualizer.com
+(post-deploy paint canary **10/10 PASS**).
+
+- **Raster basemap fallback, auto-engaged** — the OSM raster path was tree-shaken out of the
+  build; it is now re-included and wired to the F0 regression guard. On **empty paint rules**
+  (the exact `flavor`→`theme` failure) OR **>30 % tile errors in the first 15 s** (measured via
+  `tileloadstart` vs `tileload`, since protomaps-leaflet swallows fetch errors) OR **zero painted
+  pixels**, the guard swaps the broken vector basemap for OSM raster tiles and shows a visible
+  **"simplified basemap"** chip — a real map instead of a blank void. Proven by a simulated
+  failure (bogus theme → empty paint rules → auto-engage screenshotted), then reverted. The
+  raster path is a deliberate, chip-labelled degraded-mode exception to the no-CDN rule, engaged
+  only when the self-hosted basemap is provably broken.
+- **Client error beacon** — map pages POST `{page, kind, detail, ua}` to `/__track` on caught
+  map-init errors, guard-triggered fallback, zero-painted-tiles after 10 s, and SSE
+  permanently-down (>5 consecutive failures). The backend `/__track` now appends events as
+  greppable JSONL (`kind=map_error`); a Caddy route was added so the bare `/__track` path
+  actually reaches the API instead of being swallowed by the SPA fallback. Ops: **grep the box
+  telemetry for `kind=map_error`**.
+- **Post-deploy paint canary** — `site/tools/paint_canary.py` drives a headless browser to prove
+  the basemap paints **pixels** on /bus, /live/subway, /sidewalks and that the RT endpoints serve
+  live counts + the pmtiles assets are servable. One PASS/FAIL line per check, exit code gates the
+  deploy: **a deploy is not done until paint_canary PASSES against the live edge.** Added to the
+  REFRESH.md regeneration/verify chain and the box deploy README.
+- **Periodic synthetic check** — `JaneNYCCanary` (Windows Scheduled Task, every 6 h, offset 3 h
+  from `JaneNYCGtfsSnap`) runs the canary against the live edge and logs PASS/FAIL to
+  `realtime/logs/canary.log` — the silent-regression net.
+- **bbox adoption on immersive + /bus** — rt polls now send `?bbox=<viewport>` (updated on
+  `moveend`, debounced; **SSE unchanged**), and refetch on pan so units entering the viewport
+  appear immediately. Measured live payload reduction: **79 % (borough view) → 92 % (neighborhood)
+  → 97 % (few blocks)**; the whole-city default view trims ~23 % (little to cut there).
+
 ## 2026-07-23 — Ant Farm v2 F4: restrained live-map enhancements
 
 Four subtle, intelligibility-serving additions to the live maps — nothing else (the

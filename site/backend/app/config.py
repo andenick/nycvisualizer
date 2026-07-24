@@ -78,6 +78,15 @@ RT_CACHE_TTL_S = int(os.environ.get("NYCV_RT_CACHE_TTL_S", "10"))
 # ceiling is N * SSE_MAX (each worker counts only its own streams).
 SSE_MAX = int(os.environ.get("NYCV_SSE_MAX", "200"))
 
+# F5 reliability: first-party client-telemetry sink (/__track). Map pages POST small
+# map-error events here; we append them as greppable JSONL so a silent frontend
+# regression is discoverable on the box ("grep the box telemetry for kind=map_error").
+# On the box this points at the writable telemetry volume (docker-compose sets
+# NYCV_TELEMETRY_LOG=/var/lib/carson/track.log); locally it defaults under realtime/logs.
+TELEMETRY_LOG: Path = _path_env(
+    "NYCV_TELEMETRY_LOG", PLATFORM_ROOT / "realtime" / "logs" / "track.log"
+)
+
 # GTFS-RT / SIRI endpoints (BusTime).
 GTFSRT_VEHICLES_URL = "https://gtfsrt.prod.obanyc.com/vehiclePositions"
 GTFSRT_ALERTS_URL = "https://gtfsrt.prod.obanyc.com/alerts"

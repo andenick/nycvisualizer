@@ -306,7 +306,37 @@ async def api_changes_rss(route: str | None = None) -> Response:
     )
 
 
+def _append_track_line(raw: bytes) -> None:
+    """Append one telemetry event as a greppable JSONL line. Best-effort: any failure
+    (bad JSON, unwritable path, oversize) is swallowed so telemetry never 5xxs a client.
+    Line format: `<iso_ts>\\tkind=<kind>\\t<json>` so the documented
+    `grep kind=map_error` matches literally AND the payload stays machine-parseable."""
+    try:
+        if len(raw) > 4096:  # cap: drop obviously-oversize bodies
+            return
+        evt = json.loads(raw.decode("utf-8", "replace"))
+        if not isinstance(evt, dict):
+            return
+        kind = str(evt.get("kind", "event"))[:64]
+        evt["server_ts"] = int(time.time())
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        line = f"{ts}\tkind={kind}\t{json.dumps(evt, separators=(',', ':'), ensure_ascii=False)}\n"
+        path = config.TELEMETRY_LOG
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+    except Exception:
+        pass  # telemetry must never break a request
+
+
 @app.post("/__track")
-async def track() -> Response:
-    # First-party telemetry sink for the ArkTriad beacon. Accept and drop (no PII stored here).
+async def track(request: Request) -> Response:
+    # First-party telemetry sink (ArkTriad triad beacon + F5 map-error beacon). Events
+    # are appended as greppable JSONL to config.TELEMETRY_LOG (see REFRESH.md ops).
+    try:
+        raw = await request.body()
+    except Exception:
+        return Response(status_code=204)
+    if raw:
+        await asyncio.to_thread(_append_track_line, raw)
     return Response(status_code=204)
