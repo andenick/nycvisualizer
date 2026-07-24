@@ -17,6 +17,7 @@ import ConfidenceBadge from "../components/ConfidenceBadge";
 import { ContextCallouts } from "../components/ContextCallout";
 import KnowDontKnow from "../components/KnowDontKnow";
 import { archiveWindow } from "../lib/confidence";
+import { BOROUGH_NAME_ORDER } from "../lib/boroughs";
 import ObsSubnav from "../components/ObsSubnav";
 import charts from "../content/chartdata.json";
 
@@ -70,7 +71,8 @@ function HubBoundChart() {
   );
 }
 
-const BOROUGH_ORDER = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "MTA Bus Co."];
+// Alphabetical by borough name, Bronx first (shared with /bus + immersive + legends).
+const BOROUGH_ORDER = BOROUGH_NAME_ORDER;
 
 function routeHref(routeId: string) {
   return `/observatory/${encodeURIComponent(routeId)}`;

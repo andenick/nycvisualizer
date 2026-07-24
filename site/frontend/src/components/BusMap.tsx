@@ -24,6 +24,7 @@ import {
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
 import { VehicleFlowLayer, type FlowSelection } from "./VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "./MapLegend";
+import { BOROUGH_GROUP_ORDER } from "../lib/boroughs";
 import FlowControls, { type FollowInfo, type FocusInfo } from "./FlowControls";
 
 // Collapse express/shuttle subway variants onto their trunk (for focus-dim on a line).
@@ -543,7 +544,7 @@ export default function BusMap() {
       const g = routeGroup(r.route_id);
       (by[g] ??= []).push(r);
     }
-    const order = ["M", "B", "Q", "Bx", "S", "SIM", "X"];
+    const order = BOROUGH_GROUP_ORDER;
     return Object.entries(by).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
   }, [routes]);
 
@@ -675,8 +676,8 @@ export default function BusMap() {
           </span>,
           showBuses && (
             <span>
-              Buses by borough: <Swatch color="#2563eb" />Man <Swatch color="#16a34a" />Bklyn{" "}
-              <Swatch color="#d97706" />Qns <Swatch color="#dc2626" />Bx <Swatch color="#7c3aed" />SI{" "}
+              Buses by borough: <Swatch color="#dc2626" />Bx <Swatch color="#16a34a" />Bklyn{" "}
+              <Swatch color="#2563eb" />Man <Swatch color="#d97706" />Qns <Swatch color="#7c3aed" />SI{" "}
               <Swatch color="#0891b2" />Exp
             </span>
           ),

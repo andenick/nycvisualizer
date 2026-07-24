@@ -36,6 +36,7 @@ import {
   type SubwayTrain,
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
+import { BOROUGH_GROUP_ORDER } from "../lib/boroughs";
 import { VehicleFlowLayer, type FlowSelection } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "../components/MapLegend";
 import FlowControls, { type FollowInfo, type FocusInfo } from "../components/FlowControls";
@@ -675,7 +676,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   const grouped = useMemo(() => {
     const by: Record<string, RouteInfo[]> = {};
     for (const r of routes) (by[routeGroup(r.route_id)] ??= []).push(r);
-    const order = ["M", "B", "Q", "Bx", "S", "SIM", "X"];
+    const order = BOROUGH_GROUP_ORDER;
     return Object.entries(by).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
   }, [routes]);
 
@@ -712,13 +713,18 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
               </svg>
               <span className="imm-mark-txt">NYC Visualizer</span>
             </a>
+            {/* Bus↔Subway is a FULL page load (plain <a>, not an SPA <Link>): the two
+                immersive families each own a Leaflet map + live feeds; an in-SPA route
+                swap leaves a half-torn map and degrades/freezes. A real navigation gives
+                each family a fresh document + clean map init. Within-family links (the
+                site sections below) stay SPA. */}
             <div className="imm-modeswitch" role="group" aria-label="Immersive mode">
-              <Link className={"imm-mode" + (mode === "buses" ? " on" : "")} to="/live/bus">
+              <a className={"imm-mode" + (mode === "buses" ? " on" : "")} href="/live/bus">
                 Buses
-              </Link>
-              <Link className={"imm-mode" + (mode === "subway" ? " on" : "")} to="/live/subway">
+              </a>
+              <a className={"imm-mode" + (mode === "subway" ? " on" : "")} href="/live/subway">
                 Subway
-              </Link>
+              </a>
             </div>
           </div>
 
@@ -917,8 +923,8 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                 </span>,
                 colorMode === "borough" ? (
                   <span>
-                    By borough: <Swatch color="#2563eb" />Man <Swatch color="#16a34a" />Bklyn{" "}
-                    <Swatch color="#d97706" />Qns <Swatch color="#dc2626" />Bx <Swatch color="#7c3aed" />
+                    By borough: <Swatch color="#dc2626" />Bx <Swatch color="#16a34a" />Bklyn{" "}
+                    <Swatch color="#2563eb" />Man <Swatch color="#d97706" />Qns <Swatch color="#7c3aed" />
                     SI <Swatch color="#0891b2" />Exp
                   </span>
                 ) : (
