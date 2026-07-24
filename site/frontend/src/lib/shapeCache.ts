@@ -11,8 +11,17 @@
 //     own shape directly regardless of which direction/route variant it's on;
 //   * fetches lazily, ONCE per route, deduped, and only for routes that are actually visible
 //     (the layer calls ensure() for the shape_ids it sees this snapshot);
-//   * is LRU-bounded (~50 shapes ≈ the busiest realistic viewport) — evicting a shape simply
-//     re-fetches its route the next time a bus needs it.
+//   * is LRU-bounded — but sized for the WHOLE live fleet, not one viewport. The ant-farm
+//     ingests EVERY vehicle each snapshot (not just on-screen ones) and calls ensure() for
+//     each, so a viewport-sized cap (the old 50) thrashed hard: the NYC bus fleet spans ~550
+//     distinct shape_ids across ~285 routes, so 50 evicted ~90% of shapes every snapshot,
+//     bouncing buses OFF the shape path onto the straight glide — which defeated the whole
+//     dead-reckoning model (no continuous motion → the synchronized poll pulse survived) and
+//     starved the between-tick predErr ring. Sizing the cap above the fleet's shape count
+//     keeps every bus stably dead-reckoning along its shape. Each shape is tiny (~20-90
+//     decimated vertices ≈ ~2 KB), so the full fleet resident is ~1-2 MB, and each route is
+//     fetched ONCE instead of re-fetched on every eviction (fewer requests, not more).
+//     (motion-continuity study C1, 2026-07-24)
 //
 // Never throws to callers: a failed fetch clears the route's in-flight flag so a later
 // snapshot retries; buses whose shape isn't loaded yet keep the straight glide meanwhile.
@@ -28,7 +37,7 @@ export interface OffsetPoly {
   lenFt: number;
 }
 
-const LRU_MAX = 50;
+const LRU_MAX = 1200; // > the ~550-shape live fleet, with headroom for trip/shape churn (~2 MB)
 
 export class RouteShapeCache {
   // Map preserves insertion order → we use it as an LRU (re-insert on touch, evict oldest).

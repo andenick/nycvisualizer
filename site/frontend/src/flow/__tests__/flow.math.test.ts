@@ -8,10 +8,10 @@ import { describe, it, expect } from "vitest";
 import type { Vehicle, SubwayTrain } from "../../lib/api";
 import { Projector, metersBetween, metersPerPixel } from "../project";
 import { pointAtDist, pointAtOffset, buildSegCum } from "../shapes";
-import { decayDist, clampFps, isSbs } from "../core";
+import { decayDist, advanceDist, clampFps, isSbs } from "../core";
 import { DegradeLadder } from "../ladder";
 import { HitStore, selOf } from "../hittest";
-import { DECAY_S, FRAME_BUDGET_MS } from "../constants";
+import { DECAY_S, FRAME_BUDGET_MS, STALE_S } from "../constants";
 
 describe("project — Web-Mercator meters-per-pixel", () => {
   it("matches the canonical z0 equator resolution", () => {
@@ -146,6 +146,31 @@ describe("motion — decayDist (honest ease-to-stop over DECAY_S)", () => {
   });
   it("matches the closed form at the half point", () => {
     expect(decayDist(10, 22.5)).toBeCloseTo(168.75, 6);
+  });
+});
+
+describe("motion — advanceDist (hold-last-speed until STALE_S, then decay-to-stop)", () => {
+  it("is zero at t=0 and for negative time", () => {
+    expect(advanceDist(10, 0)).toBe(0);
+    expect(advanceDist(10, -5)).toBe(0);
+  });
+  it("holds the last speed UNBIASED within a normal tick (no decay before STALE_S)", () => {
+    // the whole point of the study fix: a ~31 s tick advances speed·t, not the biased decay
+    expect(advanceDist(10, 20)).toBeCloseTo(200, 6); // 10·20 — pure dead-reckoning
+    expect(advanceDist(10, 31)).toBeCloseTo(310, 6); // vs decayDist(10,31)=194.3 (the −116 ft bias)
+    expect(advanceDist(10, STALE_S)).toBeCloseTo(400, 6); // 10·40 at the boundary
+    // proves the removed bias: hold > old decay for every within-tick t
+    expect(advanceDist(10, 31)).toBeGreaterThan(decayDist(10, 31));
+  });
+  it("is continuous at STALE_S and then decays honestly to a full stop", () => {
+    const atBoundary = advanceDist(10, STALE_S);
+    expect(advanceDist(10, STALE_S + 0.0001)).toBeCloseTo(atBoundary, 2); // continuous
+    // terminal = speed·STALE_S + 0.5·speed·DECAY_S = 400 + 225
+    expect(advanceDist(10, STALE_S + DECAY_S)).toBeCloseTo(625, 6);
+  });
+  it("caps monotonically once fully decayed (no fabricated motion past STALE_S+DECAY_S)", () => {
+    expect(advanceDist(10, 1000)).toBe(advanceDist(10, STALE_S + DECAY_S));
+    expect(advanceDist(10, STALE_S + DECAY_S)).toBeGreaterThan(advanceDist(10, STALE_S));
   });
 });
 
