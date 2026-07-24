@@ -2,6 +2,35 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-23 — Ant Farm v2 F3: capacity hardening (origin O(1) in users)
+
+Load-testing the live edge showed the RT poll endpoints re-read parquet/GTFS-RT via
+duckdb on **every request** (no shared connection), so origin CPU scaled ~linearly with
+concurrent users: the p95 < 5 s knee was **below 50 users**, and polls started timing out
+and erroring at ~100 concurrent users. This wave makes the origin **O(1) in users**.
+
+- **In-process TTL single-flight cache** (`app/runtime.py::TTLCache`,
+  `NYCV_RT_CACHE_TTL_S=10`) wrapping `get_vehicles` / `get_subway`. The expensive read now
+  runs at most once per 10 s per worker regardless of load; concurrent misses await ONE
+  recompute (no thundering herd). Measured effect at 500 VU: poll errors **88.8 % → 23.4 %**,
+  api-container CPU **~365 % → ~190 %**, box load **~10.2 → ~7.2**; **0 % errors through
+  200 users** (was 20–29 %).
+- **`Cache-Control: public, s-maxage=10, stale-while-revalidate=20`** on `/api/rt/vehicles`,
+  `/api/rt/subway`, `/api/wall` (origin-side edge-cache hint; SSE stays `no-cache`). Worst-case
+  data staleness bounded ~61 s, typical ~35 s; the `as_of` stamp always shows true age.
+- **`?bbox=minLon,minLat,maxLon,maxLat`** viewport filter on the two RT endpoints —
+  server-side, **additive, default = full**, applied to the cached payload (never mutated),
+  sets `bbox_filtered` + recomputed `count`, malformed bbox → full payload. A Manhattan
+  viewport cuts payload **−78 % (vehicles) / −63 % (subway)**.
+- **SSE ceiling** (`app/runtime.py::SSELimiter`, `NYCV_SSE_MAX=200` per worker) shared across
+  the vehicles/subway/wall streams; over cap → **`429` + `Retry-After: 30`**, and the client's
+  existing 30 s poll fallback engages automatically.
+- **uvicorn tuning** (`Dockerfile.backend`): `--workers 2 --timeout-keep-alive 15 --backlog 2048`.
+
+See `CAPACITY.md` (project tree) for the full before/after tables and the ⛔ Cloudflare Cache
+Rule paste-block (Cloudflare does **not** cache these JSON paths on `s-maxage` alone —
+`cf-cache-status` stayed `DYNAMIC`; the rule is required to add the edge/bandwidth half).
+
 ## 2026-07-23 — Ant Farm v2 Wave 1: at-station train rings + shared legend
 
 Trains reported *at a station* (~54% of the fleet at rush hour) were hidden under the

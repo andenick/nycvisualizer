@@ -14,9 +14,22 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import changes, config, downloads, gtfs, isochrone, obs, opswall, realtime, renters, siri, subway
+from . import changes, config, downloads, gtfs, isochrone, obs, opswall, realtime, renters, runtime, siri, subway
 
 app = FastAPI(title="nycvisualizer API", version="0.1.0")
+
+# F3 capacity: serve the RT poll payloads from an in-process single-flight TTL cache
+# so the heavy duckdb/parquet read runs at most once per RT_CACHE_TTL_S regardless of
+# how many users are polling. bbox filtering (below) is applied to the cached payload.
+_vehicles_cache = runtime.TTLCache(realtime.get_vehicles, config.RT_CACHE_TTL_S)
+_subway_cache = runtime.TTLCache(subway.get_subway, config.RT_CACHE_TTL_S)
+
+# Origin-side edge-cache hint (works even before any Cloudflare Cache Rule): CF/other
+# shared caches may serve up to s-maxage seconds fresh, then swr while revalidating.
+_RT_CACHE_CONTROL = (
+    f"public, s-maxage={config.RT_CACHE_TTL_S}, "
+    f"stale-while-revalidate={config.RT_CACHE_TTL_S * 2}"
+)
 
 # Bus Observatory (S5): /api/obs/* — dossier, Marey, headways, league tables.
 app.include_router(obs.router)
@@ -90,64 +103,83 @@ def api_healthz() -> dict:
     return _healthz_payload()
 
 
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _sse_over_cap() -> JSONResponse:
+    """Uniform 429 when the per-worker SSE ceiling is reached. Clients fall back to
+    the (edge-cached) poll path automatically — the native EventSource fires onerror
+    on the non-2xx and the caller's poll timer covers the gap."""
+    return JSONResponse(
+        {
+            "error": "SSE capacity reached — poll the equivalent /api/rt endpoint instead.",
+            "retry_after": 30,
+        },
+        status_code=429,
+        headers={"Retry-After": "30"},
+    )
+
+
 @app.get("/api/rt/vehicles")
-async def rt_vehicles() -> JSONResponse:
-    data = await asyncio.to_thread(realtime.get_vehicles)
-    return JSONResponse(data)
+async def rt_vehicles(bbox: str | None = None) -> JSONResponse:
+    data = await _vehicles_cache.get()
+    data = runtime.filter_bbox(data, "vehicles", runtime.parse_bbox(bbox))
+    return JSONResponse(data, headers={"Cache-Control": _RT_CACHE_CONTROL})
 
 
 @app.get("/api/rt/vehicles/stream")
-async def rt_vehicles_stream(request: Request) -> StreamingResponse:
-    async def gen():
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                data = await asyncio.to_thread(realtime.get_vehicles)
-                yield f"data: {json.dumps(data)}\n\n"
-            except Exception:
-                yield "event: error\ndata: {}\n\n"
-            await asyncio.sleep(config.SSE_INTERVAL_S)
+async def rt_vehicles_stream(request: Request):
+    if not runtime.sse_limiter.try_acquire():
+        return _sse_over_cap()
 
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    async def gen():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await _vehicles_cache.get()
+                    yield f"data: {json.dumps(data)}\n\n"
+                except Exception:
+                    yield "event: error\ndata: {}\n\n"
+                await asyncio.sleep(config.SSE_INTERVAL_S)
+        finally:
+            runtime.sse_limiter.release()
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @app.get("/api/rt/subway")
-async def rt_subway() -> JSONResponse:
-    data = await asyncio.to_thread(subway.get_subway)
-    return JSONResponse(data)
+async def rt_subway(bbox: str | None = None) -> JSONResponse:
+    data = await _subway_cache.get()
+    data = runtime.filter_bbox(data, "trains", runtime.parse_bbox(bbox))
+    return JSONResponse(data, headers={"Cache-Control": _RT_CACHE_CONTROL})
 
 
 @app.get("/api/rt/subway/stream")
-async def rt_subway_stream(request: Request) -> StreamingResponse:
-    async def gen():
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                data = await asyncio.to_thread(subway.get_subway)
-                yield f"data: {json.dumps(data)}\n\n"
-            except Exception:
-                yield "event: error\ndata: {}\n\n"
-            await asyncio.sleep(config.SSE_INTERVAL_S)
+async def rt_subway_stream(request: Request):
+    if not runtime.sse_limiter.try_acquire():
+        return _sse_over_cap()
 
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    async def gen():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await _subway_cache.get()
+                    yield f"data: {json.dumps(data)}\n\n"
+                except Exception:
+                    yield "event: error\ndata: {}\n\n"
+                await asyncio.sleep(config.SSE_INTERVAL_S)
+        finally:
+            runtime.sse_limiter.release()
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @app.get("/api/stations")

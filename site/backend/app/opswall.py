@@ -36,7 +36,7 @@ import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import config, obs, realtime, subway
+from . import config, obs, realtime, runtime, subway
 from .subwayColors_py import LINE_COLORS, TEXT_ON, line_label
 
 router = APIRouter(prefix="/api/wall", tags=["opswall"])
@@ -488,22 +488,35 @@ def get_wall(force: bool = False) -> dict[str, Any]:
 
 @router.get("")
 async def wall() -> JSONResponse:
+    # /api/wall is already app-cached (get_wall CACHE_TTL_S + startup warmer), so the
+    # origin cost is O(1); the Cache-Control lets a shared/edge cache shield it too.
     data = await asyncio.to_thread(get_wall)
-    return JSONResponse(data)
+    cc = f"public, s-maxage={config.RT_CACHE_TTL_S}, stale-while-revalidate={config.RT_CACHE_TTL_S * 2}"
+    return JSONResponse(data, headers={"Cache-Control": cc})
 
 
 @router.get("/stream")
-async def wall_stream(request: Request) -> StreamingResponse:
+async def wall_stream(request: Request):
+    if not runtime.sse_limiter.try_acquire():
+        return JSONResponse(
+            {"error": "SSE capacity reached — poll /api/wall instead.", "retry_after": 30},
+            status_code=429,
+            headers={"Retry-After": "30"},
+        )
+
     async def gen():
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                data = await asyncio.to_thread(get_wall)
-                yield f"data: {json.dumps(data)}\n\n"
-            except Exception:
-                yield "event: error\ndata: {}\n\n"
-            await asyncio.sleep(config.SSE_INTERVAL_S)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await asyncio.to_thread(get_wall)
+                    yield f"data: {json.dumps(data)}\n\n"
+                except Exception:
+                    yield "event: error\ndata: {}\n\n"
+                await asyncio.sleep(config.SSE_INTERVAL_S)
+        finally:
+            runtime.sse_limiter.release()
 
     return StreamingResponse(
         gen(),
