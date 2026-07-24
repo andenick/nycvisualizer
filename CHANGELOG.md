@@ -39,8 +39,15 @@ transitions) plus a fair on-the-live-feed 4-model measurement that corrected the
   hold-then-decay terminal (updates noted inline). Clean `tsc` + build; paint canary **10/10**.
 - **Honest caveat**: the study's headline "predErr 92 → 44 ft live" is NOT achieved — that number is
   a property of smoothed derived trajectories, not the live raw feed. What ships is genuinely
-  continuous motion, the systematic bias removed, and a de-synchronized pulse; realizing the study's
-  accuracy live would require offset smoothing (a backend follow-up).
+  continuous motion, the systematic bias removed, and a de-synchronized pulse.
+- **Option B tested + reverted (raw-feed floor stands)**: a bounded server-side smoother
+  (`motion.py`, median-of-last-3-reports + monotonic clamp, `offset_raw_ft` kept) was deployed and
+  A/B-measured over ~11 min against the raw offset on identical payloads (n≈18 k transitions). It
+  made the between-tick error WORSE, not better — shipped hold+segment median **194.9 → 227.3 ft
+  (−16.6 %)**, all four models worse smoothed — because a median-of-3 lags ~1 report and the lag
+  mismatches the prediction interval more than it removes projection noise. Per the keep-only-if->20 %-
+  drop rule it was **reverted**; the api serves raw `route_offset_ft`. Realizing the study's ~44 ft
+  live would need the heavier offline derive2-style per-trip processing, not a light real-time filter.
 
 ## 2026-07-24 — nycviz-flow: ant-farm engine formalized (host-agnostic, tested)
 
