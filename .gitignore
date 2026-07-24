@@ -19,7 +19,7 @@ _scratch/
 *.rdb
 
 # Keep the deliberate, self-hosted committed assets (they override the rules above):
-!site/frontend/public/basemap/nyc-basemap.pmtiles   # ~36 MB NYC vector basemap (no CDN)
+!site/frontend/public/basemap/nyc-basemap-z15b.pmtiles   # ~95 MiB NYC vector basemap, Planetiler maxzoom 15 (no CDN)
 # The Sidewalk Explorer web layers under site/frontend/public/layers/*.geojson are
 # intentionally committed (small, simplified) and are not matched by any rule above.
 

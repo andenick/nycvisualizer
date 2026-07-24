@@ -30,19 +30,17 @@ function dnt(): boolean {
   }
 }
 
-/** Fire one map-error telemetry beacon. `page` defaults to the current path. */
-export function trackMapError(detail: string, page?: string): void {
+/** Low-level: POST one {page, kind, detail, ua, ts, ...extra} event. Never throws. */
+function post(kind: string, detail: string, page?: string, extra?: Record<string, unknown>): void {
   try {
     if (dnt()) return;
-    const key = (page ?? "") + "|" + detail;
-    if (seen.has(key)) return;
-    seen.add(key);
     const payload = JSON.stringify({
       page: page ?? (typeof location !== "undefined" ? location.pathname : ""),
-      kind: "map_error",
+      kind,
       detail: String(detail).slice(0, 300),
       ua: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 220) : "",
       ts: Math.floor(Date.now() / 1000),
+      ...extra,
     });
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
       navigator.sendBeacon(TRACK_URL, new Blob([payload], { type: "application/json" }));
@@ -58,4 +56,30 @@ export function trackMapError(detail: string, page?: string): void {
   } catch {
     /* telemetry must never break a page */
   }
+}
+
+/** Fire one map-error telemetry beacon. `page` defaults to the current path. */
+export function trackMapError(detail: string, page?: string): void {
+  const key = (page ?? "") + "|" + detail;
+  if (seen.has(key)) return; // dedupe: once per distinct detail per page-load
+  seen.add(key);
+  post("map_error", detail, page);
+}
+
+// --- bus_offline (Ant Farm v3 W1): a vehicle faded out after >3 missed ticks -----------
+// Cheap + deduped: individual offline events are COALESCED and flushed at most once per
+// window as a single {kind:"bus_offline", count} beacon, so a churny feed can't beacon in a
+// loop. The renderer calls trackBusOffline() each time a bus is removed; we batch.
+let _offlineCount = 0;
+let _offlineTimer: ReturnType<typeof setTimeout> | null = null;
+const OFFLINE_FLUSH_MS = 5000;
+export function trackBusOffline(n = 1): void {
+  _offlineCount += n;
+  if (_offlineTimer) return; // a flush is already scheduled — just accumulate
+  _offlineTimer = setTimeout(() => {
+    const c = _offlineCount;
+    _offlineCount = 0;
+    _offlineTimer = null;
+    if (c > 0) post("bus_offline", c + " bus" + (c === 1 ? "" : "es") + " went offline", undefined, { count: c });
+  }, OFFLINE_FLUSH_MS);
 }

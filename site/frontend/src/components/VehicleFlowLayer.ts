@@ -23,6 +23,8 @@
 import L from "leaflet";
 import type { Vehicle, SubwayTrain } from "../lib/api";
 import { subwayColor, subwayLabel } from "../lib/subwayColors";
+import { RouteShapeCache, pointAtOffset, type OffsetPoly } from "../lib/shapeCache";
+import { trackBusOffline } from "../lib/beacon";
 
 // ---- true-scale constants (meters) ----
 const BUS_LEN_M = 12;
@@ -44,6 +46,35 @@ const DEG = Math.PI / 180;
 // continuously between ticks instead of snapping. Matches the backend SSE/poll
 // interval; a faster real cadence just retargets sooner (still smooth).
 const GLIDE_MS = 30000;
+
+// ---- Ant Farm v3 (W1-client) shape-following dead-reckoning ------------------------------
+// A bus that carries a backend `shape_id` + `route_offset_ft` (distance travelled ALONG its
+// route, in feet) glides along the shape polyline: from its last reported offset it advances
+// at `speed_est_fps`, easing into each fresh report's offset (never a straight line through
+// blocks, never a teleport). Prediction confidence DECAYS — with no fresh report a bus eases
+// to a full stop over DECAY_S, resuming on the next ping. Buses whose offset isn't advancing
+// (dwelling at a stop) dock in place with NO fake creep. Buses without shape data keep the
+// straight prev→cur glide (above).
+const DECAY_S = 45; // ease a stale bus to a stop over ~45 s (the user's core sparse-data rule)
+const SNAP_FT = 200; // a fresh report >200 ft off the prediction → fast (≤1 s) snap-correct
+const EASE_TAU_MS = 550; // normal ease time-constant toward the predicted offset
+const SNAP_TAU_MS = 220; // fast ease during a snap window (~<1 s to close a big gap)
+const SNAP_EASE_MS = 900; // how long a snap-correct stays in fast-ease mode
+const DWELL_FPS = 2.0; // offset advancing slower than this between reports ⇒ docked/dwelling
+const PRED_ERR_CAP = 4000; // ring-buffer size for the between-tick prediction-error samples
+
+/** Distance (ft) travelled since a report of `speedFps`, with speed decaying LINEARLY to 0
+ *  over DECAY_S — the honest ease-to-stop when no fresh report arrives. Monotonic, capped. */
+function decayDist(speedFps: number, tSec: number): number {
+  const tc = tSec < 0 ? 0 : tSec > DECAY_S ? DECAY_S : tSec;
+  return speedFps * (tc - (tc * tc) / (2 * DECAY_S));
+}
+
+/** Sanitise a backend speed_est_fps to a non-negative, bounded fps (null/NaN → 0). */
+function clampFps(v: number | null | undefined): number {
+  if (v == null || !isFinite(v)) return 0;
+  return v < 0 ? 0 : v > 90 ? 90 : v;
+}
 
 // ---- motion trails (F4) — a ~20 s fading tail per moving unit ----
 // A small per-unit ring buffer of recently-displayed positions, sampled at a
@@ -79,12 +110,6 @@ export interface FlowPopupHooks {
   onFocus?: (sel: FlowSelection) => void;
 }
 
-interface Poly {
-  pts: [number, number][];
-  cum: number[];
-  len: number;
-}
-
 interface Unit {
   id: string;
   kind: "bus" | "train";
@@ -109,10 +134,14 @@ interface Unit {
   segKey?: string;
   prevFrac?: number;
   curFrac?: number;
-  // selected-bus shape following:
-  followPoly?: Poly;
-  prevS?: number;
-  curS?: number;
+  // Ant Farm v3 shape-following (bus): dead-reckoning ALONG the route shape in offset space.
+  offPoly?: OffsetPoly; // the cached shape geometry (lat/lon + cumulative ft) this bus rides
+  soDisp?: number; // currently-DISPLAYED offset (ft) — the animated value we render
+  soReport?: number; // last reported route_offset_ft (ft) — the dead-reckoning anchor
+  soReportT?: number; // performance.now() (ms) of that report
+  soSpeed?: number; // advance rate (fps) used since the report (0 when docked/dwelling)
+  soSnapUntil?: number; // fast-ease window end (ms) after a >200 ft snap-correct
+  docked?: boolean; // offset not advancing between reports ⇒ dwell in place (subtle pulse)
   // motion trail (F4) — lazily allocated circular buffer of recent lat/lon:
   tLat?: Float64Array;
   tLon?: Float64Array;
@@ -139,16 +168,6 @@ function metersPerPixel(lat: number, zoom: number): number {
   return (40075016.686 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom + 8);
 }
 
-function buildPoly(pts: [number, number][]): Poly {
-  const cum = [0];
-  let len = 0;
-  for (let i = 1; i < pts.length; i++) {
-    len += metersBetween(pts[i - 1], pts[i]);
-    cum.push(len);
-  }
-  return { pts, cum, len };
-}
-
 function pointAtDist(pts: [number, number][], cum: number[], d: number): [number, number] {
   const total = cum[cum.length - 1];
   if (d <= 0) return pts[0];
@@ -163,38 +182,6 @@ function pointAtDist(pts: [number, number][], cum: number[], d: number): [number
   const seg = cum[hi] - cum[lo] || 1;
   const t = (d - cum[lo]) / seg;
   return [pts[lo][0] + (pts[hi][0] - pts[lo][0]) * t, pts[lo][1] + (pts[hi][1] - pts[lo][1]) * t];
-}
-
-/** Nearest point on a polyline (planar approx). Returns arc-length s + distance (m). */
-function projectToPoly(poly: Poly, ll: [number, number]): { s: number; dist: number } {
-  const kx = Math.cos((ll[0] * Math.PI) / 180);
-  let best = Infinity,
-    bestS = 0;
-  for (let i = 1; i < poly.pts.length; i++) {
-    const a = poly.pts[i - 1],
-      b = poly.pts[i];
-    const ax = a[1] * kx,
-      ay = a[0],
-      bx = b[1] * kx,
-      by = b[0];
-    const px = ll[1] * kx,
-      py = ll[0];
-    const dx = bx - ax,
-      dy = by - ay;
-    const l2 = dx * dx + dy * dy || 1e-12;
-    let t = ((px - ax) * dx + (py - ay) * dy) / l2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = ax + dx * t,
-      cy = ay + dy * t;
-    const dd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
-    if (dd < best) {
-      best = dd;
-      // arc-length (m) of the projected point along the polyline
-      bestS = poly.cum[i - 1] + t * (poly.cum[i] - poly.cum[i - 1]);
-    }
-  }
-  // `best` is a squared distance in degrees; convert to meters (~111320 m/deg)
-  return { s: bestS, dist: Math.sqrt(best) * 111320 };
 }
 
 // ------------------------------------------------------------------- the layer
@@ -228,9 +215,13 @@ export class VehicleFlowLayer extends L.Layer {
   private _showSubway = true;
   private _hooks: FlowPopupHooks;
   private _dark = false;
-  // shape-follow cache for the selected route:
-  private _routePolys: Poly[] | null = null;
-  private _routeKey = "";
+  // Ant Farm v3: lazy per-route shape geometry (LRU) so ANY visible bus can glide along its
+  // route. Injected by the page (setShapeSource); null → all buses use the straight glide.
+  private _shapes: RouteShapeCache | null = null;
+  // between-tick prediction-error samples (ft), a ring buffer; median/p90 via getStats().
+  private _perr = new Float32Array(PRED_ERR_CAP);
+  private _perrN = 0; // total recorded (for the modulo write head)
+  private _lastFrameT = 0; // performance.now() of the previous drawn frame (for ease dt)
   // perf:
   private _emaMs = 0;
   private _fpsDivisor = 1; // 1 = full rAF, 2 = ~30 fps
@@ -315,6 +306,17 @@ export class VehicleFlowLayer extends L.Layer {
     this._showSubway = showSubway;
   }
 
+  /** Inject the lazy route-shape cache so buses glide ALONG their route (Ant Farm v3). */
+  setShapeSource(cache: RouteShapeCache) {
+    this._shapes = cache;
+  }
+
+  private _recordPredErr(ft: number) {
+    if (!isFinite(ft) || ft < 0) return;
+    this._perr[this._perrN % PRED_ERR_CAP] = ft;
+    this._perrN++;
+  }
+
   // ---- F4: motion trails / follow / focus ----
   /** Enable/disable the ~20 s fading motion tail per moving unit. */
   setTrails(on: boolean) {
@@ -337,27 +339,13 @@ export class VehicleFlowLayer extends L.Layer {
     return this._dispAnchor(u, performance.now());
   }
 
-  /** Ingest a bus snapshot. `shape` (selected route's polylines) enables
-   *  shape-following for that route's buses; pass null when no route selected. */
-  setBuses(
-    vehicles: Vehicle[],
-    selected: string,
-    colorFor: ColorFor,
-    shape: [number, number][][] | null,
-  ) {
+  /** Ingest a bus snapshot. Buses carrying a backend `shape_id` + `route_offset_ft` glide
+   *  ALONG their route shape (dead-reckoning at `speed_est_fps`, easing into each report,
+   *  decaying to a stop when reports stop, docking when the offset stops advancing); buses
+   *  without shape data — or whose shape geometry hasn't loaded yet — keep the straight glide.
+   *  Shape geometry is resolved lazily per visible route via the injected shape cache. */
+  setBuses(vehicles: Vehicle[], selected: string, colorFor: ColorFor) {
     const now = performance.now();
-    // build/cache the follow polylines for the selected route
-    if (selected && shape && shape.length) {
-      const key = selected + ":" + shape.length;
-      if (this._routeKey !== key) {
-        this._routePolys = shape.map(buildPoly).filter((p) => p.len > 0);
-        this._routeKey = key;
-      }
-    } else {
-      this._routePolys = null;
-      this._routeKey = "";
-    }
-
     const seen = new Set<string>();
     for (const v of vehicles) {
       if (selected && v.route_id !== selected) continue;
@@ -365,6 +353,16 @@ export class VehicleFlowLayer extends L.Layer {
       seen.add(id);
       const color = colorFor(v.route_id);
       const sbs = isSbs(v.route_id);
+
+      // Resolve this bus's shape geometry lazily (visible routes only; deduped + LRU).
+      const sid = v.shape_id ?? null;
+      const hasOffset = sid != null && typeof v.route_offset_ft === "number";
+      let poly: OffsetPoly | undefined;
+      if (this._shapes && hasOffset) {
+        this._shapes.ensure(v.route_id);
+        poly = this._shapes.get(sid);
+      }
+
       let u = this._units.get(id);
       if (!u) {
         u = {
@@ -388,20 +386,6 @@ export class VehicleFlowLayer extends L.Layer {
         };
         this._units.set(id, u);
       } else {
-        // Dead-reckoning retarget: glide from the CURRENTLY-DISPLAYED position
-        // toward the new report over the nominal ~30 s tick (GLIDE_MS), so the
-        // unit walks the last displacement smoothly instead of snapping and
-        // freezing. Duplicate/near-identical reports don't restart the glide.
-        const moved = metersBetween([u.curLat, u.curLon], [v.lat, v.lon]);
-        if (moved > 2 || u.curT <= u.prevT) {
-          const d = this._dispLL(u, now);
-          u.prevLat = d[0];
-          u.prevLon = d[1];
-          u.curLat = v.lat;
-          u.curLon = v.lon;
-          u.prevT = now;
-          u.curT = now + GLIDE_MS;
-        }
         u.brg = v.bearing;
         u.color = color;
         u.lenM = sbs ? BUS_LEN_SBS_M : BUS_LEN_M;
@@ -409,16 +393,56 @@ export class VehicleFlowLayer extends L.Layer {
         u.goneT = undefined;
         u.data = v;
       }
-      // shape following: project prev & cur onto the selected route
-      u.followPoly = undefined;
-      if (this._routePolys) {
-        const cur = projectToPoly1(this._routePolys, [u.curLat, u.curLon]);
-        const prv = projectToPoly1(this._routePolys, [u.prevLat, u.prevLon]);
-        if (cur && prv && cur.poly === prv.poly && cur.dist < 55 && prv.dist < 55) {
-          u.followPoly = cur.poly;
-          u.prevS = prv.s;
-          u.curS = cur.s;
+
+      if (poly && hasOffset) {
+        // ---- shape-offset dead-reckoning (Ant Farm v3) ----
+        const oNew = v.route_offset_ft as number;
+        const vRep = clampFps(v.speed_est_fps);
+        if (u.offPoly && u.soReport !== undefined && u.soReportT !== undefined) {
+          // established anchor: measure the between-tick prediction error, detect dwell, snap
+          const tSec = (now - u.soReportT) / 1000;
+          const predBefore = u.soReport + decayDist(u.soSpeed ?? 0, tSec);
+          const errFt = Math.abs(predBefore - oNew);
+          this._recordPredErr(errFt);
+          if (errFt > SNAP_FT) u.soSnapUntil = now + SNAP_EASE_MS; // fast-ease, never teleport
+          // dwelling = offset barely advanced over this real interval → dock, no fake creep
+          const advFps = tSec > 1 ? (oNew - u.soReport) / tSec : vRep;
+          u.docked = advFps < DWELL_FPS;
+          u.soSpeed = u.docked ? 0 : vRep;
+        } else {
+          // first sighting on a shape → place exactly at the reported offset (no jump)
+          if (u.soDisp === undefined) u.soDisp = oNew;
+          u.soSpeed = vRep;
+          u.docked = vRep < DWELL_FPS;
         }
+        u.offPoly = poly;
+        u.soReport = oNew;
+        u.soReportT = now;
+      } else {
+        // ---- no shape geometry (or not loaded yet): straight prev→cur glide ----
+        if (u.offPoly) {
+          // was riding a shape → continue the straight glide from where it's shown now
+          const d = this._dispAnchor(u, now);
+          u.prevLat = d[0];
+          u.prevLon = d[1];
+          u.curLat = v.lat;
+          u.curLon = v.lon;
+          u.prevT = now;
+          u.curT = now + GLIDE_MS;
+          u.offPoly = undefined;
+        } else {
+          const moved = metersBetween([u.curLat, u.curLon], [v.lat, v.lon]);
+          if (moved > 2 || u.curT <= u.prevT) {
+            const d = this._dispLL(u, now);
+            u.prevLat = d[0];
+            u.prevLon = d[1];
+            u.curLat = v.lat;
+            u.curLon = v.lon;
+            u.prevT = now;
+            u.curT = now + GLIDE_MS;
+          }
+        }
+        u.docked = false;
       }
     }
     this._sweep(seen, "bus", now);
@@ -524,7 +548,18 @@ export class VehicleFlowLayer extends L.Layer {
       emaFrameMs: Math.round(this._emaMs * 100) / 100,
       fps: Math.round(60 / this._fpsDivisor),
       tickJump: this._tickJump,
+      predErr: this._predErrStats(), // between-tick prediction error (ft): {n, medianFt, p90Ft}
     };
+  }
+
+  /** Median + p90 of the accumulated between-tick prediction errors (ft), from the ring
+   *  buffer. Sorts a copy on demand (getStats runs ~1×/s — cheap). */
+  private _predErrStats(): { n: number; medianFt: number | null; p90Ft: number | null } {
+    const n = Math.min(this._perrN, PRED_ERR_CAP);
+    if (n === 0) return { n: 0, medianFt: null, p90Ft: null };
+    const a = Array.from(this._perr.subarray(0, n)).sort((x, y) => x - y);
+    const q = (p: number) => a[Math.min(n - 1, Math.max(0, Math.floor(p * (n - 1))))];
+    return { n, medianFt: Math.round(q(0.5) * 10) / 10, p90Ft: Math.round(q(0.9) * 10) / 10 };
   }
 
   // ---- internals ----
@@ -533,7 +568,11 @@ export class VehicleFlowLayer extends L.Layer {
       if (u.kind !== kind) continue;
       if (seen.has(id)) continue;
       u.missing++;
-      if (u.missing >= STALE_TICKS && u.goneT === undefined) u.goneT = now;
+      if (u.missing >= STALE_TICKS && u.goneT === undefined) {
+        u.goneT = now; // start the fade-out
+        // Ant Farm v3: a bus that vanished for >3 ticks → coalesced "went offline" beacon.
+        if (kind === "bus") trackBusOffline(1);
+      }
       if (u.goneT !== undefined && now - u.goneT > FADE_MS) this._units.delete(id);
     }
   }
@@ -661,6 +700,8 @@ export class VehicleFlowLayer extends L.Layer {
   private _fmpp = 1;
   private _fzoom = 0;
   private _foutline = "";
+  private _fnow = 0; // performance.now() for this frame (dock pulse + ease)
+  private _fdt = 16; // ms since the previous drawn frame (ease step)
 
   // Inline Web-Mercator projection (EPSG:3857) — writes layer-space px into
   // _plx/_ply with zero allocation. Equivalent to map.latLngToLayerPoint but
@@ -672,6 +713,32 @@ export class VehicleFlowLayer extends L.Layer {
     const merc = 0.5 * Math.log((1 + s) / (1 - s));
     this._plx = this._cA * lon + this._ccx;
     this._ply = this._ccy - this._cmy * merc;
+  }
+
+  // Advance a shape-following bus's DISPLAYED offset (soDisp) one frame toward the decay-
+  // predicted target. The target is last-reported-offset + distance travelled at the reported
+  // speed with a linear decay to a full stop over DECAY_S (the sparse-data humility rule); a
+  // docked bus has speed 0 so the target is its reported offset — it holds, no fake creep.
+  // soDisp EASES toward the target (fast during a snap window) so a >200 ft correction closes
+  // in ≤1 s without a visible teleport.
+  private _advanceBusOffset(u: Unit, now: number) {
+    const poly = u.offPoly;
+    if (!poly || u.soReport === undefined || u.soReportT === undefined) return;
+    const tSec = (now - u.soReportT) / 1000;
+    let target = u.soReport + decayDist(u.soSpeed ?? 0, tSec);
+    if (target > poly.lenFt) target = poly.lenFt;
+    else if (target < 0) target = 0;
+    if (u.soDisp === undefined) {
+      u.soDisp = target;
+      return;
+    }
+    if (this._tickJump) {
+      u.soDisp = target; // glide is off — jump to the model position
+      return;
+    }
+    const tau = now < (u.soSnapUntil ?? 0) ? SNAP_TAU_MS : EASE_TAU_MS;
+    const k = 1 - Math.exp(-this._fdt / tau);
+    u.soDisp += (target - u.soDisp) * k;
   }
 
   // currently-displayed (interpolated) lat/lon of a unit at time `now`
@@ -698,9 +765,8 @@ export class VehicleFlowLayer extends L.Layer {
       const head = Math.min(u.segLen, frac * u.segLen + TRAIN_LEN_M / 2);
       return pointAtDist(u.seg, u.segCum, head);
     }
-    if (u.kind === "bus" && u.followPoly && u.prevS !== undefined && u.curS !== undefined) {
-      const s = u.prevS + (u.curS - u.prevS) * f;
-      return pointAtDist(u.followPoly.pts, u.followPoly.cum, s);
+    if (u.kind === "bus" && u.offPoly && u.soDisp !== undefined) {
+      return pointAtOffset(u.offPoly, u.soDisp);
     }
     return [u.prevLat + (u.curLat - u.prevLat) * f, u.prevLon + (u.curLon - u.prevLon) * f];
   }
@@ -806,6 +872,10 @@ export class VehicleFlowLayer extends L.Layer {
     const midLat = map.getCenter().lat;
     this._fmpp = metersPerPixel(midLat, zoom);
     this._foutline = this._dark ? "rgba(10,12,16,0.85)" : "rgba(30,36,45,0.55)";
+    this._fnow = now;
+    const rawDt = this._lastFrameT ? now - this._lastFrameT : 16;
+    this._fdt = rawDt < 0 ? 0 : rawDt > 100 ? 100 : rawDt; // clamp (tab-switch / long frame)
+    this._lastFrameT = now;
 
     // projection constants for this zoom (see _project)
     const scale = 256 * Math.pow(2, zoom);
@@ -829,6 +899,10 @@ export class VehicleFlowLayer extends L.Layer {
 
     for (const u of this._units.values()) {
       if (u.kind === "bus" ? !this._showBuses : !this._showSubway) continue;
+
+      // Ant Farm v3: advance a shape-following bus along its route (dead-reckoning + decay +
+      // ease). Docked buses hold; snap windows ease fast. Off-shape buses fall through to f.
+      if (u.kind === "bus" && u.offPoly && u.soReportT !== undefined) this._advanceBusOffset(u, now);
 
       // real-time glide fraction
       let f = 1;
@@ -857,8 +931,15 @@ export class VehicleFlowLayer extends L.Layer {
 
       if (slab) {
         // veins mode: a moving speck (fillRect is much cheaper than arc)
-        const lat = u.prevLat + (u.curLat - u.prevLat) * f;
-        const lon = u.prevLon + (u.curLon - u.prevLon) * f;
+        let lat: number, lon: number;
+        if (u.kind === "bus" && u.offPoly && u.soDisp !== undefined) {
+          const p = pointAtOffset(u.offPoly, u.soDisp); // shape-following even as a speck
+          lat = p[0];
+          lon = p[1];
+        } else {
+          lat = u.prevLat + (u.curLat - u.prevLat) * f;
+          lon = u.prevLon + (u.curLon - u.prevLon) * f;
+        }
         this._project(lat, lon);
         const x = this._plx - minx,
           y = this._ply - miny;
@@ -889,10 +970,12 @@ export class VehicleFlowLayer extends L.Layer {
   // a true-scale, bearing-oriented rounded slab (buses)
   private _drawBus(u: Unit, f: number, alpha: number) {
     let lat: number, lon: number, blat: number, blon: number;
-    if (u.followPoly && u.prevS !== undefined && u.curS !== undefined) {
-      const s = u.prevS + (u.curS - u.prevS) * f;
-      const p = pointAtDist(u.followPoly.pts, u.followPoly.cum, s);
-      const ahead = pointAtDist(u.followPoly.pts, u.followPoly.cum, Math.min(s + 6, u.followPoly.len));
+    if (u.offPoly && u.soDisp !== undefined) {
+      // shape-following: position AT the displayed offset; bearing from ~20 ft ahead along
+      // the shape (so the slab points down the road, never corner-cuts).
+      const s = u.soDisp;
+      const p = pointAtOffset(u.offPoly, s);
+      const ahead = pointAtOffset(u.offPoly, Math.min(s + 20, u.offPoly.lenFt));
       lat = p[0];
       lon = p[1];
       blat = ahead[0];
@@ -947,6 +1030,19 @@ export class VehicleFlowLayer extends L.Layer {
       }
     }
     ctx.restore();
+    // Docked/dwelling bus: a subtle breathing pulse IN PLACE (an expanding, fading ring) — the
+    // honest "stopped at a stop" signal, with no fake forward creep.
+    if (u.docked) {
+      const ph = (this._fnow % 1600) / 1600; // 0..1 over ~1.6 s
+      const rr = Math.max(lenPx, wPx) * 0.5 + 2 + ph * 6;
+      ctx.globalAlpha = alpha * (1 - ph) * 0.45;
+      ctx.beginPath();
+      ctx.arc(x, y, rr, 0, Math.PI * 2);
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = u.color;
+      ctx.stroke();
+      ctx.globalAlpha = alpha;
+    }
     this._pushHit(cx, cy, Math.max(8, lenPx / 2), 0, u.data);
   }
 
@@ -1177,17 +1273,4 @@ function roundRect(
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
-}
-
-// project a latlng onto the nearest of several polylines
-function projectToPoly1(
-  polys: Poly[],
-  ll: [number, number],
-): { poly: Poly; s: number; dist: number } | null {
-  let best: { poly: Poly; s: number; dist: number } | null = null;
-  for (const poly of polys) {
-    const r = projectToPoly(poly, ll);
-    if (!best || r.dist < best.dist) best = { poly, s: r.s, dist: r.dist };
-  }
-  return best;
 }

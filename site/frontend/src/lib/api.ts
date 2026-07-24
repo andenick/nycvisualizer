@@ -17,6 +17,13 @@ export interface Vehicle {
   timestamp: number | null;
   stop_id: string | null;
   direction_id: number | null;
+  // Ant Farm v3 (W1-server) additive motion fields — present only where honestly
+  // resolvable. shape_id + route_offset_ft let the client glide a bus ALONG its route
+  // shape (never straight through blocks); speed_est_fps drives dead-reckoning.
+  shape_id?: string | null;
+  route_offset_ft?: number | null;
+  speed_est_fps?: number | null;
+  speed_basis?: "observed" | "segment" | "route" | "default" | string | null;
 }
 export interface VehiclesResponse {
   as_of: number | null; // epoch seconds of the freshest snapshot
@@ -180,6 +187,28 @@ export const getVehicles = (bbox?: string) =>
 export const getRoutes = () => getJSON<RouteInfo[]>("/api/routes");
 export const getRouteShape = (routeId: string) =>
   getJSON<RouteShape>(`/api/routes/${encodeURIComponent(routeId)}`);
+
+// Ant Farm v3 (W1) — the EXACT decimated shape geometry that /api/rt/vehicles'
+// route_offset_ft is measured against, with a cumulative offset_ft per vertex, so the
+// motion client can place a bus at its route_offset_ft along the identical polyline.
+export interface RtShapeDir {
+  direction_id: number;
+  shape_id: string;
+  shape_len_ft: number;
+  n_verts: number;
+  polyline: [number, number][]; // [lat, lon] decimated verts
+  offset_ft: number[]; // cumulative full-shape offset (ft) per vertex; same length as polyline
+}
+export interface RtRouteShapes {
+  route_id: string;
+  directions: RtShapeDir[];
+}
+export const getRouteShapesRT = (routeId: string, direction?: number) => {
+  const p = new URLSearchParams();
+  p.set("route", routeId);
+  if (direction != null) p.set("direction", String(direction));
+  return getJSON<RtRouteShapes>("/api/rt/route_shapes?" + p.toString());
+};
 export const getAlerts = () => getJSON<AlertsResponse>("/api/rt/alerts");
 export const getArrivals = (stopId: string) =>
   getJSON<{ stop_id: string; arrivals: { route: string; headsign: string; eta_seconds: number | null; stops_away: number | null }[] }>(
