@@ -660,6 +660,38 @@ export const getDossier = (route: string) => {
 
 export const getLeagues = () => getJSON<LeaguesResponse>("/api/obs/leagues");
 
+// --- Route adherence (W1 motion model; framed as position-quality) ---
+// Share of GPS pings within `onroute_threshold_ft` of the trip's shape, per route.
+// The no-route call returns the pooled per-route distribution (routes with >= 500
+// pings) in one shot — the workstation right-rail reads it as a route→pct map.
+export interface AdherenceRoute {
+  route_id: string;
+  adherence_pct: number;
+  n_pings: number;
+  n_trips: number | null;
+  median_perp_ft: number | null;
+}
+export interface AdherenceResponse {
+  route: string | null;
+  note: string;
+  observed_dates: string[];
+  gap_note?: string;
+  onroute_threshold_ft: number;
+  terminal_excluded_ft?: number;
+  no_data?: boolean;
+  n_routes?: number;
+  citywide_adherence_pct?: number | null;
+  median_route_adherence_pct?: number | null;
+  routes: AdherenceRoute[];
+  worst_10?: AdherenceRoute[];
+}
+export const getAdherence = (route?: string) => {
+  const p = new URLSearchParams();
+  if (route) p.set("route", route);
+  const qs = p.toString();
+  return getJSON<AdherenceResponse>("/api/obs/adherence" + (qs ? `?${qs}` : ""));
+};
+
 // --- Reliability ribbon (S5/Q1.3) ---
 export interface RibbonSegment {
   from_stop: string;

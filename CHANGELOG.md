@@ -2,6 +2,39 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — Ant Farm v3 W3/W4: Planner Workstations
+
+Two new full-window planner tools — an analytical monitoring workstation for a professional
+transit planner — at `/workstation/bus` (host `buses.nycvisualizer.com`) and
+`/workstation/subway` (host `subways.nycvisualizer.com`). Deployed + verified live (apex paths
+200; paint canary 10/10 PASS; 20-route selection measured at 0.2 ms/frame @ 60 fps).
+
+- **Bus Planner Workstation.** A left panel of **borough-grouped route checkboxes** (alphabetical,
+  Bronx first) with **select-all per borough**, a search filter, a selected-count chip, and
+  clear-all. Selecting N routes assigns each a **distinct colourblind-safe colour** (a validated
+  12-hue categorical cycle with a lightness shift past 12, plus a visible "colours repeat" note).
+  The map draws each route's **stops as colored dots — no connecting lines** (an optional "Show
+  route lines" toggle, default OFF) plus its **live buses in the route colour**, using the same
+  motion model as the ant farm (two routes = two visibly distinct populations). A right-hand
+  **data rail** shows one sortable row per route — active buses now, observed median headway
+  today, bunching index, scheduled headway, and on-route position quality — with a
+  contract-compliant **CSV download** of the selection. Shareable URL state (`?routes=…&ll&z`).
+- **Subway Planner Workstation.** The same package for a subway planner: **official-colour
+  line-bullet** multi-select grouped (numbered / lettered / shuttle+SIR), stations of the
+  selected lines as line-colored dots, live track-worms, and a rail of trains-active and
+  active-alerts per line with dossier-equivalent "Live map" links. Shareable URL state
+  (`?lines=…&ll&z`) + CSV.
+- **Isolated family.** The workstations are their own full-window family (immersive chrome:
+  floating strip + corner ⓘ overlay + legend chip). Every hop to the other workstation, or to a
+  route dossier, is a **full page load** — never an in-SPA route swap — so each Leaflet family
+  boots clean. Both set a `canonical` link to their apex path; both honour the light/dark theme
+  and collapse the panel to a bottom sheet at ≤ 390 px.
+- **No new data claims.** Reuses existing endpoints only — `/api/rt/vehicles`, `/api/rt/subway`,
+  `/api/routes/{id}` (stops), `/api/obs/routes` (headway/bunching/scheduled), `/api/obs/adherence`
+  (framed as *position quality*), `/api/rt/alerts`. Landing + Maps hub each gain two planner-toned
+  cards. **Host repurpose:** the plural `buses.` host was previously a silent `/live/bus` alias —
+  it now serves the workstation; the singular `bus.`/`subway.` keep the ant farms.
+
 ## 2026-07-24 — Standalone (de-federation) + keep-indefinitely telemetry retention
 
 NYC Visualizer became a **standalone product** — no longer connected to any shared site

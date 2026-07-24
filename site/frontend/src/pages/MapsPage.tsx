@@ -28,6 +28,20 @@ const MAPS = [
       "Every train as a track-worm along the rails, full window — line filter chips with official bullets, station dots when you zoom in, estimated positions faded for honesty.",
   },
   {
+    key: "ws-bus",
+    title: "Bus Planner Workstation",
+    to: "/workstation/bus",
+    blurb:
+      "Select any number of bus routes and monitor them side by side: live buses in per-route colours, stops on the map, and a sortable rail of buses-now, observed vs scheduled headway, bunching, and on-route position quality — downloadable as CSV.",
+  },
+  {
+    key: "ws-subway",
+    title: "Subway Planner Workstation",
+    to: "/workstation/subway",
+    blurb:
+      "Pick subway lines by their official bullets and watch their stations and live track-worms together, with trains-now and active alerts per line in a sortable, downloadable rail.",
+  },
+  {
     key: "sidewalks",
     title: "Sidewalk Explorer",
     to: "/sidewalks",

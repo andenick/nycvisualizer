@@ -25,6 +25,7 @@ const OpsWallPage = lazy(() => import("./pages/OpsWallPage"));
 const RentersPage = lazy(() => import("./pages/RentersPage"));
 const MapsPage = lazy(() => import("./pages/MapsPage"));
 const ImmersiveMapPage = lazy(() => import("./pages/ImmersiveMapPage"));
+const WorkstationPage = lazy(() => import("./pages/WorkstationPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Q4.1 IA rework: the flat 9-item bar becomes a spoke-first grouped nav. The shared
@@ -67,6 +68,21 @@ export default function App() {
           <Route path="/live/buses" element={<Navigate to={"/live/bus" + location.search} replace />} />
           <Route path="/live/subway" element={<ImmersiveMapPage mode="subway" />} />
           <Route path="*" element={<ImmersiveMapPage mode="buses" />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  // W3: the planner workstations (/workstation/*) are their OWN isolated full-window
+  // family — same immersive-chrome pattern, rendered OUTSIDE the standard chrome, with
+  // NO cross-family SPA links (bus↔subway and dossier hops are plain <a> full loads).
+  if (/^\/workstation\//.test(location.pathname)) {
+    return (
+      <Suspense fallback={<div className="nyc-note" style={{ margin: "1.5rem" }}>Loading…</div>}>
+        <Routes>
+          <Route path="/workstation/bus" element={<WorkstationPage mode="bus" />} />
+          <Route path="/workstation/subway" element={<WorkstationPage mode="subway" />} />
+          <Route path="*" element={<WorkstationPage mode="bus" />} />
         </Routes>
       </Suspense>
     );
