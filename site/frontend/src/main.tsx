@@ -20,13 +20,12 @@ import "./index.css";
       // I2.1: immersive full-window ant-farm subdomains
       "bus.": "/live/bus",
       "subway.": "/live/subway",
-      // W3/W4: planner-workstation subdomains (PLURAL). NOTE: buses. was previously a
-      // silent alias for the /live/bus ant farm; ANTFARM_V3 repurposes the plural hosts
-      // for the multi-select planner workstations (the singular bus./subway. keep the
-      // immersive ant farms). The trailing dot in each prefix keeps "bus." from matching
-      // "buses." (host char 4 is "e", prefix char 4 is "."), so no ordering hazard.
-      "buses.": "/workstation/bus",
-      "subways.": "/workstation/subway",
+      // C3: the UNIFIED planner workstation host. `work.nycvisualizer.com/` → /workstation
+      // (mixed bus-route + subway-line planner). This REPLACES the two former plural hosts
+      // buses./subways. (which mapped to the now-merged single-mode workstations); those
+      // host mappings are removed here and their Cloudflare hostnames are no longer wanted
+      // (they were never created at CF). The singular bus./subway. keep the ant farms.
+      "work.": "/workstation",
     };
     for (const prefix in SPOKES) {
       if (host.startsWith(prefix)) {
