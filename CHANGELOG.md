@@ -2,6 +2,29 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — nycviz-flow: ant-farm engine formalized (host-agnostic, tested)
+
+Pure internal refactor of the live-vehicle "ant farm" renderer — **zero user-visible change**.
+The bespoke `VehicleFlowLayer` canvas engine was extracted VERBATIM into a documented, tested,
+host-agnostic module `src/flow/` (the "nycviz-flow" engine), behind a one-file `FlowHost` seam so
+a future MapLibre swap is a new host, not a renderer rewrite. Every constant, easing curve,
+threshold and honesty rule moved unchanged; `VehicleFlowLayer` is now a thin Leaflet back-compat
+wrapper, so `BusMap` / `ImmersiveMapPage` / `WorkstationPage` needed zero changes.
+
+- **Modules** (`src/flow/`): `core` (rAF loop, unit store, tween/decay-to-stop/snap-correct state
+  machine, draw orchestration), `project` (Web-Mercator, meters-per-pixel), `shapes` (offset/
+  cumulative-length walks + worm geometry), `draw` (slabs/worms/rings/trails/pulses), `hittest`,
+  `ladder` (trails→30fps→tick-jump degrade), `types` + the **FlowHost interface**, and
+  `hosts/leaflet.ts` (the ONLY `leaflet` importer). Architecture, contract, module map, perf
+  budgets and honesty rules documented in `src/flow/FLOW_ENGINE.md`.
+- **Tests** (`vitest`, `npm test`): 46 assertions across a pure-math suite (projection fixtures,
+  offset/shape edge cases, decay/clamp, degrade-ladder, hit-test) and a deterministic "golden
+  replay" engine suite (fake FlowHost + recording canvas on a simulated clock) that locks the
+  draw-branch selection and the glide / 45 s decay-to-stop / >200 ft snap-correct honesty rules.
+- **Parity**: clean `tsc` + build (basemap chunk unchanged at 76 KB gzip; engine ships as a shared
+  ~8.7 KB gzip chunk); paint canary **10/10** before and after; live frame-time parity within
+  ±1 ms (mean 2.09 → 2.36 ms, 60 fps, no tick-jump); motion continuous on both.
+
 ## 2026-07-24 — Ant Farm v3 W5: motion-model legend honesty + close-out gates
 
 Wording-only fix closing the Ant Farm v3 gate pass. The map legends and info overlays now state
