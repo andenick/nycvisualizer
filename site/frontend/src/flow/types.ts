@@ -69,7 +69,8 @@ export interface Unit {
   offPoly?: OffsetPoly;
   soDisp?: number; // currently-DISPLAYED offset (ft) — the animated value we render
   soReport?: number; // last reported route_offset_ft (ft) — the dead-reckoning anchor
-  soReportT?: number; // performance.now() (ms) of that report
+  soReportT?: number; // per-unit report time in the perf clock (ms) — anchored from v.timestamp
+  soReportEpoch?: number; // that report's own epoch (ms); exact inter-report interval for predErr
   soSpeed?: number; // advance rate (fps) used since the report (0 when docked/dwelling)
   soSnapUntil?: number; // fast-ease window end (ms) after a >200 ft snap-correct
   docked?: boolean; // offset not advancing between reports ⇒ dwell in place (subtle pulse)

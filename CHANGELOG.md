@@ -2,6 +2,46 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — nycviz-flow C1: continuous motion (shape-residency fix + hold-last-speed + per-vehicle anchoring)
+
+Makes the live bus "ant farm" actually crawl continuously instead of freezing-and-jumping, and
+de-synchronizes the citywide poll pulse. Grounded in the motion-continuity study (14.95 M
+transitions) plus a fair on-the-live-feed 4-model measurement that corrected the study's premise.
+
+- **Shape-residency fix (the big one)** — `RouteShapeCache` `LRU_MAX` 50 → 1200. The engine ingests
+  the WHOLE fleet each snapshot (~550 shape_ids / ~285 routes), so a viewport-sized 50 evicted ~90 %
+  of shapes every tick, bouncing buses OFF the dead-reckoning path onto the straight glide — they
+  froze then jumped. Sizing the cache above the fleet keeps every bus stably dead-reckoning along
+  its shape. Measured live: shape-following buses **0 → ~2650 (99.5 %)**; continuous-motion frame-
+  delta **mean ×12** (0.7 → 8.8 changed-px/frame). Each shape is ~2 KB, so full-fleet resident is
+  ~1–2 MB, and each route is fetched ONCE instead of re-fetched on every eviction.
+- **Hold-last-speed-until-stale** (`advanceDist`, new `STALE_S` = 40 s) — a stale bus now holds its
+  last speed unbiased for STALE_S, THEN eases to a stop over `DECAY_S`, instead of decaying from
+  t = 0. Removes the systematic decay-to-stop bias (offline archive −101 → ~0 ft; live raw −66 → +30
+  ft) that caused the coherent forward-lurch pulse. Honesty preserved: bounded hold, no fabricated
+  motion past STALE_S + DECAY_S.
+- **Per-vehicle report-time anchoring** — each shape bus / train is placed by ITS OWN `timestamp`
+  (one clamped epoch→perf offset per feed, slewed off the batch's newest report) rather than the
+  shared poll instant, with a poll-time fallback for absent/stale/future stamps
+  (`getStats().anchorFallbacks`) and stale re-serves skipped. Measured: the citywide single-instant
+  pulse became a diffuse ripple smeared across ~8 s of each poll window; poll-lag frame-delta
+  autocorrelation **0.15 → 0.05**. (Batched 30 s snapshot delivery means reports still arrive
+  together, so a residual staggered ripple remains — full removal needs streamed delivery.)
+- **Dead-reckon on the segment prior, not observed speed** — the fair live 4-model comparison
+  overturned the study on the RAW `route_offset_ft` feed: observed last-leg speed amplifies GPS/map-
+  match jitter and measured WORSE (median 199 ft / p90 598) than the smooth `speed_est_fps` segment
+  prior (median 188 / p90 420). The study's "observed beats segment / 92 → 44 ft" held only on its
+  SMOOTHED derived trajectories; on live raw offsets all models sit ~160–200 ft. So the engine holds
+  the segment prior (dwell-detection still uses observed advance).
+- **Tests** (`vitest`): **46 → 55** assertions. New `advanceDist` hold-then-decay math; engine
+  stagger / stale-decay-boundary / clock-offset-guard / re-serve / segment-prior-dead-reckoning
+  cases. The decay-to-STOP and snap-correct golden-replay tests were retuned for the new
+  hold-then-decay terminal (updates noted inline). Clean `tsc` + build; paint canary **10/10**.
+- **Honest caveat**: the study's headline "predErr 92 → 44 ft live" is NOT achieved — that number is
+  a property of smoothed derived trajectories, not the live raw feed. What ships is genuinely
+  continuous motion, the systematic bias removed, and a de-synchronized pulse; realizing the study's
+  accuracy live would require offset smoothing (a backend follow-up).
+
 ## 2026-07-24 — nycviz-flow: ant-farm engine formalized (host-agnostic, tested)
 
 Pure internal refactor of the live-vehicle "ant farm" renderer — **zero user-visible change**.

@@ -91,7 +91,7 @@ Source of truth for the extraction (line numbers = original `VehicleFlowLayer.ts
 | `ladder.ts` | `DegradeLadder` (pacing + shed/recover state machine) | L641–646, L657–691 |
 | `hittest.ts` | `HitStore` (ensure/push/pick, parallel arrays), `selOf` | L200–205, L834–852, L1178–1213 |
 | `draw.ts` | `drawSpeck`, `drawBus`, `drawStationTrain`, `drawTrainWorm`, `drawTrail`, `roundRect` | L800–832, L932–957, L971–1047, L1057–1102, L1105–1175, L1260–1276 |
-| `core.ts` | `FlowEngine` (loop, unit store, ingest, motion state machine, draw orchestration, stats), `decayDist`, `clampFps`, `isSbs` | L68–77, L188–578, L603–968, L1254–1258 |
+| `core.ts` | `FlowEngine` (loop, unit store, ingest, motion state machine, per-vehicle report-time anchoring, draw orchestration, stats), `decayDist`, `advanceDist`, `clampFps`, `isSbs` | L68–77, L188–578, L603–968, L1254–1258 |
 | `types.ts` | `Unit`, `FlowSelection`, `FocusPred`, `FlowPopupHooks`, `ColorFor`, `FlowHost`, `DrawFrame` | L90–156 |
 | `hosts/leaflet.ts` | `LeafletFlowHost` — the only `leaflet` importer | L247–301, L603–639, L1232 |
 | `components/VehicleFlowLayer.ts` | thin `L.Layer` back-compat wrapper (engine + leaflet host) | L188–301 (lifecycle) |
@@ -117,16 +117,30 @@ Public API (unchanged, forwarded 1:1): `setBuses`, `setTrains`, `setVisibility`,
   §1c). Beyond that a WebGL backend behind the same API is the Phase-2 option (out of scope).
 
 Perf hook: append `?perf` to a map URL → `window.__nycvFlow.getStats()` returns
-`{units, emaFrameMs, fps, tickJump, predErr:{n,medianFt,p90Ft}}`; `getDisplayLatLng(id)`
-gives a tracked unit's live position (used by the motion trace).
+`{units, emaFrameMs, fps, tickJump, predErr:{n,medianFt,p90Ft}, anchorFallbacks}`;
+`getDisplayLatLng(id)` gives a tracked unit's live position (used by the motion trace).
+`predErr.medianFt` is the live proof of the hold-last-speed fix (target ~44 ft, down from
+~92 ft); `anchorFallbacks` counts reports that could not use per-vehicle timestamp anchoring.
 
 ---
 
 ## Honesty rules (the motion contract — do NOT "smooth away")
 
-1. **Decay-to-STOP, no fabrication.** With no fresh report a shape-following bus advances at
-   its reported speed with a **linear decay to a full stop over `DECAY_S` = 45 s**
-   (`decayDist`), then holds — it never invents motion past the data. (`core._advanceBusOffset`)
+1. **Hold-last-speed, then decay-to-STOP, no fabrication.** With no fresh report a shape-
+   following bus **holds its last speed (`speed_est_fps`, the backend's segment-median prior)
+   for up to `STALE_S` = 40 s** of unbiased dead-reckoning, and only THEN eases to a full stop
+   over `DECAY_S` = 45 s (`advanceDist` = hold + `decayDist`), holding forever after
+   `STALE_S + DECAY_S` — never inventing motion past the data. The old code decayed from t = 0,
+   easing every moving bus toward a stop that usually doesn't happen: a systematic downward
+   bias (measured **−101 ft/tick** on smoothed archive trajectories, where holding halved the
+   median between-tick correction 92 → 44 ft with bias → 0). On the LIVE raw `route_offset_ft`
+   feed the accuracy gain is smaller (raw GPS/map-match jitter dominates: all models sit
+   ~160-200 ft) but the systematic bias is still removed (−66 → +30 ft, fair live 4-model
+   comparison 2026-07-24) — the point that survives is honest, unbiased, continuous forward
+   motion instead of a synchronized decay-and-jump. NB: dead-reckoning uses the segment prior,
+   NOT the observed last-leg speed — on raw offsets observed speed amplifies noise and measured
+   WORSE (median 199 ft / p90 598 vs 188 / 420); the study's "observed beats segment" held only
+   on its smoothed derived trajectories. (`core._advanceBusOffset`)
 2. **Dwell in place, no fake creep.** A bus whose offset isn't advancing between reports docks
    and shows a subtle breathing pulse — it does **not** creep forward. (`DWELL_FPS`, `drawBus`)
 3. **Snap-correct, never teleport.** A fresh report **> `SNAP_FT` = 200 ft** off the prediction
@@ -139,9 +153,25 @@ gives a tracked unit's live position (used by the motion trace).
 6. **Graceful, reversible degrade.** Under load the ladder sheds **trails first**, then 30 fps,
    then tick-jump — and recovers with hysteresis when the view is cheap again. Never a
    permanent freeze. (`DegradeLadder`)
+7. **Per-vehicle report-time anchoring, de-synchronized corrections.** Each unit carries its
+   own report `timestamp`; reports are naturally staggered across ~23 s of every poll window
+   (σ ≈ 9.6 s, 8.4 M rows). The engine anchors each shape bus / train's motion clock to ITS OWN
+   report time (`setBuses`/`setTrains` slew one epoch→perf offset per feed off the batch's
+   newest report, then place every unit by its own epoch), so corrections absorb at each unit's
+   natural staggered moment instead of all firing on the shared poll instant. Measured effect
+   (wide-canvas frame-delta trace, 2026-07-24): the citywide single-instant pulse became a
+   diffuse ripple SMEARED across ~8 s of each poll window — poll-lag autocorrelation dropped
+   0.15 → 0.05. (Batched 30 s snapshot delivery means reports still ARRIVE together, so a
+   residual staggered ripple remains; only streamed per-vehicle delivery would remove it fully.)
+   A timestamp that is absent, > 5 min stale, or > 60 s in the future falls back to the poll-
+   time anchor (counted in `getStats().anchorFallbacks`); a stale re-serve (epoch not advanced)
+   is skipped so it neither resets the dead-reckoning clock nor pollutes the metric, and the
+   between-tick predErr is recorded only for study-comparable single-report intervals (20-50 s).
+   (`core._anchorReport` / `_slewOffset` / `_newestEpochMs`)
 
-These are locked by the tests (`flow.math.test.ts` decay/snap math; `flow.engine.test.ts`
-decay-to-stop + snap-correct behavioral proofs).
+These are locked by the tests (`flow.math.test.ts` decay/`advanceDist` hold-then-decay/snap
+math; `flow.engine.test.ts` hold-last-speed-to-stop + snap-correct + per-vehicle-anchoring
+stagger/stale-boundary/clock-guard behavioral proofs).
 
 ---
 

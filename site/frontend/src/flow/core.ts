@@ -9,7 +9,9 @@ import { RouteShapeCache, pointAtOffset, type OffsetPoly } from "../lib/shapeCac
 import { trackBusOffline } from "../lib/beacon";
 
 import {
+  ANCHOR_FUTURE_TOL_MS,
   APPEAR_MS,
+  CLOCK_DRIFT_CLAMP_MS,
   DECAY_S,
   DWELL_FPS,
   EASE_TAU_MS,
@@ -17,10 +19,13 @@ import {
   GLIDE_MS,
   MIN_LEN_PX,
   PRED_ERR_CAP,
+  REPORT_ANCHOR_LAG_MS,
+  REPORT_MAX_AGE_MS,
   SLAB_ZOOM,
   SNAP_EASE_MS,
   SNAP_FT,
   SNAP_TAU_MS,
+  STALE_S,
   STALE_TICKS,
   TRAIL_CAP,
   TRAIL_SAMPLE_MS,
@@ -45,6 +50,18 @@ import type { ColorFor, DrawFrame, FlowHost, FlowPopupHooks, FlowSelection, Focu
 export function decayDist(speedFps: number, tSec: number): number {
   const tc = tSec < 0 ? 0 : tSec > DECAY_S ? DECAY_S : tSec;
   return speedFps * (tc - (tc * tc) / (2 * DECAY_S));
+}
+
+/** Distance (ft) travelled since a report of `speedFps`, HOLDING the last speed unbiased for
+ *  tSec ≤ STALE_S, then the honest decay-to-stop (`decayDist`) engaging beyond STALE_S.
+ *  Replaces the old "decay from t=0" advance, which biased every moving bus toward a stop it
+ *  usually never made (−101 ft/tick; median correction 92 → 44 ft — motion-continuity study
+ *  2026-07-24). Continuous at STALE_S; motion stops for good at STALE_S+DECAY_S. Exported for
+ *  tests. */
+export function advanceDist(speedFps: number, tSec: number): number {
+  if (tSec <= 0) return 0;
+  if (tSec <= STALE_S) return speedFps * tSec; // dead-reckon at the last reported speed (no bias)
+  return speedFps * STALE_S + decayDist(speedFps, tSec - STALE_S); // then ease honestly to a stop
 }
 
 /** Sanitise a backend speed_est_fps to a non-negative, bounded fps (null/NaN → 0).
@@ -91,6 +108,11 @@ export class FlowEngine {
   // between-tick prediction-error samples (ft), a ring buffer; median/p90 via getStats().
   private _perr = new Float32Array(PRED_ERR_CAP);
   private _perrN = 0;
+  // per-vehicle report-time anchoring: epoch→perf clock offset (perfT = epochMs + offset),
+  // maintained per feed (buses/trains have independent clocks). null until the first batch.
+  private _busClockOff: number | null = null;
+  private _trainClockOff: number | null = null;
+  private _anchorFallbacks = 0; // reports that fell back to the poll-time anchor (bad/absent ts)
   private _lastFrameT = 0; // performance.now() of the previous drawn frame (for ease dt)
   private _emaMs = 0;
   private _dirty = true; // in tick-jump mode, only redraw when data/view changed
@@ -199,9 +221,65 @@ export class FlowEngine {
     this._perrN++;
   }
 
+  // ---- per-vehicle report-time anchoring -------------------------------------------------
+  /** Newest valid report epoch (ms) in a batch — the clock-alignment reference. Ignores
+   *  absent / >5-min-stale / >60-s-future timestamps (device-clock guard). */
+  private _newestEpochMs(tsSecs: (number | null | undefined)[]): number | null {
+    const wall = Date.now();
+    let newest: number | null = null;
+    for (const ts of tsSecs) {
+      if (ts == null) continue;
+      const ms = ts * 1000;
+      if (ms > wall + ANCHOR_FUTURE_TOL_MS || ms < wall - REPORT_MAX_AGE_MS) continue;
+      if (newest === null || ms > newest) newest = ms;
+    }
+    return newest;
+  }
+
+  /** Slew the epoch→perf offset so the newest report lands at `now − REPORT_ANCHOR_LAG_MS`,
+   *  clamping the per-batch change (anti-lurch against a single stale/anomalous newest). */
+  private _slewOffset(prev: number | null, newestMs: number, now: number): number {
+    const target = now - REPORT_ANCHOR_LAG_MS - newestMs;
+    if (prev === null) return target;
+    const d = target - prev;
+    const c = CLOCK_DRIFT_CLAMP_MS;
+    return prev + (d > c ? c : d < -c ? -c : d);
+  }
+
+  /** This report's own perf-clock time + its guarded epoch (ms). Falls back to the poll instant
+   *  `now` with epochMs=undefined for an absent / stale / future / pre-offset report (counted).
+   *  epochMs is defined ONLY when the timestamp passed the guard — callers use it to tell a
+   *  genuine new report from a stale re-serve. */
+  private _anchorReport(
+    tsSec: number | null | undefined,
+    now: number,
+    offset: number | null,
+  ): { t: number; epochMs: number | undefined } {
+    if (tsSec == null || offset === null) {
+      this._anchorFallbacks++;
+      return { t: now, epochMs: undefined };
+    }
+    const ms = tsSec * 1000;
+    const wall = Date.now();
+    if (ms > wall + ANCHOR_FUTURE_TOL_MS || ms < wall - REPORT_MAX_AGE_MS) {
+      this._anchorFallbacks++;
+      return { t: now, epochMs: undefined };
+    }
+    return { t: ms + offset, epochMs: ms };
+  }
+
+  /** Per-unit report time only (trains — no epoch-interval bookkeeping). */
+  private _anchorT(tsSec: number | null | undefined, now: number, offset: number | null): number {
+    return this._anchorReport(tsSec, now, offset).t;
+  }
+
   /** Ingest a bus snapshot. [VehicleFlowLayer.ts L347-450] */
   setBuses(vehicles: Vehicle[], selected: string, colorFor: ColorFor): void {
     const now = performance.now();
+    // Per-vehicle anchoring: align this batch's clock off the newest report, then anchor each
+    // unit to ITS OWN timestamp (staggered) — not the shared poll instant.
+    const newest = this._newestEpochMs(vehicles.map((v) => v.timestamp));
+    if (newest !== null) this._busClockOff = this._slewOffset(this._busClockOff, newest, now);
     const seen = new Set<string>();
     for (const v of vehicles) {
       if (selected && v.route_id !== selected) continue;
@@ -254,26 +332,52 @@ export class FlowEngine {
         // ---- shape-offset dead-reckoning (Ant Farm v3) ----
         const oNew = v.route_offset_ft as number;
         const vRep = clampFps(v.speed_est_fps);
-        if (u.offPoly && u.soReport !== undefined && u.soReportT !== undefined) {
-          // established anchor: measure the between-tick prediction error, detect dwell, snap
-          const tSec = (now - u.soReportT) / 1000;
-          const predBefore = u.soReport + decayDist(u.soSpeed ?? 0, tSec);
+        const rep = this._anchorReport(v.timestamp, now, this._busClockOff); // per-unit report time + epoch
+        const established = !!(u.offPoly && u.soReport !== undefined && u.soReportT !== undefined);
+        // A re-serve = a known report epoch that did NOT advance (the vehicle hasn't reported
+        // since last poll). It is NOT a genuine prediction test and must not reset the dead-
+        // reckoning clock — skip it entirely so predErr stays the study's report-to-report
+        // metric and the bus keeps gliding from its real last report.
+        const reserve =
+          established && rep.epochMs !== undefined && u.soReportEpoch !== undefined && rep.epochMs <= u.soReportEpoch;
+        if (reserve) {
+          u.offPoly = poly; // keep geometry fresh; leave the report anchor + soSpeed untouched
+        } else if (established) {
+          // genuine new report: measure the between-tick prediction error, detect dwell, snap.
+          // Interval = the two reports' OWN epochs when known (exact ~31 s gap), else perf-
+          // elapsed. predErr is recorded ONLY for a single-report-interval span (matches the
+          // study's 25-40 s transition filter) — long gaps/warmup don't pollute the metric.
+          const dtSec =
+            rep.epochMs !== undefined && u.soReportEpoch !== undefined
+              ? (rep.epochMs - u.soReportEpoch) / 1000
+              : (now - u.soReportT!) / 1000;
+          const predBefore = u.soReport! + advanceDist(u.soSpeed ?? 0, dtSec);
           const errFt = Math.abs(predBefore - oNew);
-          this._recordPredErr(errFt);
+          if (dtSec >= 20 && dtSec <= 50) this._recordPredErr(errFt);
           if (errFt > SNAP_FT) u.soSnapUntil = now + SNAP_EASE_MS; // fast-ease, never teleport
-          // dwelling = offset barely advanced over this real interval → dock, no fake creep
-          const advFps = tSec > 1 ? (oNew - u.soReport) / tSec : vRep;
+          // Dwell = the bus's OWN observed advance over the real interval was tiny (a genuine
+          // stop, not the prior's guess). But we DEAD-RECKON on the backend's segment-median
+          // speed_est_fps, NOT the observed last-leg speed: on the RAW live route_offset_ft
+          // feed the observed speed amplifies GPS/map-match jitter and measured WORSE (median
+          // 199 ft, p90 598) than the smooth segment prior (median 188 ft, p90 420) — the
+          // study's "observed beats segment" held only on its SMOOTHED derived trajectories.
+          const advFps = dtSec > 1 ? (oNew - u.soReport!) / dtSec : vRep; // observed advance (dwell test only)
           u.docked = advFps < DWELL_FPS;
           u.soSpeed = u.docked ? 0 : vRep;
+          u.offPoly = poly;
+          u.soReport = oNew;
+          u.soReportT = rep.t;
+          u.soReportEpoch = rep.epochMs;
         } else {
           // first sighting on a shape → place exactly at the reported offset (no jump)
           if (u.soDisp === undefined) u.soDisp = oNew;
           u.soSpeed = vRep;
           u.docked = vRep < DWELL_FPS;
+          u.offPoly = poly;
+          u.soReport = oNew;
+          u.soReportT = rep.t;
+          u.soReportEpoch = rep.epochMs;
         }
-        u.offPoly = poly;
-        u.soReport = oNew;
-        u.soReportT = now;
       } else {
         // ---- no shape geometry (or not loaded yet): straight prev→cur glide ----
         if (u.offPoly) {
@@ -283,7 +387,7 @@ export class FlowEngine {
           u.prevLon = d[1];
           u.curLat = v.lat;
           u.curLon = v.lon;
-          u.prevT = now;
+          u.prevT = now; // straight-glide (no dead-reckoning model): glide from now, no catch-up jump
           u.curT = now + GLIDE_MS;
           u.offPoly = undefined;
         } else {
@@ -294,7 +398,7 @@ export class FlowEngine {
             u.prevLon = d[1];
             u.curLat = v.lat;
             u.curLon = v.lon;
-            u.prevT = now;
+            u.prevT = now; // straight-glide (no dead-reckoning model): glide from now, no catch-up jump
             u.curT = now + GLIDE_MS;
           }
         }
@@ -308,8 +412,14 @@ export class FlowEngine {
   /** Ingest a subway snapshot. [VehicleFlowLayer.ts L452-543] */
   setTrains(trains: SubwayTrain[]): void {
     const now = performance.now();
+    // Per-train report-time anchoring (same principle as buses): align this batch's clock off
+    // the newest train report, then anchor each worm/glide to its own timestamp — staggered,
+    // so trains don't all retarget on the shared poll instant either.
+    const newest = this._newestEpochMs(trains.map((t) => t.timestamp));
+    if (newest !== null) this._trainClockOff = this._slewOffset(this._trainClockOff, newest, now);
     const seen = new Set<string>();
     for (const t of trains) {
+      const repT = this._anchorT(t.timestamp, now, this._trainClockOff);
       const id = "t:" + t.feed + "|" + t.trip_id;
       seen.add(id);
       const color = subwayColor(t.route_id);
@@ -360,8 +470,8 @@ export class FlowEngine {
             u.prevLon = d[1];
             u.curLat = t.lat;
             u.curLon = t.lon;
-            u.prevT = now;
-            u.curT = now + GLIDE_MS;
+            u.prevT = repT; // anchor the glide to this train's own report time (staggered)
+            u.curT = repT + GLIDE_MS;
           }
         }
       }
@@ -379,8 +489,8 @@ export class FlowEngine {
         const nf = typeof t.frac === "number" ? t.frac : 0.5;
         u.prevFrac = stable ? dispFrac : nf; // continue from displayed, or snap
         u.curFrac = nf;
-        u.prevT = now;
-        u.curT = now + GLIDE_MS;
+        u.prevT = repT; // anchor the fraction glide to this train's own report time (staggered)
+        u.curT = repT + GLIDE_MS;
         u.segKey = segKey;
       } else {
         u.seg = undefined;
@@ -393,12 +503,16 @@ export class FlowEngine {
   }
 
   getStats() {
+    let busShape = 0;
+    for (const u of this._units.values()) if (u.kind === "bus" && u.offPoly) busShape++;
     return {
       units: this._units.size,
       emaFrameMs: Math.round(this._emaMs * 100) / 100,
       fps: Math.round(60 / this._ladder.fpsDivisor),
       tickJump: this._ladder.tickJump,
       predErr: this._predErrStats(),
+      anchorFallbacks: this._anchorFallbacks, // reports anchored to poll-time (bad/absent ts)
+      busShapeFollowing: busShape, // buses stably dead-reckoning ALONG their shape (LRU health)
     };
   }
 
@@ -479,7 +593,7 @@ export class FlowEngine {
     const poly = u.offPoly;
     if (!poly || u.soReport === undefined || u.soReportT === undefined) return;
     const tSec = (now - u.soReportT) / 1000;
-    let target = u.soReport + decayDist(u.soSpeed ?? 0, tSec);
+    let target = u.soReport + advanceDist(u.soSpeed ?? 0, tSec);
     if (target > poly.lenFt) target = poly.lenFt;
     else if (target < 0) target = 0;
     if (u.soDisp === undefined) {

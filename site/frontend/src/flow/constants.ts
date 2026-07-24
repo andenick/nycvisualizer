@@ -27,12 +27,31 @@ export const GLIDE_MS = 30000;
 
 // ---- Ant Farm v3 shape-following dead-reckoning ----  [VehicleFlowLayer.ts L58-64]
 export const DECAY_S = 45; // ease a stale bus to a stop over ~45 s (sparse-data core rule)
+// Hold-last-speed-until-stale (motion-continuity study, 2026-07-24, 14.95M transitions):
+// advance at the reported speed WITHOUT decay for up to STALE_S, then the honest decay-to-
+// stop engages. The old code decayed from t=0, biasing every moving bus −101 ft/tick toward
+// a stop that usually doesn't happen (median correction 92 ft). Holding speed for a normal
+// ~31 s tick removes that bias (bias −101 → 0 ft; median correction 92 → 44 ft measured).
+export const STALE_S = 40; // hold last speed unbiased up to here; decay-to-stop only beyond
 export const SNAP_FT = 200; // a fresh report >200 ft off the prediction → fast (≤1 s) snap-correct
 export const EASE_TAU_MS = 550; // normal ease time-constant toward the predicted offset
 export const SNAP_TAU_MS = 220; // fast ease during a snap window (~<1 s to close a big gap)
 export const SNAP_EASE_MS = 900; // how long a snap-correct stays in fast-ease mode
 export const DWELL_FPS = 2.0; // offset advancing slower than this between reports ⇒ docked/dwelling
 export const PRED_ERR_CAP = 4000; // ring-buffer size for between-tick prediction-error samples
+
+// ---- per-vehicle report-time anchoring (motion-continuity study, 2026-07-24) ----
+// Each unit carries its own report `timestamp` (epoch s); reports are naturally staggered
+// across ~23 s of every poll window (σ≈9.6 s over 8.4M rows). The engine anchors each unit's
+// motion clock to ITS OWN report time (not the shared poll instant), which kills the
+// synchronized citywide "all jump together" pulse with zero backend work.
+export const REPORT_ANCHOR_LAG_MS = 0; // newest report in a batch → performance.now() − this.
+//   0 = freshest report treated as "now"; older reports in the batch are then dead-reckoned
+//   by their true epoch-delta behind it (the median report lands at ≈ its median age without
+//   ever over-advancing the freshest — honesty rule #1 preserved, no invented forward motion).
+export const CLOCK_DRIFT_CLAMP_MS = 2000; // max epoch→perf offset adjustment per batch (anti-lurch)
+export const REPORT_MAX_AGE_MS = 5 * 60 * 1000; // >5 min stale → fall back to poll-time anchor
+export const ANCHOR_FUTURE_TOL_MS = 60 * 1000; // >60 s in the future → clock bug → fall back
 
 // ---- motion trails (F4) ----  [VehicleFlowLayer.ts L86-88]
 export const TRAIL_CAP = 12;
