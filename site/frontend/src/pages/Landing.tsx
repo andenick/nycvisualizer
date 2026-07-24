@@ -89,7 +89,7 @@ export default function Landing() {
         <h1>Where can you go, and can you walk there?</h1>
         <p className="lede">
           NYC transit service and pedestrian infrastructure at the finest measurable grain — live.
-          The home of all NYC work at Heterodata: a portfolio hub whose spokes span a live transit
+          The home of all NYC work: a portfolio hub whose spokes span a live transit
           map, a bus observatory, a control-room ops wall, a sidewalk explorer, and a renter's map —
           built entirely on authentic NYC Open Data, MTA, DCP, and Census sources.
         </p>

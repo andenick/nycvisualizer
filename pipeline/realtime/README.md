@@ -118,17 +118,24 @@ departure_delay, schedule_relationship`. GBFS: per-station availability counts.
   resumes polling (in-memory buffers since the last 5-min flush are lost — acceptable
   for snapshot data).
 
-## Retention policy
+## Retention policy (keep-indefinitely)
 
-- **Raw snapshots**: 90 days rolling (per MASTER_PLAN). Prune with, e.g.:
+- **Raw snapshots**: **kept indefinitely** — the archive is the raw material for the
+  telemetry we preserve (per-bus behavior, the motion model). It is **never silently
+  deleted**. Growth is modest (~0.3 GB/day) against ample free space, so keep-forever is
+  safe for years. **When the archive crosses ~200 GB**, MOVE the *oldest whole month* of
+  raw partitions to cold storage, never delete — a manual/curated, size-triggered move
+  (not a rolling age prune):
   ```powershell
-  Get-ChildItem realtime/archive -Recurse -Directory -Filter "date=*" |
-    Where-Object { [datetime]($_.Name -replace 'date=','') -lt (Get-Date).AddDays(-90) } |
-    Remove-Item -Recurse -Force
+  # Archive size check (run periodically; act only when over ~200 GB):
+  '{0:N1} GB' -f ((Get-ChildItem realtime/archive -Recurse -File |
+    Measure-Object Length -Sum).Sum / 1GB)
+  # If over threshold: MOVE (never Remove) the oldest date=YYYY-MM-* partitions to cold storage.
   ```
-  (A scheduled pruning task can be added later; not automated inside the poller.)
+  There is **no age-based pruning routine** in the poller: it only writes/flushes and, on a
+  low-disk guard, *suspends* archiving — it never deletes archive data.
 - **Derived** trajectories/tables (`derived/`): kept indefinitely — they are the
-  compact analytical product.
+  compact analytical product, with `vehicle_id` preserved (the per-bus-profile raw material).
 
 ## Resume behavior
 

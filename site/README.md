@@ -5,8 +5,9 @@ app (`frontend/`) and a FastAPI backend (`backend/`). The pipeline (ingest, real
 poller, geodatabase, analysis) lives in `/pipeline`.
 
 > **Where can you go, and can you walk there?** — NYC transit service and pedestrian
-> infrastructure at the finest measurable grain, live. Part of the
-> [Heterodata](https://heterodata.org) ecosystem.
+> infrastructure at the finest measurable grain, live. A standalone product built by
+> Nick Anderson ([nickanderson.us](https://nickanderson.us)); de-federated from the
+> Heterodata ecosystem 2026-07-24 (keeps the engineering standards, drops the federation).
 
 ## Layout
 
@@ -121,7 +122,9 @@ host and is **not** no-CDN compliant — never ship it as the default.
 
 ## Standards
 
-Follows the Arcanum Site Kit chrome + dual-anchor footer, and the draft
+Follows the Arcanum Site Kit chrome ("heterodata-LEVEL" standards) with the standalone
+footer (single "Built by Nick Anderson — nickanderson.us" line, no ecosystem switcher /
+dual anchors — de-federated 2026-07-24), and the draft
 `ARKMAP_STANDARD.md` (Carson DNA): self-hosted basemap, legend + attribution, per-layer
 vintage, honest realtime "as of" stamp, and the D-4 geospatial download carve-out
 (GeoJSON + GeoParquet for geometry; CSV/XLSX/Parquet for tabular).

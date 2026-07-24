@@ -11,7 +11,7 @@ export default function AboutPage() {
     <div>
       <h1 style={{ margin: "0.6rem 0" }}>About</h1>
       <p className="lede" style={{ maxWidth: "64ch" }}>
-        nycvisualizer is the home of all NYC visualization work at Heterodata &mdash; a hub built
+        nycvisualizer is the home of all NYC visualization work &mdash; a hub built
         around one question at the finest measurable grain: <em>where can you go, and can you walk
         there?</em>
       </p>
@@ -67,10 +67,10 @@ export default function AboutPage() {
       </section>
 
       <section className="nyc-section">
-        <h2>Ecosystem</h2>
+        <h2>About this project</h2>
         <p>
-          Part of the <a href="https://heterodata.org">Heterodata</a> research ecosystem, an Arcanum
-          Research project. Architect: <a href="https://nickanderson.us">nickanderson.us</a>. Code:{" "}
+          NYC Visualizer is a standalone product built and maintained by Nick Anderson, and listed on
+          his personal site <a href="https://nickanderson.us">nickanderson.us</a>. Code:{" "}
           <a href="https://github.com/andenick/nycvisualizer">github.com/andenick/nycvisualizer</a>.
         </p>
         <p className="nyc-note">

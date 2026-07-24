@@ -1,10 +1,10 @@
 # NYC Visualizer
 
 > Where can you go, and can you walk there? — NYC transit service and pedestrian
-> infrastructure at the finest measurable grain, live. The home of all NYC work at
-> Heterodata: a portfolio hub whose first spokes are a live bus/subway map and a
-> sidewalk explorer, built entirely on authentic NYC Open Data, MTA, DCP, and Census
-> sources. An Arcanum Research project.
+> infrastructure at the finest measurable grain, live. The home of all NYC work: a
+> portfolio hub whose first spokes are a live bus/subway map and a sidewalk explorer,
+> built entirely on authentic NYC Open Data, MTA, DCP, and Census sources. A standalone
+> product built by Nick Anderson.
 
 ## Pages
 
@@ -13,7 +13,7 @@
 - [Data](https://nycvisualizer.com/data): Source catalog (68 acquired datasets) plus analysis downloads. Geospatial layers ship GeoJSON + GeoParquet; tabular data ships CSV / XLSX / Parquet (never plain JSON).
 - [Code](https://nycvisualizer.com/code): Open-source monorepo (pipeline + site); reproducible DuckDB queries in Python and R.
 - [Methodology](https://nycvisualizer.com/methodology): Findings as a claim · caveat · pointer brief, with honest limits (route-level APC ridership, Euclidean 400m walksheds, 2×Area/Perimeter width proxy r=0.47, 311 condition signal excludes the noise-complaint majority class).
-- [About](https://nycvisualizer.com/about): Hub-and-spokes framing, data sources and credit, ecosystem links.
+- [About](https://nycvisualizer.com/about): Hub-and-spokes framing, data sources and credit, standalone-product identity.
 
 ## Data & provenance
 
@@ -21,7 +21,6 @@
 - Repository: https://github.com/andenick/nycvisualizer (MIT for code; data under NYC Open Data / MTA terms).
 - Honesty: real data only. Estimated positions and proxy measures are labeled; unbuilt views show an honestly-labeled roadmap. Not affiliated with the MTA or the City of New York.
 
-## Ecosystem
+## Author
 
-- [Heterodata (hub)](https://heterodata.org)
-- [Architect — nickanderson.us](https://nickanderson.us)
+- [Built by Nick Anderson — nickanderson.us](https://nickanderson.us)

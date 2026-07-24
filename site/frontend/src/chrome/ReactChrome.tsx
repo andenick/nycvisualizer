@@ -1,18 +1,19 @@
 /* =============================================================================
-   Arcanum Site Kit (ASK) v1.2 — partials/ReactChrome.tsx
-   <ArcanumChrome/> — header + ecosystem switcher + the MANDATED dual-anchor
-   footer for React/Vite stacks: Foodberg (and Westchester, coordinated).
+   Arcanum Site Kit (ASK) chrome — LOCAL nycvisualizer copy, DE-FEDERATED.
+   <ArcanumChrome/> — header + standalone footer for this React/Vite stack.
 
-   v1.2 (Heterodata rebrand)
-   -------------------------
-   - Brand: "Heterodata" + "An Arcanum Research project" sub (was Arcanum/Research).
-   - Author anchor labelled "Architect" (was "Author").
-   - Switcher: Hub-first, then every site in manifest order (ecosystem.json v2 is
-     authored Hub-conceptual + alphabetical by title). Each site shows its
-     detailed `pages` sub-links, indented. jjmuni (and any `affiliated` site)
-     carries an "Affiliated" tag. The old group buckets (own-domain / subdomain)
-     are gone — the manifest order is the order.
-   - Footer: "Heterodata — an Arcanum Research project".
+   ANTFARM_V3 W2.5 (de-federation, 2026-07-24)
+   -------------------------------------------
+   NYC Visualizer left the Heterodata ecosystem ("the websites should not be
+   connected" — user 2026-07-24). This is the site's OWN vendored copy of the kit
+   chrome, edited for standalone use — it does NOT feed back into the shared kit.
+   - Ecosystem switcher: REMOVED (no hub link, no cross-site list).
+   - Header brand: the site's own name ("NYC Visualizer"), links to "/". No
+     "Heterodata" / "An Arcanum Research project" framing.
+   - Footer: one quiet "Built by Nick Anderson — nickanderson.us" line + the
+     data-source attributions (MTA · NYC Open Data · OSM/Protomaps). No dual anchors.
+   The site stays heterodata-LEVEL in standards (still uses this kit's CSS/components);
+   it just no longer advertises the ecosystem.
 
    No external/CDN calls (offline rule): import the vendored CSS, and either
    pass the ecosystem object as a prop or import the vendored ecosystem.json.
@@ -96,7 +97,8 @@ export interface ArcanumChromeProps {
   children?: React.ReactNode;
 }
 
-const HUB = { name: "heterodata.org", url: "https://heterodata.org" };
+// De-federated (ANTFARM_V3 W2.5): no hub anchor. Only the personal-site author
+// anchor remains — this project is listed on nickanderson.us.
 const AUTHOR = { name: "nickanderson.us", url: "https://nickanderson.us" };
 
 const MarkSvg: React.FC = () => (
@@ -107,94 +109,31 @@ const MarkSvg: React.FC = () => (
   </svg>
 );
 
-/* ---- ecosystem switcher (v1.5) -------------------------------------------
-   Hub first, then live sites A-Z, then "In progress" (draft/roadmap), then
-   "Affiliated", then the Architect anchor. ONE row per site; `hub_only`
-   sites (Files) are skipped — they appear only in the hub's own menu.
+/* ---- ecosystem switcher: REMOVED (ANTFARM_V3 W2.5 de-federation) -----------
+   NYC Visualizer is a standalone product and no longer federates with the
+   Heterodata ecosystem, so the site-switcher (and its hub link + cross-site
+   list) is gone. The site keeps the Arcanum Site Kit chrome/standards; it just
+   does not advertise the ecosystem. Nothing renders it — do not re-add.
    --------------------------------------------------------------------------- */
-export const ArcanumSwitcher: React.FC<{
-  ecosystem?: Ecosystem;
-  siteKey: string;
-  siteTitle: string;
-}> = ({ ecosystem, siteKey, siteTitle }) => {
-  const sites = (ecosystem?.sites ?? []).filter((s) => !(s as { hub_only?: boolean }).hub_only);
-  const hub = ecosystem?.anchors?.hub ?? HUB;
-  const author = ecosystem?.anchors?.author ?? AUTHOR;
-  const live = sites.filter((s) => !s.draft && !s.roadmap && !s.affiliated);
-  const wip = sites.filter((s) => (s.draft || s.roadmap) && !s.affiliated);
-  const aff = sites.filter((s) => s.affiliated);
-  const row = (s: (typeof sites)[number]) => (
-    <a
-      key={s.key}
-      className={"ark-switcher-item" + (s.key === siteKey ? " current" : "")}
-      href={s.url}
-      role="menuitem"
-      aria-current={s.key === siteKey ? "page" : undefined}
-      style={{ ["--ark-si-accent" as string]: s.accent ?? "#1565c0" }}
-    >
-      <span className="ark-dot" aria-hidden="true" />
-      <span className="ark-si-name">{s.title ?? s.display}</span>
-      {s.draft ? <span className="ark-si-pill">Draft</span> : null}
-      {!s.draft && s.roadmap ? <span className="ark-si-pill">Roadmap</span> : null}
-      {s.affiliated ? <span className="ark-affiliated">affiliated</span> : null}
-      <span className="ark-si-host">{s.display ?? s.url}</span>
-    </a>
-  );
-  return (
-    <details className="ark-switcher">
-      <summary aria-label="Switch site within the Heterodata ecosystem">
-        <span>{siteTitle || "Ecosystem"}</span>
-        <span className="ark-caret" aria-hidden="true">&#9662;</span>
-      </summary>
-      <div className="ark-switcher-menu" role="menu">
-        {/* Hub first. */}
-        <div className="ark-switcher-group">Hub</div>
-        <a className="ark-switcher-item" href={hub.url} role="menuitem">
-          <span className="ark-dot" aria-hidden="true" />
-          <span className="ark-si-name">{hub.name}</span>
-          <span className="ark-si-host">heterodata.org</span>
-        </a>
-
-        <div className="ark-switcher-group">Sites</div>
-        {live.map(row)}
-        {wip.length ? <div className="ark-switcher-group">In progress</div> : null}
-        {wip.map(row)}
-        {aff.length ? <div className="ark-switcher-group">Affiliated</div> : null}
-        {aff.map(row)}
-
-        {/* Architect apex. */}
-        <div className="ark-switcher-group">Architect</div>
-        <a className="ark-switcher-item" href={author.url} role="menuitem">
-          <span className="ark-dot" aria-hidden="true" />
-          <span className="ark-si-name">Architect</span>
-          <span className="ark-si-host">{author.name}</span>
-        </a>
-      </div>
-    </details>
-  );
-};
 
 /* ---- header --------------------------------------------------------------- */
 export const ArcanumHeader: React.FC<ArcanumChromeProps> = (props) => {
   const { siteKey, ecosystem, nav = [], activePath } = props;
   const current = ecosystem?.sites?.find((s) => s.key === siteKey);
-  const siteTitle = props.siteTitle ?? current?.title ?? current?.display ?? "";
-  const hubUrl = ecosystem?.anchors?.hub?.url ?? HUB.url;
+  const siteTitle = props.siteTitle ?? current?.title ?? current?.display ?? "NYC Visualizer";
   const norm = (p: string) => p.replace(/\/$/, "");
+  // De-federated (ANTFARM_V3 W2.5): NYC Visualizer is a standalone product — no
+  // ecosystem switcher, no hub brand/sub. The brand is the site's own name and
+  // links to its own root. Standards (the Arcanum Site Kit chrome) are unchanged.
   return (
     <header className="ark-header">
       <div className="ark-header-inner">
-        <a className="ark-brand" href={hubUrl} aria-label="Heterodata — hub (heterodata.org)">
+        <a className="ark-brand" href="/" aria-label={siteTitle + " — home"}>
           <span className="ark-mark" aria-hidden="true"><MarkSvg /></span>
           <span className="ark-brand-text">
-            <span className="ark-brand-name">Heterodata</span>
-            <span className="ark-brand-sub">An Arcanum Research project</span>
+            <span className="ark-brand-name">{siteTitle}</span>
           </span>
         </a>
-        {siteTitle ? (
-          <a className="ark-site-title" href={current?.url ?? "/"}>{siteTitle}</a>
-        ) : null}
-        <ArcanumSwitcher ecosystem={ecosystem} siteKey={siteKey} siteTitle={siteTitle} />
         {nav.length ? (
           <nav className="ark-nav" aria-label="Site sections">
             {nav.map((n) => {
@@ -213,19 +152,21 @@ export const ArcanumHeader: React.FC<ArcanumChromeProps> = (props) => {
   );
 };
 
-/* ---- footer (MANDATED dual anchors) --------------------------------------- */
+/* ---- footer (standalone: one quiet personal-site line + data credits) -----
+   De-federated (ANTFARM_V3 W2.5): no hub anchor, no "Arcanum Research" framing.
+   A single "Built by Nick Anderson — nickanderson.us" line (the personal site is
+   where this project is listed) plus the data-source attributions. */
 export const ArcanumFooter: React.FC<Pick<ArcanumChromeProps,
   "ecosystem" | "dprUrl" | "dprLabel">> = ({ ecosystem, dprUrl, dprLabel = "Provenance" }) => {
-    const hub = ecosystem?.anchors?.hub ?? HUB;
     const author = ecosystem?.anchors?.author ?? AUTHOR;
     return (
       <footer className="ark-footer">
         <div className="ark-footer-inner">
-          <span><strong>Heterodata</strong> &mdash; an Arcanum Research project</span>
+          <span>Built by Nick Anderson &mdash; <a href={author.url}>{author.name}</a></span>
           <span className="ark-sep" aria-hidden="true">&middot;</span>
-          <span>Hub: <a href={hub.url}>{hub.name}</a></span>
-          <span className="ark-sep" aria-hidden="true">&middot;</span>
-          <span>Architect: <a href={author.url}>{author.name}</a></span>
+          <span className="ark-foot-sources">
+            Data: MTA &middot; NYC Open Data &middot; OpenStreetMap / Protomaps
+          </span>
           <span className="ark-sep" aria-hidden="true">&middot;</span>
           <span className="ark-foot-badges">
             <span className="ark-badge reproducible">Reproducible</span>

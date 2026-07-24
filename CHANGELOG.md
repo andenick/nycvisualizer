@@ -2,6 +2,29 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — Standalone (de-federation) + keep-indefinitely telemetry retention
+
+NYC Visualizer became a **standalone product** — no longer connected to any shared site
+ecosystem. Deployed + verified live (paint canary 10/10 PASS; served bundle carries zero
+cross-site links).
+
+- **De-federation (chrome).** Removed the ecosystem site-switcher, all hub links, and the
+  "research-project" framing from the header, footer, About page, immersive ⓘ overlay, and
+  `llms.txt`. The header brand is now the site's own name linking to `/`; the footer is a
+  single quiet **"Built by Nick Anderson — nickanderson.us"** line plus the data-source
+  attributions (**MTA · NYC Open Data · OpenStreetMap / Protomaps**). Own favicon/name kept.
+  The site still uses the shared Arcanum Site Kit chrome for its engineering standards — only
+  the federation was dropped, not the standards.
+- **Ecosystem manifest.** `ecosystem.json` trimmed to only this site's entry plus the author
+  anchor (it now feeds just the Research Triad's Data/Code/Outputs block); the unused vendored
+  switcher kit files were removed from `public/_shared`. The served bundle contains no
+  cross-site or hub links.
+- **Telemetry retention → keep-indefinitely.** The realtime raw archive is now **kept
+  indefinitely** (was documented as 90-day rolling), preserving `vehicle_id`-level history as
+  the raw material for future motion work; at ~200 GB the oldest whole month **moves** to cold
+  storage, never deletes. There is no age-based pruning routine in the poller (a low-disk guard
+  merely *suspends* archiving) — a docs-only change; see `pipeline/realtime/README.md`.
+
 ## 2026-07-24 — Ant Farm v3 W1 (client) + W6.1 basemap depth
 
 The client half of the "make the ant farm appear continuous — simply, honestly" motion
