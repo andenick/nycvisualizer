@@ -2,11 +2,11 @@
    Arcanum Site Kit (ASK) — arcanum.css — v1.3
    v1.3 (2026-06-12): header-density breakpoint (≤1100px) so 9-10-item navs
    don't wrap the theme toggle onto a second row; no token changes.
-   v1.2 (Heterodata rebrand)
+   v1.2 (brand refresh)
    The single, vendored, versioned design system for Arcanum Research sites.
    ONE visual identity across ~12 sites; themeable per-site by ONE accent color.
 
-   Promoted from the heterodata.org hub palette (dark default + light via
+   Promoted from the shared design-system palette (dark default + light via
    prefers-color-scheme, the card grid, the accent system). No CDN, no web-font
    hosting — body font is the system-ui stack (offline rule).
 
@@ -220,7 +220,7 @@ code, kbd, samp, pre { font-family: var(--ark-mono); }
   flex-wrap: wrap;
 }
 
-/* Brand mark — links to the hub (heterodata.org) */
+/* Brand mark — links to the site's own root (standalone) */
 .ark-brand {
   display: inline-flex; align-items: center; gap: .55rem;
   color: var(--ark-fg); font-weight: 700; flex-shrink: 0;
@@ -585,7 +585,7 @@ code, kbd, samp, pre { font-family: var(--ark-mono); }
 }
 
 /* -----------------------------------------------------------------------------
-   13. FOOTER  (mandated — dual anchors: heterodata.org + nickanderson.us)
+   13. FOOTER  (standalone — single personal-site line: nickanderson.us)
    --------------------------------------------------------------------------- */
 .ark-footer {
   border-top: 1px solid var(--ark-line);
@@ -831,8 +831,8 @@ code, kbd, samp, pre { font-family: var(--ark-mono); }
 
 /* ── §21 ArkActionFooter — the footer v2 useful-buttons bar ────────────────────
    CODE_DATA_FIRST_STANDARD.md §B1.2. A compact triad + "Website source" + "Cite
-   this site", ABOVE the existing dual-anchor colophon (which is preserved exactly
-   — heterodata.org hub + nickanderson.us author). One footer per page. */
+   this site", ABOVE the existing colophon (standalone — the single
+   nickanderson.us personal-site line). One footer per page. */
 .ark-action-footer .ark-action-bar {
   max-width: var(--ark-maxw); margin: 0 auto;
   padding: var(--ark-space-5) 1.25rem var(--ark-space-4);

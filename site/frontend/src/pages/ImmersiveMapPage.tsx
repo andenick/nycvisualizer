@@ -7,8 +7,9 @@
 // The map canvas fills 100dvw × 100dvh (safe-area-inset padded) with NO page
 // scroll and NO standard header/footer — a floating translucent top strip carries
 // the links back into the rest of the site, and a corner "ⓘ" overlay carries the
-// MANDATED dual anchors (heterodata.org + nickanderson.us), attribution, the
-// data-honesty stamp, and a theme toggle (D4/D9 compliance without page chrome).
+// single personal-site line (nickanderson.us — this standalone product is listed
+// there; de-federated in ANTFARM_V3 W2.5, no hub anchor), attribution, the
+// data-honesty stamp, and a theme toggle (D4/D9-standalone compliance without page chrome).
 //
 // The live renderer is the SAME VehicleFlowLayer "ant farm" that powers /bus — it
 // is imported and REUSED here, not forked. This page only re-scopes it to one mode
@@ -134,7 +135,8 @@ function setTheme(mode: "dark" | "light") {
   document.dispatchEvent(new CustomEvent("ark:themechange", { detail: { theme: mode } }));
 }
 
-const HUB = { name: "heterodata.org", url: "https://heterodata.org" };
+// De-federated (ANTFARM_V3 W2.5): standalone product — no hub anchor. Only the
+// personal-site line remains (this project is listed on nickanderson.us).
 const AUTHOR = { name: "nickanderson.us", url: "https://nickanderson.us" };
 const APEX = "https://nycvisualizer.com";
 
@@ -708,7 +710,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
         <div className="imm-strip-grabtab" aria-hidden="true" onMouseEnter={() => setIdle(false)} />
         <div className="imm-strip-inner">
           <div className="imm-strip-left">
-            <a className="imm-mark" href={HUB.url} aria-label="Heterodata hub — heterodata.org">
+            <a className="imm-mark" href="/" aria-label="NYC Visualizer — home">
               <svg viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
                 <path d="M16 3 4 27h5l2.4-5h9.2l2.4 5h5L16 3Zm-2.7 14L16 11l2.7 6h-5.4Z" fill="currentColor" />
                 <circle cx="16" cy="25.5" r="1.6" fill="currentColor" />
@@ -869,10 +871,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
             {basemap && <div className="imm-info-attr">{basemap.vintageNote} · {basemap.attribution}</div>}
             <div className="imm-info-anchors">
               <span>
-                Hub: <a href={HUB.url}>{HUB.name}</a>
-              </span>
-              <span>
-                Architect: <a href={AUTHOR.url}>{AUTHOR.name}</a>
+                Built by Nick Anderson — <a href={AUTHOR.url}>{AUTHOR.name}</a>
               </span>
             </div>
             <div className="imm-info-foot">
@@ -888,7 +887,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                 {dark ? "☀ Light" : "☾ Dark"}
               </button>
             </div>
-            <p className="imm-info-realdata">Real data only — Heterodata, an Arcanum Research project.</p>
+            <p className="imm-info-realdata">Real data only.</p>
           </div>
         )}
       </div>
