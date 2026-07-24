@@ -45,10 +45,38 @@ const DEG = Math.PI / 180;
 // interval; a faster real cadence just retargets sooner (still smooth).
 const GLIDE_MS = 30000;
 
+// ---- motion trails (F4) — a ~20 s fading tail per moving unit ----
+// A small per-unit ring buffer of recently-displayed positions, sampled at a
+// throttled cadence so TRAIL_CAP points span ~TRAIL_CAP*TRAIL_SAMPLE_MS ≈ 20 s.
+// Rendered as a thin, theme-aware polyline whose alpha ramps to 0 at the tail —
+// makes flow direction/speed legible at a glance, especially at city zoom.
+// Perf: capped points, single canvas pass, and the FIRST thing the degrade
+// ladder drops (see _maybeDegrade).
+const TRAIL_CAP = 12;
+const TRAIL_SAMPLE_MS = 1650; // 12 * 1.65 s ≈ 20 s tail
+const TRAIL_MAX_ALPHA = 0.5; // head of the tail; ramps to 0 at the oldest point
+
 type ColorFor = (routeId: string | null) => string;
+/** What the client learns when a unit is clicked: enough to drive the follow
+ *  pill ("Following M15 bus 4821") and the focus predicate, with zero renderer
+ *  knowledge of route/line taxonomy (the page owns lineKey()). */
+export interface FlowSelection {
+  id: string;
+  kind: "bus" | "train";
+  routeId: string | null; // raw route id (bus route or subway route_id)
+  label: string; // display label, e.g. "M15" or "L"
+  sub: string; // secondary, e.g. "bus 4821" or "train …a1b2c3"
+}
+/** A focus predicate: returns true for units that should stay bright. */
+export type FocusPred = (kind: "bus" | "train", routeId: string | null) => boolean;
+
 export interface FlowPopupHooks {
   busPopup: (v: Vehicle) => string;
   trainPopup: (t: SubwayTrain) => string;
+  /** Fired when the popup "Follow" action is tapped (F4 follow mode). */
+  onFollow?: (sel: FlowSelection) => void;
+  /** Fired when the popup "Focus route/line" action is tapped (F4 focus dim). */
+  onFocus?: (sel: FlowSelection) => void;
 }
 
 interface Poly {
@@ -85,6 +113,12 @@ interface Unit {
   followPoly?: Poly;
   prevS?: number;
   curS?: number;
+  // motion trail (F4) — lazily allocated circular buffer of recent lat/lon:
+  tLat?: Float64Array;
+  tLon?: Float64Array;
+  tN?: number; // points stored (≤ TRAIL_CAP)
+  tHead?: number; // next write index (circular)
+  tLastT?: number; // last sample time
   // lifecycle:
   appearT: number;
   missing: number;
@@ -204,6 +238,10 @@ export class VehicleFlowLayer extends L.Layer {
   private _degradedLogged = false;
   private _frameParity = 0;
   private _dirty = true; // in tick-jump mode, only redraw when data/view changed
+  // F4 enhancements:
+  private _trails = false; // motion trails enabled (page sets default per surface)
+  private _trailsDropped = false; // degrade ladder shed trails (recovers when cheap)
+  private _focus: FocusPred | null = null; // focus-dim predicate (null = no focus)
 
   constructor(hooks: FlowPopupHooks) {
     super();
@@ -275,6 +313,28 @@ export class VehicleFlowLayer extends L.Layer {
   setVisibility(showBuses: boolean, showSubway: boolean) {
     this._showBuses = showBuses;
     this._showSubway = showSubway;
+  }
+
+  // ---- F4: motion trails / follow / focus ----
+  /** Enable/disable the ~20 s fading motion tail per moving unit. */
+  setTrails(on: boolean) {
+    if (this._trails === on) return;
+    this._trails = on;
+    if (!on) for (const u of this._units.values()) u.tN = 0; // clear buffers
+    this._dirty = true;
+  }
+  /** Dim every unit the predicate rejects to 25 % and drop its trail; the kept
+   *  units pop. Pass null to clear focus. */
+  setFocus(pred: FocusPred | null) {
+    this._focus = pred;
+    this._dirty = true;
+  }
+  /** Currently-displayed lat/lon of a unit (worm → its head), or null if gone.
+   *  Standalone (not a draw side-effect) so follow works even when culled. */
+  getDisplayLatLng(id: string): [number, number] | null {
+    const u = this._units.get(id);
+    if (!u || u.goneT !== undefined) return null;
+    return this._dispAnchor(u, performance.now());
   }
 
   /** Ingest a bus snapshot. `shape` (selected route's polylines) enables
@@ -560,24 +620,33 @@ export class VehicleFlowLayer extends L.Layer {
   // (e.g. zooming in) so a transient spike never permanently freezes the glide.
   private _maybeDegrade() {
     const b = FRAME_BUDGET_MS;
-    const before = this._tickJump ? 2 : this._fpsDivisor === 2 ? 1 : 0;
+    // level: 0 full · 1 trails-dropped · 2 30fps · 3 tick-jump (trails are the
+    // FIRST thing shed under load, per the F4 perf pact).
+    const lvl = () =>
+      this._tickJump ? 3 : this._fpsDivisor === 2 ? 2 : this._trails && this._trailsDropped ? 1 : 0;
+    const before = lvl();
+    const trailsLive = this._trails && !this._trailsDropped;
     if (this._emaMs > b * 2.4) {
       this._tickJump = true;
     } else if (this._emaMs > b) {
-      if (this._fpsDivisor === 1) this._fpsDivisor = 2; // 60 -> 30 fps
+      if (trailsLive)
+        this._trailsDropped = true; // shed trails BEFORE dropping frame rate
+      else if (this._fpsDivisor === 1) this._fpsDivisor = 2; // 60 -> 30 fps
     } else if (this._emaMs < b * 0.5) {
-      // hysteresis recovery: climb back one step at a time
+      // hysteresis recovery: climb back one step at a time (reverse order)
       if (this._tickJump) this._tickJump = false;
       else if (this._fpsDivisor !== 1) this._fpsDivisor = 1;
+      else if (this._trailsDropped) this._trailsDropped = false;
     }
-    const after = this._tickJump ? 2 : this._fpsDivisor === 2 ? 1 : 0;
-    if (after !== before && !this._degradedLogged && after > 0) {
+    const after = lvl();
+    if (after !== before && !this._degradedLogged && after > before) {
       // log the first real degrade only (not per-frame; not on recovery)
       this._degradedLogged = true;
+      const what = after === 3 ? "tick-jump" : after === 2 ? "30 fps" : "trails-off";
       // eslint-disable-next-line no-console
       console.warn(
         `[VehicleFlowLayer] ${this._emaMs.toFixed(1)}ms/frame, ${this._units.size} units → ` +
-          `${after === 2 ? "tick-jump" : "30 fps"} (auto-recovers when the view is cheaper).`,
+          `${what} (auto-recovers when the view is cheaper).`,
       );
     }
   }
@@ -613,6 +682,87 @@ export class VehicleFlowLayer extends L.Layer {
       f = f < 0 ? 0 : f > 1 ? 1 : f;
     }
     return [u.prevLat + (u.curLat - u.prevLat) * f, u.prevLon + (u.curLon - u.prevLon) * f];
+  }
+
+  // Displayed ANCHOR of a unit (the point follow tracks + the point the trail
+  // samples): a worm's HEAD (leading toward the target station), a bus's snapped
+  // position on its follow-shape when present, else the plain prev→cur glide.
+  private _dispAnchor(u: Unit, now: number): [number, number] {
+    let f = 1;
+    if (u.curT > u.prevT) {
+      f = (now - u.prevT) / (u.curT - u.prevT);
+      f = f < 0 ? 0 : f > 1 ? 1 : f;
+    }
+    if (u.kind === "train" && u.seg && u.segCum && u.segLen && u.segLen > 0) {
+      const frac = (u.prevFrac ?? 0) + ((u.curFrac ?? 0) - (u.prevFrac ?? 0)) * f;
+      const head = Math.min(u.segLen, frac * u.segLen + TRAIN_LEN_M / 2);
+      return pointAtDist(u.seg, u.segCum, head);
+    }
+    if (u.kind === "bus" && u.followPoly && u.prevS !== undefined && u.curS !== undefined) {
+      const s = u.prevS + (u.curS - u.prevS) * f;
+      return pointAtDist(u.followPoly.pts, u.followPoly.cum, s);
+    }
+    return [u.prevLat + (u.curLat - u.prevLat) * f, u.prevLon + (u.curLon - u.prevLon) * f];
+  }
+
+  // Append the current anchor to a unit's trail ring buffer, throttled so
+  // TRAIL_CAP points cover ~20 s. Lazily allocates the buffer on first sample.
+  private _sampleTrail(u: Unit, now: number, lat: number, lon: number) {
+    if (u.tLastT !== undefined && now - u.tLastT < TRAIL_SAMPLE_MS) return;
+    if (!u.tLat) {
+      u.tLat = new Float64Array(TRAIL_CAP);
+      u.tLon = new Float64Array(TRAIL_CAP);
+      u.tN = 0;
+      u.tHead = 0;
+    }
+    const h = u.tHead ?? 0;
+    u.tLat[h] = lat;
+    u.tLon![h] = lon;
+    u.tHead = (h + 1) % TRAIL_CAP;
+    u.tN = Math.min(TRAIL_CAP, (u.tN ?? 0) + 1);
+    u.tLastT = now;
+  }
+
+  // Reusable scratch for projected trail vertices (no per-unit allocation).
+  private _tx = new Float32Array(TRAIL_CAP);
+  private _ty = new Float32Array(TRAIL_CAP);
+
+  // Draw a unit's fading tail (oldest → newest, alpha ramps 0 → TRAIL_MAX_ALPHA).
+  // BANDED: the ramp is drawn in ≤3 contiguous strokes (not one per segment), so
+  // 3,000 tails cost ~3k strokes, not ~33k — the difference that keeps trails
+  // inside the frame budget at the 3,000-unit worst case.
+  private _drawTrail(u: Unit, alpha: number) {
+    const n = u.tN ?? 0;
+    if (n < 2 || !u.tLat || !u.tLon) return;
+    const ctx = this._ctx;
+    const cap = TRAIL_CAP;
+    const start = n < cap ? 0 : u.tHead ?? 0;
+    const minx = this._fminx,
+      miny = this._fminy;
+    const tx = this._tx,
+      ty = this._ty;
+    for (let k = 0; k < n; k++) {
+      const idx = (start + k) % cap;
+      this._project(u.tLat[idx], u.tLon[idx]);
+      tx[k] = this._plx - minx;
+      ty[k] = this._ply - miny;
+    }
+    ctx.strokeStyle = u.color;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 1.1;
+    const bands = Math.min(3, n - 1);
+    for (let b = 0; b < bands; b++) {
+      const a = TRAIL_MAX_ALPHA * ((b + 1) / bands) * alpha; // faint tail → strong head
+      if (a <= 0.02) continue;
+      const lo = Math.floor((b * (n - 1)) / bands);
+      const hi = Math.floor(((b + 1) * (n - 1)) / bands);
+      ctx.globalAlpha = a;
+      ctx.beginPath();
+      ctx.moveTo(tx[lo], ty[lo]);
+      for (let k = lo + 1; k <= hi; k++) ctx.lineTo(tx[k], ty[k]);
+      ctx.stroke();
+    }
   }
 
   private _ensureHit(n: number) {
@@ -691,7 +841,19 @@ export class VehicleFlowLayer extends L.Layer {
       if (now - u.appearT < APPEAR_MS) alpha = (now - u.appearT) / APPEAR_MS;
       if (u.goneT !== undefined) alpha *= Math.max(0, 1 - (now - u.goneT) / FADE_MS);
       if (u.est) alpha *= 0.62;
+      // F4 focus dim: units the focus predicate rejects drop to 25 % and lose
+      // their trail; the kept flow pops. (No focus → everything bright.)
+      const bright = !this._focus || this._focus(u.kind, u.data.route_id ?? null);
+      if (!bright) alpha *= 0.25;
       if (alpha <= 0.02) continue;
+
+      // F4 motion trail: sample + draw the ~20 s fading tail (bright units only;
+      // dropped first by the degrade ladder). Drawn under the unit's own shape.
+      if (this._trails && !this._trailsDropped && bright && u.goneT === undefined) {
+        const anchor = this._dispAnchor(u, now);
+        this._sampleTrail(u, now, anchor[0], anchor[1]);
+        this._drawTrail(u, alpha);
+      }
 
       if (slab) {
         // veins mode: a moving speck (fillRect is much cheaper than arc)
@@ -933,15 +1095,57 @@ export class VehicleFlowLayer extends L.Layer {
     return best;
   }
 
+  private _selOf(data: Vehicle | SubwayTrain, kind: number): FlowSelection {
+    if (kind === 0) {
+      const v = data as Vehicle;
+      return {
+        id: "b:" + v.vehicle_id,
+        kind: "bus",
+        routeId: v.route_id,
+        label: v.route_id ?? "?",
+        sub: "bus " + v.vehicle_id,
+      };
+    }
+    const t = data as SubwayTrain;
+    return {
+      id: "t:" + t.feed + "|" + t.trip_id,
+      kind: "train",
+      routeId: t.route_id,
+      label: subwayLabel(t.route_id),
+      sub: "train " + t.trip_id.slice(-6),
+    };
+  }
+
   private _onClick = (e: L.LeafletMouseEvent) => {
     const i = this._pickIdx(e.containerPoint);
     if (i < 0) return;
     const data = this._hdata[i];
-    const html =
-      this._hkind[i] === 0
-        ? this._hooks.busPopup(data as Vehicle)
-        : this._hooks.trainPopup(data as SubwayTrain);
-    L.popup({ offset: [0, -2] }).setLatLng(e.latlng).setContent(html).openOn(this._lmap);
+    const kind = this._hkind[i];
+    const sel = this._selOf(data, kind);
+    let html = kind === 0 ? this._hooks.busPopup(data as Vehicle) : this._hooks.trainPopup(data as SubwayTrain);
+    // F4 action row — one tap to follow this unit or focus its route/line.
+    const canAct = !!(this._hooks.onFollow || this._hooks.onFocus);
+    if (canAct) {
+      const focusLabel = kind === 0 ? "Focus route" : "Focus line";
+      html +=
+        `<div class="flow-pop-actions">` +
+        (this._hooks.onFollow ? `<button type="button" class="flow-pop-btn" data-flow="follow">▸ Follow</button>` : "") +
+        (this._hooks.onFocus ? `<button type="button" class="flow-pop-btn" data-flow="focus">◎ ${focusLabel}</button>` : "") +
+        `</div>`;
+    }
+    const popup = L.popup({ offset: [0, -2] }).setLatLng(e.latlng).setContent(html).openOn(this._lmap);
+    if (canAct) {
+      const el = popup.getElement();
+      el?.querySelectorAll<HTMLButtonElement>(".flow-pop-btn").forEach((btn) => {
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const act = btn.getAttribute("data-flow");
+          this._lmap.closePopup(popup);
+          if (act === "follow") this._hooks.onFollow?.(sel);
+          else if (act === "focus") this._hooks.onFocus?.(sel);
+        });
+      });
+    }
   };
 
   private _onMouseMove = (e: L.LeafletMouseEvent) => {

@@ -21,8 +21,21 @@ import {
   type AlertItem,
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
-import { VehicleFlowLayer } from "./VehicleFlowLayer";
+import { VehicleFlowLayer, type FlowSelection } from "./VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "./MapLegend";
+import FlowControls, { type FollowInfo, type FocusInfo } from "./FlowControls";
+
+// Collapse express/shuttle subway variants onto their trunk (for focus-dim on a line).
+function lineKey(route: string | null): string {
+  if (!route) return "";
+  const up = route.toUpperCase();
+  if (up === "6X") return "6";
+  if (up === "7X") return "7";
+  if (up === "FX") return "F";
+  if (up === "GS" || up === "FS") return "S";
+  if (up === "SI") return "SIR";
+  return up;
+}
 
 // Representative trunk bullets for the "official line colors" legend row.
 const TRUNK_LINES = ["1", "4", "7", "A", "B", "G", "J", "L", "N", "S"];
@@ -77,6 +90,7 @@ export default function BusMap() {
   const flow = useRef<VehicleFlowLayer | null>(null);
   const stationLayer = useRef<L.LayerGroup | null>(null);
   const shapeLayer = useRef<L.LayerGroup | null>(null);
+  const focusLayer = useRef<L.LayerGroup | null>(null);
   const selectedShape = useRef<[number, number][][] | null>(null);
   const stationsLoaded = useRef(false);
 
@@ -98,6 +112,18 @@ export default function BusMap() {
   const [basemap, setBasemap] = useState<BasemapInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [perf, setPerf] = useState<{ ms: number; units: number; fps: number; tickJump: boolean } | null>(null);
+  // F4: follow mode · focus dim · motion trails (default OFF on /bus — shared with more layers)
+  const [follow, setFollow] = useState<FollowInfo | null>(null);
+  const [focus, setFocus] = useState<(FocusInfo & { key: string; routeId: string | null }) | null>(null);
+  const [trails, setTrails] = useState(false);
+  const followingRef = useRef(false);
+  const followIdRef = useRef<string | null>(null);
+  const followSelRef = useRef<FlowSelection | null>(null);
+  const focusRef = useRef<typeof focus>(null);
+  focusRef.current = focus;
+  const stopFollowRef = useRef(() => {});
+  const onFollowRef = useRef<(s: FlowSelection) => void>(() => {});
+  const onFocusRef = useRef<(s: FlowSelection) => void>(() => {});
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const showBusesRef = useRef(showBuses);
@@ -117,6 +143,33 @@ export default function BusMap() {
     if (c && c.toLowerCase() !== "#ffffff") return c;
     return GROUP_COLORS[routeGroup(routeId)] ?? "#2563eb";
   };
+  const colorForRef = useRef(colorFor);
+  colorForRef.current = colorFor;
+
+  // ---- F4 handlers (refs so the once-constructed layer calls latest) ----
+  const stopFollow = () => {
+    followingRef.current = false;
+    followIdRef.current = null;
+    followSelRef.current = null;
+    setFollow(null);
+  };
+  stopFollowRef.current = stopFollow;
+  const applyFocus = (sel: FlowSelection) => {
+    const key = sel.kind === "train" ? lineKey(sel.routeId) : sel.routeId ?? "";
+    setFocus({ label: sel.label, kind: sel.kind, key, routeId: sel.routeId });
+  };
+  const clearFocus = () => setFocus(null);
+  onFollowRef.current = (sel: FlowSelection) => {
+    followingRef.current = true;
+    followIdRef.current = sel.id;
+    followSelRef.current = sel;
+    setFollow({ label: sel.label, sub: sel.sub });
+  };
+  onFocusRef.current = (sel: FlowSelection) => applyFocus(sel);
+  const toggleTrails = (on: boolean) => {
+    setTrails(on);
+    flow.current?.setTrails(on);
+  };
 
   // ---- map init ----
   useEffect(() => {
@@ -133,10 +186,22 @@ export default function BusMap() {
     setBasemap(addBasemap(m));
     stationLayer.current = L.layerGroup();
     shapeLayer.current = L.layerGroup().addTo(m);
+    focusLayer.current = L.layerGroup().addTo(m);
     // The animated true-scale vehicle canvas sits ABOVE the route shape/ribbon.
-    const fl = new VehicleFlowLayer({ busPopup: popupHtml, trainPopup: trainPopupHtml });
+    const fl = new VehicleFlowLayer({
+      busPopup: popupHtml,
+      trainPopup: trainPopupHtml,
+      onFollow: (s) => onFollowRef.current(s),
+      onFocus: (s) => onFocusRef.current(s),
+    });
     fl.addTo(m);
-    flow.current = fl;
+    flow.current = fl; // trails default OFF on /bus (no setTrails)
+    if (new URLSearchParams(window.location.search).has("perf")) {
+      const w = window as unknown as Record<string, unknown>;
+      w.__nycvFlow = fl;
+      w.__nycvMap = m;
+    }
+    m.on("click", () => stopFollowRef.current()); // tap map stops follow
     const syncStations = () => {
       if (!stationLayer.current) return;
       const want = showSubwayRef.current && m.getZoom() >= STATION_MIN_ZOOM;
@@ -254,6 +319,67 @@ export default function BusMap() {
     }, 1000);
     return () => clearInterval(t);
   }, []);
+
+  // ---- F4 follow: ease the camera to the tracked unit (bus or subway worm) ----
+  useEffect(() => {
+    if (!follow) return;
+    const m = map.current;
+    const fl = flow.current;
+    if (!m || !fl) return;
+    const id = followIdRef.current;
+    const tick = () => {
+      if (!id) return;
+      const ll = fl.getDisplayLatLng(id);
+      if (!ll) {
+        stopFollowRef.current();
+        return;
+      }
+      const target = L.latLng(ll[0], ll[1]);
+      const cp = m.latLngToContainerPoint(target);
+      const cc = m.getSize().divideBy(2);
+      if (cp.distanceTo(cc) > 12) m.panTo(target, { animate: true, duration: 0.45, easeLinearity: 0.5 });
+    };
+    tick();
+    const iv = setInterval(tick, 350);
+    return () => clearInterval(iv);
+  }, [follow]);
+
+  // ---- ESC releases follow ----
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") stopFollowRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ---- F4 focus dim: predicate to the layer + (bus) overlay the route shape ----
+  useEffect(() => {
+    const fl = flow.current;
+    const fx = focusLayer.current;
+    if (!fl) return;
+    fx?.clearLayers();
+    if (!focus) {
+      fl.setFocus(null);
+      return;
+    }
+    if (focus.kind === "train") {
+      const key = focus.key;
+      fl.setFocus((k, rid) => k === "train" && lineKey(rid) === key); // dim-only
+    } else {
+      const rid = focus.routeId;
+      fl.setFocus((k, r) => k === "bus" && r === rid);
+      if (rid && fx) {
+        getRouteShape(rid)
+          .then((s) => {
+            if (focusRef.current?.routeId !== rid) return;
+            const color = colorForRef.current(rid);
+            for (const line of s.polylines) L.polyline(line, { color, weight: 3, opacity: 0.7 }).addTo(fx);
+          })
+          .catch(() => {});
+      }
+    }
+  }, [focus]);
 
   // ---- station markers (tap -> live arrivals board), zoom-gated ----
   useEffect(() => {
@@ -392,9 +518,24 @@ export default function BusMap() {
   if (showSubway)
     stampParts.push(`trains ${fmtClock(subAsOf)} (${subSource}${subStale ? ", partly stale" : ""})`);
 
+  const trailsToggle = (
+    <label className="mlg-toggle">
+      <input type="checkbox" checked={trails} onChange={(e) => toggleTrails(e.target.checked)} />
+      Motion trails <span className="mlg-toggle-hint">(~20 s fading tail)</span>
+    </label>
+  );
+
   return (
     <div className="nyc-map-wrap">
       <div className="nyc-map" ref={mapRef} />
+
+      <FlowControls
+        follow={follow}
+        onStopFollow={stopFollow}
+        onFocusFromFollow={() => followSelRef.current && applyFocus(followSelRef.current)}
+        focus={focus ? { label: focus.label, kind: focus.kind } : null}
+        onClearFocus={clearFocus}
+      />
 
       <div className="nyc-map-controls">
         <div className="row" style={{ display: "flex", gap: "0.9rem" }}>
@@ -522,6 +663,7 @@ export default function BusMap() {
               </>
             )}
           </span>,
+          trailsToggle,
         ]}
         details={
           showBuses && selected
