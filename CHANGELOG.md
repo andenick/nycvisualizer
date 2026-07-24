@@ -2,6 +2,36 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — Ant Farm v3 W1 (client) + W6.1 basemap depth
+
+The client half of the "make the ant farm appear continuous — simply, honestly" motion
+upgrade, plus the "roads must never disappear" basemap fix. Deployed + verified live
+(paint canary 10/10 PASS).
+
+- **Shape-following motion model** (`VehicleFlowLayer` + `lib/shapeCache.ts`): a bus carrying
+  a backend `shape_id` + `route_offset_ft` now glides ALONG its route shape from its last
+  reported offset at `speed_est_fps` — never a straight line through blocks, never a teleport.
+  Shape geometry is lazy-fetched per visible route from `/api/rt/route_shapes` into an
+  LRU cache (~50 shapes), with precomputed cumulative-length arrays for an O(log n)
+  offset→point lookup. Buses without shape data keep the straight prev→cur glide.
+- **Decay-to-stop (sparse-data humility):** with no fresh report a gliding bus eases to a
+  full stop over ~45 s and resumes on the next ping — it never sails on indefinitely.
+  Dwelling buses (offset not advancing) dock in place with a subtle pulse; **no fake creep**.
+- **Snap-correct, honestly:** a fresh report landing > 200 ft from the prediction closes the
+  gap with a fast ease (≤ 1 s), never a visible rubber-band. Between-tick prediction error is
+  sampled to a ring buffer — **median ~73 ft** live (via the `?perf` hook).
+- **On/offline:** new vehicles fade in; a vehicle missing > 3 ticks fades out and emits a
+  coalesced `bus_offline` telemetry beacon.
+- **Frame budget:** z11–z13 with motion trails on measured **< 8 ms/frame @ 60 fps** live
+  (peak z12 6.31 ms at ~825 units); the degrade ladder never engaged across z10→z19.
+- **W6.1 — roads never disappear:** the NYC basemap is rebuilt at **maxzoom 15** with
+  **Planetiler** (official Protomaps profile) — `nyc-basemap-z15b.pmtiles`, replacing the
+  36 MB maxzoom-14 extract. `basemap.ts` sets `maxDataZoom: 15` + `maxNativeZoom: 16` so
+  z16 resolves real z15 road data and z17–z19 CSS-scale that tile — every road stays
+  rendered on the deepest overzoom instead of blanking. Verified at z16/z17/z19 in dense
+  (Midtown) and suburban areas, light + dark. Size: 36 MB → ~95 MiB (range-served,
+  edge-cached).
+
 ## 2026-07-23 — Ant Farm v3 W1 (server): shape-following motion model + route adherence
 
 Backend half of the "make the ant farm appear continuous — simply, honestly" motion upgrade.

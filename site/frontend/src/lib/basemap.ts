@@ -16,8 +16,25 @@
 import L from "leaflet";
 import { leafletLayer } from "protomaps-leaflet";
 
-const BASEMAP_URL = import.meta.env.VITE_BASEMAP_URL ?? "/basemap/nyc-basemap.pmtiles";
+// W6.1: the deeper (maxzoom-15) extract ships under a NEW filename so the immutable
+// edge/browser cache on the old /basemap/nyc-basemap.pmtiles (36 MB, maxzoom 14) is bypassed
+// — same cache-bust discipline as content-hashed assets. Covers all five boroughs; 94.7 MiB.
+// NOTE (W1-client deploy): the file ships under the `-z15b` suffix. The `-z15` URL was
+// edge-cache-poisoned during pre-deploy diagnostics (a bare-URL request 404'd to the SPA
+// index.html BEFORE the file was on the box, and Caddy's `/basemap/*` immutable rule let
+// Cloudflare cache that 1 KB HTML fallback for 24h). A fresh, never-requested filename is
+// the clean, CF-token-free cache-bust — same discipline that moved z14→z15.
+const BASEMAP_URL = import.meta.env.VITE_BASEMAP_URL ?? "/basemap/nyc-basemap-z15b.pmtiles";
 const BASEMAP_MODE = import.meta.env.VITE_BASEMAP_MODE ?? "pmtiles";
+// The deepest zoom with tile data in nyc-basemap.pmtiles (see W6.1). Map zoom 16-19
+// over-zoom (scale) these z15 tiles so roads stay rendered all the way in.
+const BASEMAP_MAX_DATA_ZOOM = 15;
+// Clamp the Leaflet tile pyramid here; z17-19 CSS-scale this tile (see addBasemap). Kept ≥
+// maxDataZoom so the z16 tile carries full z15 detail before it is visually upscaled.
+const BASEMAP_MAX_NATIVE_ZOOM = 16;
+/** Deepest interactive zoom the maps allow — z15 data over-zoomed to z19 keeps every road
+ *  visible in dense + suburban areas (W6.1). Both map surfaces read this. */
+export const MAP_MAX_ZOOM = 19;
 
 export const NYC_CENTER: L.LatLngExpression = [40.7128, -73.98];
 export const NYC_BOUNDS: L.LatLngBoundsExpression = [
@@ -155,6 +172,19 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
     // @protomaps/basemaps API). An unknown option silently yields empty
     // paintRules/labelRules, so the basemap fetches tiles but paints nothing.
     theme: prefersDark ? "dark" : "light",
+    // W6.1 basemap depth — "roads must never disappear when zooming in". The NYC extract is
+    // generated at maxzoom 15 (go-pmtiles `pmtiles extract --maxzoom=15` from
+    // build.protomaps.com); the previous 36 MB extract stopped at z14.
+    //   * maxDataZoom=15 tells protomaps-leaflet the deepest zoom with tile data, so a display
+    //     tile at z16 resolves to the z15 data tile (verified: full roads at z15 AND z16).
+    //   * maxNativeZoom=16 is the RELIABLE over-zoom for z17-19: protomaps-leaflet 4.1.1's OWN
+    //     internal scale path (display zoom > maxDataZoom+levelDiff) renders buildings but
+    //     DROPS roads (verified). Clamping the Leaflet tile pyramid at z16 instead makes
+    //     Leaflet request the known-good z16 tile and CSS-scale that canvas for z17-19 — every
+    //     road stays rendered, just visually upscaled. protomaps overrides only createTile/
+    //     renderTile, NOT Leaflet's _clampZoom/_setZoomTransform, so native scaling is intact.
+    maxDataZoom: BASEMAP_MAX_DATA_ZOOM,
+    maxNativeZoom: BASEMAP_MAX_NATIVE_ZOOM,
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
   });

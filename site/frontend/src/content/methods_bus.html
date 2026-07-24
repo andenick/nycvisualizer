@@ -1,12 +1,12 @@
 <h1>Bus Service &amp; Ridership — METHODS (Jane NYC-Platform, B5.2)</h1>
 <p>All analyses are scripted and reproducible against <code>jane_geo.duckdb</code>
 (regenerable query layer over the parquet lake). Run order:</p>
-<pre><code>PYTHONIOENCODING=utf-8 python 01_route_demand.py
-PYTHONIOENCODING=utf-8 python 02_segment_speeds.py
-PYTHONIOENCODING=utf-8 python 03_service_supply.py
-PYTHONIOENCODING=utf-8 python 04_realtime_headways.py   # RERUNNABLE
+<pre><code>PYTHONIOENCODING=utf-8 C:/Python313/python.exe 01_route_demand.py
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 02_segment_speeds.py
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 03_service_supply.py
+PYTHONIOENCODING=utf-8 C:/Python313/python.exe 04_realtime_headways.py   # RERUNNABLE
 </code></pre>
-<p>Outputs (Parquet + one-sheet XLSX per file) → <code>Outputs/NYCPlatform/bus/</code>;
+<p>Outputs (Parquet + one-sheet XLSX per file, Druck-compliant) → <code>Outputs/NYCPlatform/bus/</code>;
 headline PNG charts → <code>Outputs/NYCPlatform/bus/charts/</code>.
 Shared helpers (connection, borough-from-route-prefix, writers) in <code>common.py</code>.</p>
 <h2>Data sources (dataset IDs)</h2>
@@ -110,6 +110,13 @@ coverage; ≥500 trips each side). <strong>This is NOT causal.</strong> Confound
 recovery, concurrent street redesigns/SBS rollouts, route changes, and the fact that ACE targets
 blocked-bus-lane/double-park delay rather than through-traffic. Read the ±0 mph aggregate result as
 "no clean speed signal at this crude resolution," not "ACE doesn't work."</p>
+<h2>Congestion-pricing context (Jan 2025) — why these speed trends matter now</h2>
+<p>NYC launched the United States' first cordon-based <strong>congestion pricing</strong> program (the CBD Tolling / Congestion Relief Zone, Manhattan <strong>south of 60th St</strong>) on <strong>5 January 2025</strong>. Our segment-speed panel straddles that date — the <code>kufs-yh3x</code> vintage (2025→) is the <strong>post-congestion-pricing era</strong> — so any 2025+ speed trend on these pages must be read against this policy backdrop, not as an isolated result.</p>
+<p>Two peer references, dated and cited (Jane KB):</p>
+<ul>
+<li><strong>NBER w33584</strong> — Cook, Kreidieh, Vasserman, Allcott et al., <em>The Short-Run Effects of Congestion Pricing in New York City</em> (March 2025, rev. Jan 2026; KB DOC0343): using a generalized synthetic-controls design, the policy <em>"increased speeds on CBD roads by 11%, with little-to-no effect on air quality, transactions at shops and restaurants, or overall foot traffic in the CBD,"</em> with spillover speed gains on roads leading into the CBD. Note the estimand: that <strong>+11%</strong> is CBD <strong>road</strong> speed for all vehicles, <strong>not</strong> a bus through-speed benchmark — it is context for our numbers, not a target to match.</li>
+<li><strong>arXiv:2606.17530</strong> — Li, Zhuang et al. (MIT), <em>Public transit gains and spatially uneven travel demand changes after NYC congestion pricing</em> (2026; KB DOC0407): post-policy bus and subway ridership rose significantly vs expected no-policy demand, and <em>"the effects are spatially heterogeneous: while reductions in overall travel demand are concentrated within the Congestion Relief Zone, transit gains extend beyond Manhattan's core"</em> — a caution against reading a single citywide speed/ridership average as the whole story.</li>
+</ul>
 <h2>Realtime archive depth (04) — honest stamp</h2>
 <p>Script 04 is <strong>rerunnable</strong> and prints/writes (<code>04_archive_stamp.txt</code>) the exact window it computed over.
 At authoring the archive was only <strong>~1.9 hours deep</strong> (2026-07-17 05:51–07:43 America/New_York, AM-peak

@@ -38,12 +38,13 @@ are weighting-sensitive even though the aggregate pattern is not. · <em>Pointer
 <code>charts/09_weight_sensitivity.png</code>.</p>
 <hr />
 <h2>Municipal context (B5.3)</h2>
-<h3>7. Pedestrian-crash exposure rises monotonically with DOT's own demand ranking.</h3>
+<h3>7. 🔵 EXPLORATORY — Pedestrian-injury crash COUNTS concentrate where DOT ranks pedestrian demand highest.</h3>
 <p>On the segments DOT ranks highest for pedestrian demand (Rank 1), each averages <strong>11.2 pedestrian-injury crashes
-within 100 ft (2020+)</strong>; the gradient falls cleanly to <strong>6.4 (Rank 2) · 4.2 (3) · 2.3 (4) · 1.0 (Rank 5)</strong>. The
-places the city has already identified as most walked are precisely where pedestrians are most often hurt — a
-prioritization-vs-safety gap. Worst individual corridors: <strong>East Fordham Rd (330), Webster Av (288), E 125 St (210)</strong>.
-· <em>Caveat:</em> raw crash counts near a segment, not rate-adjusted for exposure/volume; longer/denser segments accrue more.
+within 100 ft (2020+)</strong>; the count falls with the ranking to <strong>6.4 (Rank 2) · 4.2 (3) · 2.3 (4) · 1.0 (Rank 5)</strong>.
+This is <strong>consistent with, but not evidence of, a safety gap</strong>: the counts are not rate-adjusted for pedestrian
+volume, so more crashes where more people walk is partly what a raw count must show. Worst individual corridors by
+count: <strong>East Fordham Rd (330), Webster Av (288), E 125 St (210)</strong>.
+· <em>Caveat:</em> raw crash counts near a segment, <strong>not rate-adjusted for exposure/volume</strong>; longer/denser segments accrue more. Normalizing by pedestrian volume is what would turn this into a genuine rate/safety finding.
 · <em>Pointer:</em> <code>ctx_pmi_crash_gradient.parquet</code>, <code>ctx_pmi_worst50_segments.parquet</code>, <code>charts/12_pmi_crash_gradient.png</code>.</p>
 <h3>8. Population density spans nearly 9x across boroughs.</h3>
 <p><strong>Manhattan 74,190 residents/sq mi</strong> -&gt; Brooklyn 39,431 -&gt; Bronx 34,581 -&gt; Queens 22,049 -&gt; <strong>Staten Island 8,512</strong> —
@@ -57,4 +58,4 @@ modeled O-D estimate, 2024 only. · <em>Pointer:</em> <code>ctx_subway_od_top100
 <h2>The one-line headline</h2>
 <p><strong>NYC's bus network reaches most people, but the <em>quality</em> of that reach is deeply uneven: three-quarters of stops
 lack shelter, Staten Island and Queens riders wait in the least walkable, least comfortable environments, and the
-corridors the city knows are busiest with pedestrians are also where pedestrians are most often struck.</strong></p>
+corridors the city knows are busiest with pedestrians also carry the highest pedestrian-crash <em>counts</em> (not rate-adjusted).</strong></p>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import ArkTriad from "../chrome/ArkTriad";
 import ecosystem from "../chrome/ecosystem.json";
 import ArkPlotly from "../components/ArkPlotly";
+import BadgeTaxonomyLegend from "../components/BadgeTaxonomyLegend";
 import charts from "../content/chartdata.json";
 import { getChangesFeed } from "../lib/api";
 
@@ -124,6 +125,9 @@ export default function Landing() {
             </Link>
           )}
         </div>
+        {/* Q4.1: "how to read our badges" — the confidence taxonomy legend intro,
+            so a first-time visitor learns the vocabulary the badges use sitewide. */}
+        <BadgeTaxonomyLegend />
       </section>
 
       <ArkPlotly

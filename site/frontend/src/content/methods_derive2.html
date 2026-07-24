@@ -1,5 +1,5 @@
 <h1>derive2 — Realtime Derivation Engine v2 (methods)</h1>
-<p><strong>Home:</strong> <code>realtime/derive2/</code>.
+<p><strong>Owner:</strong> S2 of the nycvisualizer spokes campaign. <strong>Home:</strong> <code>realtime/derive2/</code>.
 <strong>Consumes:</strong> the poller's Parquet/JSONL archive under <code>realtime/archive/</code> + GTFS static
 under <code>data/raw/transit_static/</code>. <strong>Produces:</strong> <code>realtime/derived/{trajectories,
 observed_headways,adherence,kpis,data_quality}/date=*/…</code> and the public dataset
@@ -48,7 +48,7 @@ at <strong>~99.4%</strong>. v2 builds arrival detection on <strong>shape-offset 
   find the grid interval bracketing the stop offset and <strong>linearly interpolate the crossing
   timestamp</strong>. That timestamp is the arrival.</li>
 <li><strong>FALLBACK — first-seen.</strong> For trips with no usable trajectory (unmatched shape / too few
-  pings), arrival = earliest archive <code>ts</code> the trip reports each <code>stop_id</code>. We validated this
+  pings), arrival = earliest archive <code>ts</code> the trip reports each <code>stop_id</code>. S0 validated this
   gives plausible rush headways.</li>
 </ul>
 <p><strong>Clock / timezone.</strong> Observed <code>ts</code> are UTC epoch. NYC is EDT (UTC−4) for the whole archive
@@ -68,25 +68,21 @@ consecutive <em>scheduled</em> arrivals, restricted to services active that cale
 sched_median_headway_s, headway_deviation_s (= median_obs − sched),
 bunch_share_lt50_sched, bunch_share_lt50_obs, bunching_index, median_deviation_s,
 stop_name, archive_depth_days, preliminary</code>.</p>
-<p><strong>Bunching index.</strong> Two honest components:</p>
-<ul>
-<li><code>headway_cv</code> = σ/μ of observed headways in the cell.</li>
-<li><code>bunch_share_lt50_sched</code> = share of observed gaps <code>&lt; 0.5 × scheduled</code> headway
+<p><strong>Bunching index.</strong> Two honest components:
+- <code>headway_cv</code> = σ/μ of observed headways in the cell.
+- <code>bunch_share_lt50_sched</code> = share of observed gaps <code>&lt; 0.5 × scheduled</code> headway
   (<code>BUNCH_SHORT_FRAC</code>). <code>bunch_share_lt50_obs</code> is the schedule-free analogue (<code>&lt; 0.5 ×</code>
-  observed median) so bunching is still defined where no schedule joins.</li>
-</ul>
-<p><code>bunching_index</code> = mean of <code>headway_cv</code> and <code>bunch_share_lt50_sched</code> (skipping NaN).</p>
+  observed median) so bunching is still defined where no schedule joins.
+<code>bunching_index</code> = mean of <code>headway_cv</code> and <code>bunch_share_lt50_sched</code> (skipping NaN).</p>
 <p>Event-level arrivals are also written (<code>arrivals-000.parquet</code>) for the adherence and KPI
 stages.</p>
 <hr />
 <h2>3. Adherence (<code>adherence.py</code>)</h2>
 <p>Arrival events ⋈ <code>stop_times</code> (adds <code>stop_seq</code>, <code>sched_arr_sec</code>); one arrival per
-<code>(trip, stop_seq)</code>. Per trip:</p>
-<ul>
-<li><code>start_delay_s</code> = observed − scheduled at the first stop; <code>end_delay_s</code> at the last.</li>
-<li><strong>Running-time delta by segment</strong>: for consecutive stops,
-  <code>run_delta_s = (obs_arr[next] − obs_arr[prev]) − (sched[next] − sched[prev])</code>.</li>
-</ul>
+<code>(trip, stop_seq)</code>. Per trip:
+- <code>start_delay_s</code> = observed − scheduled at the first stop; <code>end_delay_s</code> at the last.
+- <strong>Running-time delta by segment</strong>: for consecutive stops,
+  <code>run_delta_s = (obs_arr[next] − obs_arr[prev]) − (sched[next] − sched[prev])</code>.</p>
 <p>Outputs <code>derived/adherence/date=*/</code>: <code>trips-000.parquet</code> (per-trip start/end delay,
 mean/total running delta) and <code>segments-000.parquet</code> (per stop-to-stop segment).</p>
 <hr />
@@ -198,6 +194,6 @@ artifact — MTA publishes schedules, not observed headways.</p>
 </table>
 <h2>8. Scheduling</h2>
 <p><code>JaneNYCDerive</code> — Windows Scheduled Task, hourly at <strong>:20</strong> (offset from poller flush
-windows), interactive user, <code>python</code>, wrapper <code>run_derive.ps1</code> (UTF-8 +
+windows), interactive user, <code>C:/Python313/python.exe</code>, wrapper <code>run_derive.ps1</code> (UTF-8 +
 logging, mirrors <code>changes/run_snapshot.ps1</code>). Runs <code>run_derive.py</code> (incremental) then
 <code>package_headways.py</code> (dataset roll).</p>

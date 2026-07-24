@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, MAP_MAX_ZOOM, type BasemapInfo } from "../lib/basemap";
+import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
 import {
   getVehicles,
@@ -196,7 +197,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   const [count, setCount] = useState(0);
   const [basemap, setBasemap] = useState<BasemapInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [perf, setPerf] = useState<{ ms: number; fps: number; tickJump: boolean } | null>(null);
+  const [perf, setPerf] = useState<{ ms: number; fps: number; tickJump: boolean; predErrFt: number | null } | null>(null);
 
   // chrome ui
   const [idle, setIdle] = useState(false);
@@ -341,7 +342,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
         center: init.current.center ?? NYC_CENTER,
         zoom: init.current.zoom ?? 12,
         minZoom: 9,
-        maxZoom: 17,
+        maxZoom: MAP_MAX_ZOOM, // W6.1: z15 basemap data over-zoomed to 19 keeps roads visible
         maxBounds: NYC_BOUNDS,
         maxBoundsViscosity: 0.6,
         zoomControl: true,
@@ -376,6 +377,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     fl.addTo(m);
     fl.setVisibility(mode === "buses", mode === "subway");
     fl.setTrails(true); // immersive /live/* default ON
+    fl.setShapeSource(new RouteShapeCache()); // W1: lazy per-route shape geometry for glide
     flow.current = fl;
     // opt-in perf harness hook (headless frame-time measurement only)
     if (new URLSearchParams(window.location.search).has("perf")) {
@@ -420,7 +422,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     const fl = flow.current;
     if (!fl) return;
     const sel = selectedRef.current;
-    fl.setBuses(data.vehicles, sel, colorForRef.current, sel ? selectedShape.current : null);
+    fl.setBuses(data.vehicles, sel, colorForRef.current);
     setCount(sel ? data.vehicles.filter((v) => v.route_id === sel).length : data.vehicles.length);
   };
 
@@ -495,7 +497,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
   useEffect(() => {
     const t = setInterval(() => {
       const s = flow.current?.getStats();
-      if (s) setPerf({ ms: s.emaFrameMs, fps: s.fps, tickJump: s.tickJump });
+      if (s) setPerf({ ms: s.emaFrameMs, fps: s.fps, tickJump: s.tickJump, predErrFt: s.predErr.medianFt });
     }, 1000);
     return () => clearInterval(t);
   }, []);
@@ -862,6 +864,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
               Data as of {fmtClock(asOf)} · source {source}
               {stale ? " (stale)" : ""}
               {perf ? ` · ${perf.ms.toFixed(1)} ms/frame @ ${perf.fps} fps${perf.tickJump ? " (tick-jump)" : ""}` : ""}
+              {perf?.predErrFt != null ? ` · ~${perf.predErrFt} ft median between-tick prediction error` : ""}
             </div>
             {basemap && <div className="imm-info-attr">{basemap.vintageNote} · {basemap.attribution}</div>}
             <div className="imm-info-anchors">

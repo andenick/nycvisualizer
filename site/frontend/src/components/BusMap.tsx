@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
+import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, MAP_MAX_ZOOM, type BasemapInfo } from "../lib/basemap";
+import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
 import {
   getVehicles,
@@ -182,7 +183,7 @@ export default function BusMap() {
         center: NYC_CENTER,
         zoom: 11,
         minZoom: 9,
-        maxZoom: 17,
+        maxZoom: MAP_MAX_ZOOM, // W6.1: z15 basemap data over-zoomed to 19 keeps roads visible
         maxBounds: NYC_BOUNDS,
         maxBoundsViscosity: 0.6,
         zoomControl: true,
@@ -216,6 +217,7 @@ export default function BusMap() {
       onFocus: (s) => onFocusRef.current(s),
     });
     fl.addTo(m);
+    fl.setShapeSource(new RouteShapeCache()); // W1: lazy per-route shape geometry for glide
     flow.current = fl; // trails default OFF on /bus (no setTrails)
     if (new URLSearchParams(window.location.search).has("perf")) {
       const w = window as unknown as Record<string, unknown>;
@@ -259,7 +261,7 @@ export default function BusMap() {
     const fl = flow.current;
     if (!fl) return;
     const sel = selectedRef.current;
-    fl.setBuses(data.vehicles, sel, colorFor, sel ? selectedShape.current : null);
+    fl.setBuses(data.vehicles, sel, colorFor);
     const shown = showBusesRef.current
       ? sel
         ? data.vehicles.filter((v) => v.route_id === sel).length
