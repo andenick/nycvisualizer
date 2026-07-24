@@ -2,7 +2,7 @@
 """
 Realtime derivation engine v2 (derive2) — shared helpers.
 
-Public-repo hygiene: NO absolute workspace-root literals anywhere. The pipeline root is
+Public-repo hygiene: NO absolute D:/Arcanum literals anywhere. The pipeline root is
 resolved from the NYCV_PIPELINE_ROOT env var (the convention the poller / snapshot /
 derive scripts share), falling back to the NYCPlatform dir two levels above this file
 (realtime/derive2/_common.py -> derive2 -> realtime -> NYCPlatform).
@@ -41,7 +41,9 @@ ANALYSIS = PLATFORM / "analysis"
 # Derived output partitions
 TRAJ_DIR = DERIVED / "trajectories"
 HEADWAY_DIR = DERIVED / "observed_headways"
-ADHERENCE_DIR = DERIVED / "adherence"
+ADHERENCE_DIR = DERIVED / "adherence"            # schedule adherence (delays; stage 3)
+ROUTE_ADHERENCE_DIR = DERIVED / "route_adherence"  # geographic on-route adherence (stage 3b)
+ROUTE_SPEED_DIR = DERIVED / "route_segment_speeds"  # per-route x segment median speed table
 KPI_DIR = DERIVED / "kpis"
 
 # Bus GTFS static feeds (borough / operator). Route ownership is 1:1 (no collisions,
@@ -69,6 +71,17 @@ BUNCH_SHORT_FRAC = 0.5        # gap < 0.5x scheduled -> counts toward bunching s
 BUNCH_PAIR_FRAC = 0.25        # KPI: two arrivals < 0.25x sched headway apart = a pair
 SPEED_MPH_CAP = 80            # GPS-jump outlier cap for segment speeds
 COVERAGE_PARTIAL_FRAC = 0.60  # hour with < 60% of baseline rows -> PARTIAL, excluded
+
+# ------- route-adherence (geographic on-route) + speed-table thresholds -------
+# Shared with the API motion model (site/backend/app/{busshapes,motion}.py) — keep the
+# segment-bin size and speed-sanity band identical on both sides so the API's per-segment
+# median lookup keys line up with what derive2 writes.
+ADHERENCE_ONROUTE_FT = 100        # a ping is "on route" if within 100 ft of the trip shape
+ADHERENCE_TERMINAL_FT = 500       # exclude the first/last 500 ft of a trip (terminal noise)
+SEG_BIN_FT = 2640                 # 0.5-mile shape-offset bins for the speed table
+SPEED_SANE_MIN_FPS = 1.0          # below this a computed speed is treated as "stopped/noise"
+SPEED_SANE_MAX_FPS = 90.0         # ~61 mph — above this is a GPS jump, discard
+SPEED_DEFAULT_FPS = 12.0          # citywide fallback (~8 mph) when nothing else resolves
 
 # Known poller-suspension window (S0). UTC. Rows in this window are PARTIAL for the
 # high-volume feeds; the whole window is flagged in DATA_QUALITY.json.

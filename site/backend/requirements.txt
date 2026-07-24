@@ -7,3 +7,5 @@ python-dotenv>=1.0
 gtfs-realtime-bindings>=1.0.0
 protobuf>=4.25
 h3>=4.0  # isochrone origin-snapping (res-9 cache key)
+numpy>=1.26  # motion model (busshapes/motion) + obs
+pyproj>=3.6  # W1 motion model: project bus GPS onto route shapes in EPSG:2263 feet
