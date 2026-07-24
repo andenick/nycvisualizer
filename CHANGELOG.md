@@ -2,6 +2,79 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — W0: the basemap had no roads. It does now.
+
+**The site has been shipping a basemap that draws no roads and no street labels.** Not
+degraded — absent. Confirmed by browser screenshots at z16 Midtown in both themes on
+2026-07-24: zero road casings, zero road fills, not one named street. Building footprints,
+landuse and water drew normally, and **the "street grid" everyone saw was the negative space
+between ~2,665 building polygons.**
+
+**Root cause.** The default style bundled with `protomaps-leaflet` 4.1.1 filters on
+`pmap:kind` — the Protomaps **v2** tile schema. The tileset we serve is **v4.15.0**, whose
+property is a bare `kind`. Every road, landuse and place rule therefore evaluated false: in a
+Midtown z15 tile, **86 road features → 0 rule matches**, landuse 246 → 0, places 4 → 0.
+`earth`, `water` and `buildings` happened to match, so the map looked populated.
+
+**Why nothing caught it — both guards were structurally blind.**
+
+- `lib/basemap.ts` only asserted `paintRules.length === 0` (the 2026-07-23 `flavor`→`theme`
+  failure mode). The array was fully populated — ~34 rules, all matching nothing.
+- `tools/paint_canary.py` counts painted pixels, and the painted pixels were real. A pixel
+  check **provably cannot** detect a schema mismatch. It also asset-checked the **retired**
+  `/basemap/nyc-basemap.pmtiles` — a file the app had not loaded since the z15b cache-bust —
+  so it never touched the archive in use. It passed 10/10 throughout.
+
+### Fixed
+
+- **`protomaps-leaflet` 4.1.1 → 5.1.0** (pinned exact). Its default style has zero `pmap:kind`
+  occurrences and its dataLayers match the v4.15.0 tileset. Same Midtown tile now yields
+  **86/86 road paint matches** and **66 street-label matches** over 61 name-bearing roads.
+- ⚠️ **`theme:` → `flavor:` — this INVERTS a standing project rule.** On 4.x the option was
+  `theme` and passing `flavor` was the bug (see 2026-07-23 below); on 5.x the option **is**
+  `flavor`, backed by `namedFlavor()` from `@protomaps/basemaps`. Every "never `flavor`"
+  warning in code, docs and `ARKMAP_STANDARD.md` is updated in this same commit and now states
+  plainly that **the rule is version-specific**. New failure mode to know: 5.x `namedFlavor()`
+  *throws* on an unknown flavor **value**, so layer construction is now wrapped in a try/catch
+  that degrades to the raster fallback; *omitting* the option still yields empty rules.
+
+### Guards, so this class of failure cannot recur
+
+- **New `tools/rule_canary.mjs` — a rule-match canary.** Decodes a real tile out of the archive
+  actually being served, runs the real paint/label filters over the real features, and asserts
+  **> 0 matches** for roads, buildings, water, earth and landuse, plus that named streets reach
+  a label rule — for both `light` and `dark`. Negative control: run against the old 4.1.1 style
+  it reports **6/14 FAIL** with roads at 0, exactly reproducing the shipped defect; against
+  5.1.0 it reports **14/14 PASS**. Wired into `paint_canary.py` as a first-class check.
+- **`paint_canary.py` now reads the basemap path out of `lib/basemap.ts`** instead of restating
+  it, so it can never again assert a retired artifact. (`rule_canary.mjs` does the same.)
+- **`lib/basemap.ts` guard strengthened**: also verifies the style declares `roads` paint *and*
+  label rules, and carries an explicit written statement of what it still cannot see — a green
+  rules check is not evidence that anything renders.
+
+### The basemap is now reproducible
+
+- **New `tools/build_basemap.sh`.** There was no basemap build script in the tree at all, and
+  `site/README.md` documented a superseded `--maxzoom=14` recipe. The committed script
+  reproduces the shipped archive **byte-for-byte** (99,248,382 B, sha256 `6fee904a…5e72b79`,
+  verified 2026-07-24 with go-pmtiles 1.31.2):
+
+  ```
+  pmtiles extract https://build.protomaps.com/20260722.pmtiles nyc-basemap-z15b.pmtiles \
+    --bbox=-74.28,40.49,-73.69,40.92 --maxzoom=15
+  ```
+
+  It refuses to overwrite an existing archive (immutable cache ⇒ new filename per rebuild) and
+  runs the rule canary on its output before you can ship it.
+- **Correction to the 2026-07-24 (W6.1) entry below and to `PERF_BASELINE.md`:** the z15
+  basemap was **not** "built with Planetiler". It is a `pmtiles extract` of a Protomaps daily
+  planet build that Planetiler 0.10.2 produced *upstream*; the `planetiler:*` metadata is
+  inherited verbatim by the extract. Proof: the archive still contains whole-planet low-zoom
+  tiles (z4 covers Toronto, Cuba and the Bahamas), which a bbox-bounded Planetiler build cannot
+  emit. Owning OSM ingest with Planetiler remains open future work, not something already done.
+- Also corrected: `PERF_BASELINE.md`'s claim *"Roads verified rendering at z16/z17/z19 … bold
+  street grid"* was wrong at the time it was written.
+
 ## 2026-07-24 — C4: visual re-shoot fixes (floating-chrome collisions + clipped rail column)
 
 CSS-only. A 24-shot re-shoot of the changed surfaces (unified `/workstation` with a mixed bus+subway
@@ -398,6 +471,12 @@ z13–15, worms pass over stations, legends present on every surface. Frontend-o
 the paired subway seg-coverage backend change ships separately.
 
 ## 2026-07-23 — P0 fix: basemap now paints on every map page
+
+> ⚠️ **SUPERSEDED 2026-07-24 (W0) — the rule below is inverted on the version we now ship.**
+> This entry is correct history for protomaps-leaflet **4.x**. We are now on **5.1.0**, where
+> the option **is** `flavor:` and `theme:` is the silent-failure. Do not apply "never `flavor`"
+> to the current codebase. See the 2026-07-24 W0 entry and `ARKMAP_STANDARD.md §7.1`.
+
 
 The Protomaps vector basemap was fetching tiles but painting nothing on every map
 page, in production, for all users. Root cause: `addBasemap()` passed `flavor:` to

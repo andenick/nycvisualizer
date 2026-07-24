@@ -108,17 +108,49 @@ per the Universal Graph Contract.
 
 ## Basemap
 
-`frontend/public/basemap/nyc-basemap.pmtiles` is a NYC-extent Protomaps vector basemap
+`frontend/public/basemap/nyc-basemap-z15b.pmtiles` is a NYC-extent Protomaps vector basemap
 (derived from OpenStreetMap), rendered client-side by `protomaps-leaflet` — **no CDN, no
-third-party tile server**. To regenerate:
+third-party tile server**. 94.65 MiB (99,248,382 B), zoom 0–15, bounds
+`-74.28,40.49,-73.69,40.92`, Protomaps basemap schema **v4.15.0**, OSM vintage
+**2026-07-22T04:00:00Z** (built upstream by Planetiler 0.10.2).
+
+Regenerate with the committed script — **`tools/build_basemap.sh`**, which wraps:
 
 ```bash
-pmtiles extract https://data.source.coop/protomaps/openstreetmap/v4.pmtiles \
-  nyc-basemap.pmtiles --bbox=-74.30,40.45,-73.65,40.95 --maxzoom=14
+pmtiles extract https://build.protomaps.com/20260722.pmtiles \
+  nyc-basemap-z15b.pmtiles --bbox=-74.28,40.49,-73.69,40.92 --maxzoom=15
 ```
+
+Verified 2026-07-24: re-running this reproduces the shipped file **byte-for-byte**
+(sha256 `6fee904a…5e72b79`). This corrects two earlier claims in this repo — the older
+`data.source.coop … --maxzoom=14` recipe documented here was superseded by the z15 rebuild,
+and `PERF_BASELINE.md` / `CHANGELOG.md` described the file as "built with Planetiler". It is
+a **`pmtiles extract` of a Protomaps planet build that Planetiler produced upstream**; no
+Planetiler run happens here. (Proof: the archive still contains whole-planet low-zoom tiles —
+z4 covers Toronto, Cuba and the Bahamas — which a locally bounded Planetiler build cannot
+emit, because Planetiler clips tile *content* while `pmtiles extract` copies whole tiles.)
+
+⚠️ **Ship every rebuild under a NEW filename.** `/basemap/*` is immutably cached at Caddy and
+Cloudflare, so overwriting serves stale bytes for 24 h — hence the `-z15b` suffix. Update
+`BASEMAP_URL` in `frontend/src/lib/basemap.ts`; the canaries read that constant.
+
+⚠️ **Always run `tools/rule_canary.mjs` after a rebuild** (the build script does it for you).
+A newer planet build can change the tile schema, and a schema the bundled `protomaps-leaflet`
+style does not match renders a **map with no roads and no street labels that still passes a
+pixel check** — that shipped for weeks and was only caught by eye on 2026-07-24. See
+"Canaries" below.
 
 A raster fallback exists behind `VITE_BASEMAP_MODE=raster-todo` but it hits a third-party
 host and is **not** no-CDN compliant — never ship it as the default.
+
+### Canaries
+
+| Tool | Answers | Blind to |
+|---|---|---|
+| `tools/paint_canary.py` | Did the live edge serve APIs, assets and **painted basemap pixels**? | Which features painted — buildings alone keep it green |
+| `tools/rule_canary.mjs` | Do the shipped style's **rules actually match features** in the shipped tileset (roads, named streets)? | Whether the browser drew them |
+
+`paint_canary.py` runs both. A deploy is not done until it passes against the live edge.
 
 ## Standards
 

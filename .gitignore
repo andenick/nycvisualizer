@@ -41,3 +41,7 @@ venv/
 # ---- OS / editor cruft ----
 .DS_Store
 Thumbs.db
+
+# Build tools fetched on demand (go-pmtiles for site/tools/build_basemap.sh, etc.) —
+# binaries are tools, not source artifacts.
+site/tools/bin/

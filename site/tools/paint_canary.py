@@ -7,9 +7,25 @@ for the three live map surfaces (/bus, /live/subway, /sidewalks) it checks
   * basemap painted   — real basemap PIXELS drew (nonAlpha > 0), via a headless browser
                         sampling the Leaflet canvas tiles (catches the blank-basemap
                         class of bug the F0 regression was);
+  * rules MATCH       — the shipped protomaps style actually matches features in the
+                        shipped tileset (delegated to `rule_canary.mjs`, see below);
   * data present      — vehicles > 0 (/api/rt/vehicles) and trains > 0 (/api/rt/subway),
                         plus the sidewalk coverage vector-tile asset is servable;
   * API 200s          — /api/healthz, /api/rt/vehicles, /api/rt/subway.
+
+⚠️ WHY THE PIXEL CHECK IS NOT ENOUGH (2026-07-24). This canary passed 10/10 for weeks while
+the basemap rendered NO ROADS AND NO STREET LABELS at all. The bundled protomaps-leaflet
+4.1.1 style filtered on the Protomaps v2 property `pmap:kind` while the shipped tileset is
+v4.15.0 (bare `kind`), so every road/landuse/place rule matched zero features — but
+buildings, landuse polygons and water still painted, so the pixel count stayed healthy.
+Pixel counting provably CANNOT detect a schema mismatch. Rule-match counting can, so
+`check_rules()` below runs `rule_canary.mjs` and is a first-class check. Do not "simplify"
+it away, and do not accept a green pixel check as evidence that the map is correct.
+
+Second 2026-07-24 fix: the basemap asset check used to hardcode the RETIRED
+`/basemap/nyc-basemap.pmtiles` — a file the app had not loaded since the z15b cache-bust —
+so it asserted a stale artifact was servable and never touched the real one. The path is now
+READ OUT OF `frontend/src/lib/basemap.ts`, the app's own source of truth. Never restate it.
 
 Prints one `PASS`/`FAIL` line per check and exits 0 iff every check passed. Wire it into
 the deploy flow: **a deploy is not done until paint_canary PASSES against the live edge.**
@@ -20,19 +36,41 @@ Usage:
     BASE_URL   default https://nycvisualizer.com
     --timeout  per-page browser budget to wait for tiles to paint (default 25s)
 
-Requires: requests, playwright (chromium). If the browser can't launch, the pixel
-checks FAIL loudly (an un-provable deploy is not a passed deploy).
+Requires: playwright (chromium) and node (for the rule canary). If either is unavailable
+the corresponding checks FAIL loudly (an un-provable deploy is not a passed deploy).
 """
 from __future__ import annotations
 
 import argparse
+import re
+import subprocess
 import sys
 import time
 import urllib.request
 import urllib.error
 import json
+from pathlib import Path
 
 DEFAULT_BASE = "https://nycvisualizer.com"
+
+SITE_DIR = Path(__file__).resolve().parents[1]
+BASEMAP_TS = SITE_DIR / "frontend" / "src" / "lib" / "basemap.ts"
+RULE_CANARY = Path(__file__).resolve().parent / "rule_canary.mjs"
+
+
+def loaded_basemap_path() -> str:
+    """The basemap URL the app ACTUALLY loads, read from lib/basemap.ts.
+
+    Raises rather than guessing: a wrong-but-plausible default is exactly the bug that let
+    this canary assert against the retired `nyc-basemap.pmtiles` for weeks.
+    """
+    src = BASEMAP_TS.read_text(encoding="utf-8")
+    m = re.search(r'VITE_BASEMAP_URL\s*\?\?\s*"([^"]+)"', src)
+    if not m:
+        raise RuntimeError(
+            f"could not read the basemap URL out of {BASEMAP_TS} — refusing to guess"
+        )
+    return m.group(1)
 
 # The JS that counts painted (non-transparent) basemap pixels — identical logic to the
 # frontend guard's countPaintedPixels(): sparse-sample every Leaflet canvas tile.
@@ -122,10 +160,16 @@ def check_api(base: str, res: Result) -> None:
 
     # Basemap + sidewalk overlay pmtiles are servable (NOT the SPA HTML fallback): check
     # the PMTiles v3 magic ("PMTiles") in the first bytes via a Range request.
-    for path, name in (
-        ("/basemap/nyc-basemap.pmtiles", "basemap pmtiles asset"),
-        ("/layers/coverage.pmtiles", "/sidewalks coverage pmtiles asset"),
-    ):
+    # The basemap path comes from lib/basemap.ts — see loaded_basemap_path().
+    try:
+        basemap_path = loaded_basemap_path()
+    except Exception as e:  # noqa: BLE001
+        res.add(False, "basemap path resolvable from lib/basemap.ts", str(e))
+        basemap_path = None
+    assets = [("/layers/coverage.pmtiles", "/sidewalks coverage pmtiles asset")]
+    if basemap_path:
+        assets.insert(0, (basemap_path, f"basemap pmtiles asset ({basemap_path})"))
+    for path, name in assets:
         st, ct, body = _get(base + path, headers={"Range": "bytes=0-6"})
         magic_ok = body[:7] == b"PMTiles"
         res.add(
@@ -133,6 +177,34 @@ def check_api(base: str, res: Result) -> None:
             name,
             f"status={st} magic={'ok' if magic_ok else body[:7]!r} ct={ct}",
         )
+
+
+def check_rules(base: str, res: Result) -> None:
+    """Rule-match canary — the check the pixel counter structurally cannot do.
+
+    Decodes a real Midtown tile out of the LIVE archive and evaluates the shipped
+    protomaps paint/label rules against the real features, asserting roads (and named
+    streets) actually match. See rule_canary.mjs for the full rationale.
+    """
+    if not RULE_CANARY.exists():
+        res.add(False, "basemap rule-match canary", f"missing: {RULE_CANARY}")
+        return
+    try:
+        p = subprocess.run(
+            ["node", str(RULE_CANARY), base, "--quiet"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except FileNotFoundError:
+        res.add(False, "basemap rule-match canary", "node not found on PATH")
+        return
+    except Exception as e:  # noqa: BLE001
+        res.add(False, "basemap rule-match canary", f"{type(e).__name__}: {e}")
+        return
+    tail = (p.stdout or "").strip().splitlines()
+    detail = tail[-1] if tail else (p.stderr or "").strip()[:200]
+    res.add(p.returncode == 0, "basemap rule-match canary (roads/labels match features)", detail)
 
 
 def check_paint(base: str, timeout: float, res: Result) -> None:
@@ -188,6 +260,7 @@ def main() -> int:
     res = Result()
     t0 = time.time()
     check_api(base, res)
+    check_rules(base, res)
     check_paint(base, args.timeout, res)
     elapsed = time.time() - t0
 

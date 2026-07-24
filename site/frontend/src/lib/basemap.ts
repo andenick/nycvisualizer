@@ -1,9 +1,10 @@
 // Self-hosted basemap for Leaflet — NO CDN (D3 rule) on the PRIMARY path.
 //
-// Primary path: a NYC-extent Protomaps vector basemap (.pmtiles), extracted from
-// OpenStreetMap and served from /basemap/nyc-basemap.pmtiles in this app's own
-// public tree. protomaps-leaflet reads the .pmtiles directly (HTTP range requests
-// against our own origin) — no tile server, no third-party host.
+// Primary path: a NYC-extent Protomaps vector basemap (.pmtiles), built from
+// OpenStreetMap with Planetiler and served from /basemap/nyc-basemap-z15b.pmtiles
+// in this app's own public tree (see `site/tools/build_basemap.sh`).
+// protomaps-leaflet reads the .pmtiles directly (HTTP range requests against our
+// own origin) — no tile server, no third-party host.
 //
 // Fallback path (F5 reliability): OSM raster tiles. This DOES hit a third-party host
 // and therefore is a deliberate DEGRADED-MODE exception to the no-CDN rule — it must
@@ -166,28 +167,48 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
     window.matchMedia &&
     window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-  const layer = leafletLayer({
+  let layer: ReturnType<typeof leafletLayer>;
+  try {
+    layer = leafletLayer({
     url: BASEMAP_URL,
-    // protomaps-leaflet 4.x uses `theme` (NOT `flavor` — that is the MapLibre
-    // @protomaps/basemaps API). An unknown option silently yields empty
-    // paintRules/labelRules, so the basemap fetches tiles but paints nothing.
-    theme: prefersDark ? "dark" : "light",
-    // W6.1 basemap depth — "roads must never disappear when zooming in". The NYC extract is
-    // generated at maxzoom 15 (go-pmtiles `pmtiles extract --maxzoom=15` from
-    // build.protomaps.com); the previous 36 MB extract stopped at z14.
-    //   * maxDataZoom=15 tells protomaps-leaflet the deepest zoom with tile data, so a display
-    //     tile at z16 resolves to the z15 data tile (verified: full roads at z15 AND z16).
-    //   * maxNativeZoom=16 is the RELIABLE over-zoom for z17-19: protomaps-leaflet 4.1.1's OWN
-    //     internal scale path (display zoom > maxDataZoom+levelDiff) renders buildings but
-    //     DROPS roads (verified). Clamping the Leaflet tile pyramid at z16 instead makes
-    //     Leaflet request the known-good z16 tile and CSS-scale that canvas for z17-19 — every
-    //     road stays rendered, just visually upscaled. protomaps overrides only createTile/
-    //     renderTile, NOT Leaflet's _clampZoom/_setZoomTransform, so native scaling is intact.
-    maxDataZoom: BASEMAP_MAX_DATA_ZOOM,
-    maxNativeZoom: BASEMAP_MAX_NATIVE_ZOOM,
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
-  });
+    // ⚠️ VERSION-SPECIFIC OPTION NAME — THIS RULE INVERTED AT protomaps-leaflet v5.
+    //   * protomaps-leaflet **4.x**: the option was `theme`, and passing `flavor`
+    //     was the bug (it silently yielded empty paintRules — the 2026-07 outage).
+    //   * protomaps-leaflet **5.x (what we ship)**: the option is `flavor`, backed by
+    //     `namedFlavor()` from `@protomaps/basemaps`. Passing `theme` is now the bug.
+    // So the old "never use `flavor`" warning is DEAD and must not be reinstated while
+    // we are on 5.x. Check the installed major before trusting any advice about this
+    // option name. Valid 5.x flavor names: light | dark | white | grayscale | black.
+    // (`namedFlavor` THROWS on an unknown name — hence the try/catch around this call —
+    // whereas *omitting* the option still yields empty paintRules, which guard (1) catches.)
+      flavor: prefersDark ? "dark" : "light",
+      // W6.1 basemap depth — "roads must never disappear when zooming in". The NYC build is
+      // generated at maxzoom 15 (Planetiler 0.10.2 — see `site/tools/build_basemap.sh`);
+      // the previous 36 MB extract stopped at z14.
+      //   * maxDataZoom=15 tells protomaps-leaflet the deepest zoom with tile data, so a display
+      //     tile at z16 resolves to the z15 data tile (verified: full roads at z15 AND z16).
+      //   * maxNativeZoom=16 is the RELIABLE over-zoom for z17-19: protomaps-leaflet's OWN
+      //     internal scale path (display zoom > maxDataZoom+levelDiff) renders buildings but
+      //     DROPS roads (verified on 4.1.1; the View math is byte-identical in 5.1.0, so the
+      //     clamp is retained). Clamping the Leaflet tile pyramid at z16 instead makes
+      //     Leaflet request the known-good z16 tile and CSS-scale that canvas for z17-19 — every
+      //     road stays rendered, just visually upscaled. protomaps overrides only createTile/
+      //     renderTile, NOT Leaflet's _clampZoom/_setZoomTransform, so native scaling is intact.
+      maxDataZoom: BASEMAP_MAX_DATA_ZOOM,
+      maxNativeZoom: BASEMAP_MAX_NATIVE_ZOOM,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
+    });
+  } catch (e) {
+    // 5.x `namedFlavor()` throws on an unrecognized flavor name (4.x silently produced
+    // empty rules). Never let that take the whole map down — degrade to raster.
+    console.error("[basemap] leafletLayer() threw — auto-engaging raster fallback.", e);
+    addRasterLayer(map);
+    showChip(map, "imm-basemap-fallback", "simplified basemap");
+    const info: BasemapInfo = { ...RASTER_INFO, reason: "layer_construct_threw" };
+    hooks?.onFallback?.(info, "layer_construct_threw");
+    return info;
+  }
   layer.addTo(map);
 
   let engaged = false;
@@ -196,7 +217,11 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
     engaged = true;
     if (!mapAlive(map)) return;
     try {
-      map.removeLayer(layer);
+      // protomaps-leaflet builds its LeafletLayer by extending an `any`-typed `L.GridLayer`
+      // (the lib does `declare const L: any`), so its emitted instance type carries an index
+      // signature rather than L.Layer's members. It IS an L.Layer at runtime; this cast is
+      // that fact, and is the ONLY place we widen the now-real protomaps types.
+      map.removeLayer(layer as unknown as L.Layer);
     } catch {
       /* already gone */
     }
@@ -206,15 +231,47 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
     hooks?.onFallback?.(info, reason);
   };
 
-  // (1) Immediate check — the exact `flavor`→`theme` class of bug: an unknown theme
-  //     option yields an EMPTY paintRules array and the basemap can never paint.
-  const paintRuleCount = (layer as unknown as { paintRules?: unknown[] }).paintRules?.length;
+  // (1) Immediate structural check on the generated style.
+  //
+  //     ⚠️ KNOWN LIMIT — READ BEFORE TRUSTING THIS GUARD. It inspects the RULES, never the
+  //     TILES. It caught the 2026-07 `flavor`→`theme` outage (an unknown option produced an
+  //     EMPTY paintRules array), but it was BLIND to the far worse 2026-07-24 defect: the
+  //     4.1.1 default style targeted the Protomaps **v2** schema (`pmap:kind`) while the
+  //     shipped tileset is **v4.15.0** (bare `kind`), so paintRules was fully populated —
+  //     ~34 rules — and every road/place rule still matched ZERO features. Roads and street
+  //     labels were absent from production for weeks and both guards passed.
+  //
+  //     A schema mismatch is only detectable by decoding a real tile and evaluating the real
+  //     filters against real features. That is `site/tools/rule_canary.mjs` (run from
+  //     `paint_canary.py`), not this function. Do not treat a green guard (1) as evidence
+  //     that anything renders.
+  //
+  //     What this DOES now assert: rules exist at all, AND the style still declares rules for
+  //     the `roads` dataLayer (a style whose dataLayers stop matching the tileset's layer
+  //     names — the `natural`/`physical_line`/`transit` v2 names — trips this).
+  const lyr = layer as unknown as {
+    paintRules?: { dataLayer?: string }[];
+    labelRules?: { dataLayer?: string }[];
+  };
+  const paintRuleCount = lyr.paintRules?.length;
   if (paintRuleCount === 0) {
     console.error(
       "[basemap] protomaps-leaflet produced EMPTY paintRules — auto-engaging raster fallback.",
     );
     engageRaster("empty_paint_rules");
     return { ...RASTER_INFO, reason: "empty_paint_rules" };
+  }
+  const roadPaintRules = (lyr.paintRules ?? []).filter((r) => r.dataLayer === "roads").length;
+  const roadLabelRules = (lyr.labelRules ?? []).filter((r) => r.dataLayer === "roads").length;
+  if (paintRuleCount !== undefined && (roadPaintRules === 0 || roadLabelRules === 0)) {
+    // Not fatal enough to drop to raster (buildings/water/landuse would still be correct),
+    // but it is always a defect: log loudly so it shows up in the client-error beacon.
+    console.error(
+      `[basemap] style declares NO rules for the 'roads' dataLayer ` +
+        `(paint=${roadPaintRules} label=${roadLabelRules}) — streets will not render. ` +
+        "This is the protomaps style/tileset schema-mismatch class of bug; run " +
+        "site/tools/rule_canary.mjs.",
+    );
   }
 
   // (2) Runtime tile-error guard. protomaps-leaflet extends L.GridLayer and fires
