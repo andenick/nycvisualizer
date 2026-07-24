@@ -67,6 +67,17 @@ STALE_AFTER_S = int(os.environ.get("NYCV_STALE_AFTER_S", "300"))  # archive stal
 LIVE_CACHE_TTL_S = int(os.environ.get("NYCV_LIVE_CACHE_TTL_S", "31"))  # BusTime 30s floor
 SSE_INTERVAL_S = int(os.environ.get("NYCV_SSE_INTERVAL_S", "30"))
 
+# --- Capacity guards (F3) --------------------------------------------------
+# In-process TTL cache on the RT poll payloads (/api/rt/vehicles, /api/rt/subway):
+# the expensive duckdb/parquet read runs at most once per TTL regardless of how
+# many users are polling -> origin cost is O(1) in concurrent users. Matched to
+# the Cache-Control s-maxage the endpoints emit so on-box freshness == edge freshness.
+RT_CACHE_TTL_S = int(os.environ.get("NYCV_RT_CACHE_TTL_S", "10"))
+# Concurrent-SSE ceiling (PER WORKER). Over cap -> 429 + Retry-After; clients fall
+# back to the (edge-cached) poll path. With uvicorn --workers N the effective total
+# ceiling is N * SSE_MAX (each worker counts only its own streams).
+SSE_MAX = int(os.environ.get("NYCV_SSE_MAX", "200"))
+
 # GTFS-RT / SIRI endpoints (BusTime).
 GTFSRT_VEHICLES_URL = "https://gtfsrt.prod.obanyc.com/vehiclePositions"
 GTFSRT_ALERTS_URL = "https://gtfsrt.prod.obanyc.com/alerts"
