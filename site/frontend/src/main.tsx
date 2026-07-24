@@ -19,8 +19,14 @@ import "./index.css";
       "changes.": "/observatory/changes",
       // I2.1: immersive full-window ant-farm subdomains
       "bus.": "/live/bus",
-      "buses.": "/live/bus", // silent alias — catches typed plural URLs
       "subway.": "/live/subway",
+      // W3/W4: planner-workstation subdomains (PLURAL). NOTE: buses. was previously a
+      // silent alias for the /live/bus ant farm; ANTFARM_V3 repurposes the plural hosts
+      // for the multi-select planner workstations (the singular bus./subway. keep the
+      // immersive ant farms). The trailing dot in each prefix keeps "bus." from matching
+      // "buses." (host char 4 is "e", prefix char 4 is "."), so no ordering hazard.
+      "buses.": "/workstation/bus",
+      "subways.": "/workstation/subway",
     };
     for (const prefix in SPOKES) {
       if (host.startsWith(prefix)) {

@@ -1445,3 +1445,178 @@ i.obs-hw-obs.key { border-radius: 50%; }
 @media (max-width: 720px) {
   .imm-clock { bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.2rem); }
 }
+
+/* =========================================================================
+   W3 — PLANNER WORKSTATIONS (/workstation/bus · /workstation/subway)
+   Reuses the immersive chrome (.imm-*). Adds a left multi-select panel and a
+   right "easy to find data" rail, both floating translucent panels over the
+   full-window map. Theme-aware; 390px collapses the panel to a bottom sheet.
+   ========================================================================= */
+
+/* shared translucent panel look (mirror .imm-strip-inner etc.) */
+.ws-panel,
+.ws-rail,
+.ws-asof {
+  background: color-mix(in srgb, var(--ark-bg-soft, #161b22) 88%, transparent);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  border: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 85%, transparent);
+  box-shadow: var(--ark-shadow, 0 6px 22px -12px rgba(0, 0, 0, 0.4));
+}
+
+/* ---- LEFT: multi-select panel ---- */
+.ws-panel {
+  position: absolute; z-index: 1100;
+  top: calc(env(safe-area-inset-top) + 3.4rem);
+  left: max(0.7rem, env(safe-area-inset-left));
+  width: min(86vw, 300px);
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  max-height: calc(100dvh - 5.4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+.ws-panel:not(.open) { width: auto; }
+.ws-panel-head {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.55rem; flex: 0 0 auto;
+  border-bottom: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 70%, transparent);
+}
+.ws-panel:not(.open) .ws-panel-head { border-bottom: none; }
+.ws-panel-toggle {
+  font: inherit; font-size: 0.8rem; line-height: 1; cursor: pointer;
+  background: transparent; border: none; color: var(--ark-fg-dim, #9aa7b4);
+  padding: 0.15rem 0.25rem;
+}
+.ws-panel-title { font-weight: 700; font-size: 0.85rem; }
+.ws-count-chip {
+  font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--ark-accent, #2563eb) 18%, transparent);
+  color: var(--ark-accent, #2563eb); white-space: nowrap;
+}
+.ws-clear {
+  font: inherit; font-size: 0.72rem; cursor: pointer; margin-left: auto;
+  background: none; border: none; color: var(--ark-accent, #2563eb); text-decoration: underline; padding: 0;
+}
+.ws-panel-body { overflow-y: auto; padding: 0.55rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.ws-warn {
+  font-size: 0.72rem; line-height: 1.35; padding: 0.4rem 0.5rem; border-radius: 8px;
+  background: #fef3c7; color: #713f12; border: 1px solid #ecd9a0;
+}
+@media (prefers-color-scheme: dark) { .ws-warn { background: #3a2e0c; color: #fcd34d; border-color: #5c4a12; } }
+.ws-search {
+  width: 100%; padding: 0.4rem 0.45rem; border-radius: 8px; font: inherit; font-size: 0.82rem;
+  border: 1px solid var(--ark-line, #2a313b); background: var(--ark-bg, #0e1116); color: inherit;
+}
+.ws-groups { display: flex; flex-direction: column; gap: 0.5rem; }
+.ws-group-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; }
+.ws-selall {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  opacity: 0.75;
+}
+.ws-selall input { width: auto; margin: 0; }
+.ws-group-n { font-size: 0.68rem; opacity: 0.5; margin-left: auto; }
+.ws-checks { display: flex; flex-wrap: wrap; gap: 0.28rem; }
+.ws-check {
+  display: inline-flex; align-items: center; gap: 0.28rem; cursor: pointer;
+  font-size: 0.78rem; padding: 0.18rem 0.4rem; border-radius: 7px;
+  border: 1px solid var(--ark-line, #2a313b); background: var(--ark-bg, #0e1116);
+}
+.ws-check.on { border-color: color-mix(in srgb, var(--ark-fg, #e7edf3) 40%, transparent); font-weight: 600; }
+.ws-check input { display: none; }
+.ws-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ark-line, #2a313b); flex: none; }
+.ws-lines-toggle {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  font-size: 0.76rem; font-weight: 600; margin-top: 0.2rem;
+}
+.ws-lines-toggle input { width: auto; margin: 0; }
+.ws-hint { opacity: 0.6; font-weight: 400; }
+.ws-empty { font-size: 0.78rem; }
+.ws-bullets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.ws-bullet {
+  width: 26px; height: 26px; border-radius: 50%; cursor: pointer; flex: none;
+  font: 700 12px/1 system-ui, sans-serif; border: 2px solid transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0.42; transition: opacity 0.12s, transform 0.12s;
+}
+.ws-bullet:hover { opacity: 0.8; transform: translateY(-1px); }
+.ws-bullet.on { opacity: 1; border-color: var(--ark-fg, #e7edf3); box-shadow: 0 0 0 1px var(--ark-bg, #0e1116); }
+
+/* ---- RIGHT: data rail ---- */
+.ws-rail {
+  position: absolute; z-index: 1100;
+  top: calc(env(safe-area-inset-top) + 3.4rem);
+  right: max(0.7rem, env(safe-area-inset-right));
+  /* wide enough for the 7-column bus table (Route·Now·Hw·Sched·Bunch·On-rt·Dossier)
+     to show the dossier link without horizontal scroll; the subway table is narrower
+     and simply spreads. */
+  width: min(92vw, 400px);
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  max-height: calc(100dvh - 12rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+.ws-rail-head {
+  display: flex; align-items: center; gap: 0.5rem; flex: 0 0 auto;
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 70%, transparent);
+}
+.ws-rail-title { font-weight: 700; font-size: 0.85rem; }
+.ws-dl {
+  font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; margin-left: auto;
+  padding: 0.22rem 0.5rem; border-radius: 7px;
+  border: 1px solid var(--ark-line, #2a313b); background: transparent; color: var(--ark-fg, #e7edf3);
+}
+.ws-dl:hover { border-color: var(--ark-accent, #2563eb); color: var(--ark-accent, #2563eb); }
+.ws-rail-empty { padding: 0.7rem 0.6rem; font-size: 0.78rem; }
+.ws-table-wrap { overflow: auto; }
+.ws-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.ws-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: color-mix(in srgb, var(--ark-bg-soft, #161b22) 96%, transparent);
+  text-align: right; font-weight: 700; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.01em;
+  padding: 0.4rem 0.34rem; cursor: pointer; white-space: nowrap;
+  border-bottom: 1px solid var(--ark-line, #2a313b); user-select: none;
+}
+.ws-table th.ws-th-l { text-align: left; }
+.ws-table th.ws-th-r { text-align: center; cursor: default; }
+.ws-table td { padding: 0.3rem 0.34rem; border-bottom: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 45%, transparent); }
+.ws-table tr:last-child td { border-bottom: none; }
+.ws-num { text-align: right; }
+.ws-td-l { display: flex; align-items: center; gap: 0.35rem; }
+.ws-td-r { text-align: center; }
+.ws-td-r a { color: var(--ark-accent, #2563eb); text-decoration: none; font-size: 0.74rem; }
+.ws-td-r a:hover { text-decoration: underline; }
+.ws-row-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.ws-prelim {
+  font-size: 0.6rem; font-weight: 700; padding: 0 0.22rem; border-radius: 4px;
+  background: #fef3c7; color: #713f12;
+}
+@media (prefers-color-scheme: dark) { .ws-prelim { background: #3a2e0c; color: #fcd34d; } }
+.ws-rail-caveat { padding: 0.45rem 0.55rem; font-size: 0.68rem; line-height: 1.4; opacity: 0.85; }
+
+/* ---- top-center live/as-of chip (rail occupies the top-right corner) ---- */
+.ws-asof {
+  left: 50%; right: auto; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top) + 3.4rem);
+}
+/* nudge the bottom-right clock left so it clears the rail's lower edge cleanly */
+.ws-clock { z-index: 1100; }
+
+/* ---- 390px: panel collapses to a bottom sheet; rail rides the top full-width ---- */
+@media (max-width: 390px) {
+  .ws-panel {
+    top: auto; left: 0; right: 0; width: auto;
+    bottom: 0; border-radius: 14px 14px 0 0;
+    max-height: 52dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .ws-rail {
+    top: calc(env(safe-area-inset-top) + 3.2rem);
+    left: max(0.5rem, env(safe-area-inset-left)); right: max(0.5rem, env(safe-area-inset-right));
+    width: auto; max-height: 34dvh;
+  }
+  .ws-asof {
+    top: auto; bottom: calc(52dvh + 0.5rem); /* sit just above the bottom-sheet panel */
+  }
+}

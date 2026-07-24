@@ -37,6 +37,22 @@ const SPOKES = [
       "Every subway and SIR train as a worm crawling along the actual track, full screen — filter by line with official bullets, tap a station for arrivals, estimated positions honestly faded.",
   },
   {
+    key: "ws-bus",
+    title: "Bus Planner Workstation",
+    to: "/workstation/bus",
+    status: "live" as const,
+    blurb:
+      "A planner's monitoring board: select any number of bus routes and watch their live buses at once, each route in its own colourblind-safe colour, its stops on the map. A right-hand rail puts the numbers a scheduler reaches for — buses running now, observed vs scheduled headway, a bunching index, and on-route position quality — one row per route, sortable, downloadable as CSV.",
+  },
+  {
+    key: "ws-subway",
+    title: "Subway Planner Workstation",
+    to: "/workstation/subway",
+    status: "live" as const,
+    blurb:
+      "The same monitoring board for the subway: pick lines by their official bullets, see their stations and live track-worms, and read trains running now plus active alerts per line in a sortable rail. Shareable by URL; downloadable as CSV.",
+  },
+  {
     key: "observatory",
     title: "Bus Observatory",
     to: "/observatory",
