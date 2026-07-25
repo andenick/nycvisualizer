@@ -53,3 +53,9 @@ site/tools/bin/
 # (CODE_DATA_FIRST_STANDARD s4.2), so the SOURCE stays here and only the stripped,
 # reader-resolvable kb_callouts.json is generated into site/frontend/src/content/.
 site/content_src/
+
+# Local index into our research archive (year -> extracted-report folder) used by
+# pipeline/analysis/cordon/build_hub_bound_series.py. The underlying documents are NYMTC's
+# PUBLISHED Hub Bound Travel Reports; only our folder names are internal, and they resolve
+# to nothing outside this workspace. An outside reproducer supplies their own.
+pipeline/analysis/cordon/archive_sources.local.json

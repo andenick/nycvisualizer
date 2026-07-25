@@ -1,8 +1,8 @@
 """Shared helpers for the Jane B5.1 sidewalk-coverage analysis suite.
 
 All measurement geometry is EPSG:2263 (NY State Plane Long Island, ftUS).
-DB: Technical/NYCPlatform/db/jane_geo.duckdb (read-only). Outputs:
-Projects/Jane/Outputs/NYCPlatform/sidewalk/.
+DB: the project query layer `pipeline/db/jane_geo.duckdb` (read-only).
+Outputs: the `sidewalk/` subtree of the configured analysis outputs root.
 """
 import os
 import duckdb

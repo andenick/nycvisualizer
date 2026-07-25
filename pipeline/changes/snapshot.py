@@ -18,7 +18,7 @@ BASELINE snapshots (hashed in place, referenced by relative path — the files a
 copied). Baseline entries carry "source":"baseline_static" and a "ref" path instead of
 a stored "path".
 
-Public-repo hygiene: no absolute workspace-root literals; root via NYCV_PIPELINE_ROOT.
+Public-repo hygiene: no absolute workspace paths; root via NYCV_PIPELINE_ROOT.
 
 Usage:
     python snapshot.py                # seed baselines (idempotent) + fetch live feeds
@@ -41,7 +41,8 @@ from _common import (
 )
 
 S3 = "https://rrgtfsfeeds.s3.amazonaws.com/"
-USER_AGENT = "nycvisualizer-jane-gtfs-snap/1.0 (civic data research; https://github.com/andenick/nycvisualizer)"
+USER_AGENT = ("nycvisualizer-jane-gtfs-snap/1.0 "
+              "(civic data research; https://github.com/andenick/nycvisualizer)")
 HTTP_TIMEOUT = 60
 
 # Live feeds we actively re-fetch on the 6-hourly cadence.

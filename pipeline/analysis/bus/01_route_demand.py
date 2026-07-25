@@ -7,8 +7,8 @@ DATA FLAG: this dataset is ROUTE-LEVEL only. It has NO stop and NO direction
 column (the master plan's "stop-level boardings" claim does not match the data;
 the honest unit is the route). All demand here is per route.
 
-Outputs (Parquet + one-sheet XLSX each) under Outputs/NYCPlatform/bus/ +
-headline PNGs under charts/.
+Outputs: one Parquet + one-sheet XLSX each, written under the configured analysis
+outputs root (see OUTPUTS_ROOT); headline PNGs under charts/.
 """
 from __future__ import annotations
 import matplotlib

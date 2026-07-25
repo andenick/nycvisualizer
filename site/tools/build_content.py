@@ -2,7 +2,8 @@
 
 Server-side/pre-rendered per CONTENT_RENDERING_STANDARD -- the SPA never ships or
 renders literal markdown. Env-parameterized (no absolute workspace paths):
-  OUTPUTS_ROOT   -- analysis outputs (default <platform>/../../Outputs/NYCPlatform)
+  OUTPUTS_ROOT   -- analysis outputs (defaults to the analysis outputs tree two
+                    levels above the platform root)
   ANALYSIS_ROOT  -- analysis scripts+docs (default <platform>/analysis)
   DATA_ROOT      -- data lake (default <platform>/data)
 Writes into <site>/frontend/src/content/.

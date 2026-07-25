@@ -4,8 +4,8 @@ day per report year.
 
 SOURCE
 ------
-NYMTC "Hub Bound Travel Report", the born-digital report PDFs ingested into the
-Jane KB as DOC0346..DOC0374 (H4_NYMTC_HubBound). Each modern report opens with a
+NYMTC "Hub Bound Travel Report" — the born-digital report PDFs, ingested into our
+research archive. Each modern report opens with a
 "Quick Reference Data - Persons Entering and Leaving the Hub by Mode and Sector"
 table (the QRD table), a 24-hour daily total broken out by entry sector
 (60th St / Brooklyn / Queens / New Jersey) and by mode, with
@@ -75,11 +75,12 @@ A "-" cell (mode absent from a sector) parses as 0.
 
 OUTPUT
 ------
-  Outputs/NYCPlatform/cordon/hub_bound_series.parquet   (long: year, mode, entering)
-  Outputs/NYCPlatform/cordon/hub_bound_series.csv
-  Outputs/NYCPlatform/cordon/hub_bound_series_wide.csv  (year x mode, + total)
-  Outputs/NYCPlatform/cordon/MODE_MAPPING.json          (audit trail: per year,
-        which DOC + table file supplied each mode, and the raw row labels seen)
+Written under the configured analysis outputs root (see OUTPUTS_ROOT), in cordon/:
+  hub_bound_series.parquet   (long: year, mode, entering)
+  hub_bound_series.csv
+  hub_bound_series_wide.csv  (year x mode, + total)
+  MODE_MAPPING.json          (audit trail: per year, which source report + table
+        file supplied each mode, and the raw row labels seen)
 
 CRS / units: none (tabular counts). EPSG discipline N/A.
 """
@@ -99,24 +100,24 @@ KB = JANE / "Knowledge_Base"
 OUT = JANE / "Outputs" / "NYCPlatform" / "cordon"
 OUT.mkdir(parents=True, exist_ok=True)
 
-# year -> KB doc dir. Only the 14 years whose report carries the clean 24-hour
-# by-mode QRD table in the extracted set (see module docstring).
-YEAR_DOC = {
-    2007: "DOC0359_b11c320e",
-    2008: "DOC0360_b85d80d8",
-    2009: "DOC0361_fc2d43c3",
-    2012: "DOC0364_a404bb4d",
-    2013: "DOC0365_e2076f0a",
-    2014: "DOC0366_d3975e8d",
-    2015: "DOC0367_d0da3f16",
-    2016: "DOC0368_ee199a75",
-    2017: "DOC0369_e686f908",
-    2018: "DOC0370_35b08a6f",
-    2019: "DOC0371_ad2116c6",
-    2020: "DOC0372_e8936f0a",
-    2023: "DOC0373_d55c353b",
-    2024: "DOC0374_0ab21b67",
-}
+# year -> the folder of that year's extracted report in our research archive. Only the
+# 14 years whose report carries the clean 24-hour by-mode QRD table (see the docstring).
+#
+# The mapping lives in a LOCAL, gitignored sidecar rather than as a literal here: those
+# folder names are an index into our own archive, they resolve to nothing for anyone else,
+# and this file ships publicly (PUBLICATION_HYGIENE_STANDARD s4a -- no internal indices in
+# shipped code). The underlying documents are NOT private: they are NYMTC's published Hub
+# Bound Travel Reports, downloadable from NYMTC, so an outside reproducer supplies their
+# own copies and their own sidecar.
+_SIDECAR = HERE.parent / "archive_sources.local.json"
+if not _SIDECAR.exists():
+    raise SystemExit(
+        f"Missing {_SIDECAR.name}: a JSON object mapping report year -> the folder holding "
+        f"that year's extracted report tables, e.g. {{\"2024\": \"<folder>\"}}. The source "
+        f"documents are NYMTC's published Hub Bound Travel Reports."
+    )
+YEAR_DOC = {int(k): v for k, v in
+            json.loads(_SIDECAR.read_text(encoding="utf-8")).items()}
 
 MODE_RULES = [
     ("subway", re.compile(r"^\s*subway", re.I)),
@@ -195,10 +196,12 @@ def parse_year(year: int, doc_dir: Path) -> tuple[dict[str, int], dict]:
         lbl = r[0].strip()
         if lbl not in seen_labels[bucket]:
             seen_labels[bucket].append(lbl)
+    # The audit trail keeps everything a reader can CHECK -- which report year, which raw
+    # row labels we bucketed, and the per-mode totals -- but names the published report
+    # rather than our internal archive folder/table filenames. This JSON is served publicly.
     audit = {
         "year": year,
-        "doc": doc_dir.name,
-        "table_file": f.name,
+        "source_report": f"NYMTC Hub Bound Travel Report {year}",
         "row_labels_by_bucket": seen_labels,
         "entering_by_bucket": totals,
         "total_all_modes": sum(totals.values()),
@@ -231,7 +234,9 @@ def main() -> None:
     mapping = {
         "series": "NYMTC Hub Bound - persons entering Manhattan CBD (south of 60th St) "
                   "by mode, 24-hour fall business day",
-        "source": "NYMTC Hub Bound Travel Report (KB DOC0346-DOC0374)",
+        # Reader-resolvable provenance only: the published report series, not our
+        # internal archive ids (this JSON is served publicly).
+        "source": "NYMTC Hub Bound Travel Report",
         "unit": "persons entering (24-hour count)",
         "years_covered": sorted(YEAR_DOC),
         "n_years": len(YEAR_DOC),

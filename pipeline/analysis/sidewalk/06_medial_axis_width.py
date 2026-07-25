@@ -41,13 +41,13 @@ VALIDATION (two independent references, honest r reported for both)
 
 OUTPUT
 ------
-  Outputs/NYCPlatform/sidewalk/06_medial_axis_polys.parquet    (per polygon)
-  Outputs/NYCPlatform/sidewalk/06_medial_axis_segments.parquet (per CSCL PHYSICALID,
-        drop-in replacement key for the coverage `w` join in build_layers.py)
-  Outputs/NYCPlatform/sidewalk/06_medial_axis_validation.json  (both r values +
-        promote recommendation)
-  Outputs/NYCPlatform/sidewalk/fig06_medial_vs_harvey.png
-  Outputs/NYCPlatform/sidewalk/fig06_medial_vs_proxy.png
+Written into the `sidewalk/` subtree of the configured analysis outputs root:
+  06_medial_axis_polys.parquet    (per polygon)
+  06_medial_axis_segments.parquet (per CSCL PHYSICALID, drop-in replacement key
+        for the coverage `w` join in build_layers.py)
+  06_medial_axis_validation.json  (both r values + promote recommendation)
+  fig06_medial_vs_harvey.png
+  fig06_medial_vs_proxy.png
 
 Env: MEDIAL_SAMPLE (optional) = cap polygons processed (for a fast dev run).
 """
@@ -71,13 +71,14 @@ from shapely.strtree import STRtree
 
 from _common import connect, opath, OUT
 
-# Validation-only input: Meli Harvey's published width GeoJSON
-# (github.com/meliharvey/sidewalkwidths-nyc, repo/sidewalkwidths_nyc.geojson).
-# Env-overridable so the public repo carries no absolute workspace path.
+# Validation-only input: Meli Harvey's published width GeoJSON. Download it from
+# github.com/meliharvey/sidewalkwidths-nyc (repo/sidewalkwidths_nyc.geojson) and
+# either drop it at the relative default below or point HARVEY_WIDTHS_GEOJSON at it.
+# The default is REPO-RELATIVE on purpose: this file ships publicly, and an absolute
+# workspace path here would be both a hygiene leak and unusable for anyone else.
 HARVEY_GEOJSON = Path(os.environ.get(
     "HARVEY_WIDTHS_GEOJSON",
-    "D:/Arcanum/Projects/Jane/Inputs/RefinementAcquisitions_2026_07/"
-    "H6_MeliHarvey_sidewalkwidths/repo/sidewalkwidths_nyc.geojson"))
+    "inputs/sidewalkwidths_nyc.geojson"))
 
 DENSIFY_FT = 3.0        # boundary point spacing before Voronoi
 SIMPLIFY_FT = 1.0       # ring simplification tolerance (Harvey simplifies too)

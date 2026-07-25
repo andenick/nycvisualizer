@@ -2,7 +2,8 @@
 
 Inputs (env-parameterized; relative defaults from repo layout):
   JANE_GEO_DB   -- jane_geo.duckdb (default <platform>/db/jane_geo.duckdb)
-  OUTPUTS_ROOT  -- analysis outputs (default <platform>/../../Outputs/NYCPlatform)
+  OUTPUTS_ROOT  -- analysis outputs (defaults to the analysis outputs tree two
+                   levels above the platform root)
 Outputs:
   <site>/frontend/public/layers/*.geojson   (web layers, simplified, coord-rounded)
   OUTPUTS_ROOT/web_extracts/*               (download extracts incl. GeoParquet)

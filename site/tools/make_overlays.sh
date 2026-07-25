@@ -7,7 +7,7 @@
 #              built 2026-07-23 on the box (Ubuntu 26.04) via Docker ubuntu:26.04
 #              (host has no compiler/-dev libs and no passwordless sudo, so the
 #               binary was compiled in a matching-glibc container and copied to
-#               ~/sites/nycvisualizer/tools/bin/ ; runtime libs libsqlite3.so.0
+#               the site's tools/bin directory on that host ; runtime libs libsqlite3.so.0
 #               + libz.so.1 are present on the host, so it runs natively.)
 #
 # Generates, into the web-served layers dir (served at /layers/):

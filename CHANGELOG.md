@@ -2,6 +2,16 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+> **Redaction note (2026-07-25).** Historical entries below were redacted for
+> publication hygiene: internal research-archive identifiers (an internal corpus name
+> and per-document ids) were replaced with plain descriptions of the same sources.
+> **No factual content changed** — no date, version, number, or claim about what
+> shipped was altered, and nothing was removed from the record. The identifiers
+> resolved only inside our own workspace and are never offered publicly
+> (`CODE_DATA_FIRST_STANDARD` §4.2); where a redacted entry cited real published
+> work, that citation (e.g. NBER w33584, arXiv:2606.17530) is unchanged and remains
+> the reader's referent.
+
 ## 2026-07-25 — Publication hygiene: the Methodology tabs stop leaking the build environment
 
 A visitor who clicked a **Methodology** tab was shown our build environment. The
@@ -156,7 +166,8 @@ r = 0.47` · "the bus feed's `current_status` is 100% NULL" · the bare column h
 **"Headway CV"** (now "Gap consistency", with both it and "Bunching" defined under the table) ·
 the internal pipeline codename **"derive2"** as a public tab label · workstream codes
 **"(S4 …)" / "(S7)"** · **"one-hot color"** and **"tippecanoe"** in a public legend · internal
-corpus IDs **"Jane KB · DOC0311"** (source and year stay; the code moves to a `title`) · the
+research-archive IDs in the callout source line (source and year stay; the code moves
+to a `title`) · the
 confidence popover reading *"LODES WAC 2023 jobs; 1,196-cell H3 grid → 37,507 blocks"*.
 
 **Controls**:
@@ -952,7 +963,7 @@ keys resolving).
 ### Hub-Bound "history meets live" chart (Observatory landing)
 - New `analysis/cordon/build_hub_bound_series.py` assembles the **NYMTC Hub Bound**
   cordon series — 24-hour persons entering the Manhattan CBD (south of 60th St) by
-  mode — from the 85 verified born-digital cordon CSVs (KB DOC0346–DOC0374). Honest
+  mode — from the 85 verified born-digital cordon CSVs in our research archive. Honest
   coverage: **14 report years** carry the clean by-mode Quick-Reference table
   (2007–09, 2012–20, 2023–24); 2010–11 & pre-2007 await GPU re-extraction, 2021–22
   were not surveyed (COVID). Six major modes (subway/auto/bus/rail/bike/tram)
@@ -978,8 +989,8 @@ keys resolving).
 
 ### Congestion-pricing framing (Jan 2025)
 - Bus methodology tab + route-dossier speed sections carry a dated congestion-
-  pricing context block: **NBER w33584** (CBD road speeds **+11%**; KB DOC0343) and
-  **arXiv:2606.17530** (transit gains + spatially-uneven demand; KB DOC0407), both
+  pricing context block: **NBER w33584** (CBD road speeds **+11%**) and
+  **arXiv:2606.17530** (transit gains + spatially-uneven demand), both
   quote-verified. Notes that our 2025+ segment-speed panel is the post-CP era.
   Both papers added to the About sources & credit.
 
@@ -1026,10 +1037,10 @@ current 6-day archive depth).
   the methodology Access section. Each open question names the exact data or method
   that would settle it.
 
-### KB context callouts (Q2.6)
-- New reusable `ContextCallout` (quiet soft-surface card: a quote/fact + "Doc,
-  Year — Jane KB" source line), fed by a curated `content/kb_callouts.json` of
-  **10 quote-verified passages** from the Jane Knowledge Base: the Hub-Bound
+### Research-archive context callouts (Q2.6)
+- New reusable `ContextCallout` (quiet soft-surface card: a quote/fact + a "Doc,
+  Year" source line naming our research archive), fed by a curated
+  `content/kb_callouts.json` of **10 quote-verified passages** from that archive: the Hub-Bound
   1963-onward CBD cordon series (Observatory), the bunching definition and NYC
   DOT's since-2012 bus-speed tracking (Leagues), Vision Zero pedestrian-safety
   context (Sidewalks + SAI), the city's equity framing and the NYC Ferry access

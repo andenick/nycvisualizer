@@ -7,8 +7,8 @@ inputs live in the 5.4 GB `jane_geo.duckdb` and are expensive to scan per reques
   * per-route ACE violation counts (from `transit_ace_violations`, joined to
     `transit_ace_routes` for the program + implementation date)
 
-This script rolls both to tiny per-route Parquet artifacts under
-`Outputs/NYCPlatform/bus/obs/` that the backend reads directly. Run at build time and
+This script rolls both to tiny per-route Parquet artifacts under the analysis
+outputs root (`<outputs>/bus/obs/`) that the backend reads directly. Run at build time and
 on the `JaneNYCDerive` cadence (they change slowly — ridership is historical APC, ACE
 is a program reference). Reuses `common.connect()` (read-only jane_geo).
 

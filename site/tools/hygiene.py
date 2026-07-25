@@ -80,6 +80,10 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?<![\w.])/KB/"), "KB artefact path"),
     (re.compile(r"FULL_TEXT_chunks"), "KB extraction filename"),
     (re.compile(r"CSV_Tables[\\/]table_"), "KB extraction filename"),
+    # A bare KB table-extraction filename (table_007_p24.csv). The CSV_Tables/ prefix is
+    # usually gone by the time one is quoted in a provenance field, so the prefixed
+    # pattern above does not see it.
+    (re.compile(r"\btable_\d{3}_p\d+"), "KB extraction filename"),
     (re.compile(r"equations_chunks"), "KB extraction filename"),
     (re.compile(r"figures_chunks"), "KB extraction filename"),
     (re.compile(r"RDB_METADATA"), "KB enrichment sidecar"),
@@ -89,7 +93,10 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bBATCH_\d{3,}"), "extraction batch id"),
     (re.compile(r"\bHDARP\b|\bSPHDARP\b"), "internal extraction-method name"),
     (re.compile(r"Jane KB|Jane Knowledge Base"), "internal corpus codename"),
-    (re.compile(r"\bDOC\d{4}\b"), "internal KB document id"),
+    # NO trailing \b. The ids occur bare (DOC0343) AND suffixed with the extraction hash
+    # (DOC0359_b11c320e); requiring a word boundary matched only the bare form, which is
+    # how 15 suffixed ids survived in a publicly-served JSON audit trail.
+    (re.compile(r"\bDOC\d{4}"), "internal KB document id"),
     # -- this deployment's internal infrastructure -----------------------------------
     (re.compile(r"andenick@"), "operator account"),
     (re.compile(r"\b(?:192\.168|10)\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "private IP address"),
@@ -99,10 +106,40 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"~/sites/"), "deploy-host filesystem path"),
 ]
 
+# ---------------------------------------------------------------- DELIBERATE ALLOWANCES
+#
+# These are NOT oversights. They were reviewed on 2026-07-25 and kept ON PURPOSE. There is
+# no pattern above that matches them, and none should be added -- this note exists so a
+# later reader does not "tidy up" by adding one.
+#
+#   JaneNYCPoller, JaneNYCGtfsSnap, JaneNYCDerive, JaneNYCDerivedSync, JaneNYCCanary
+#       -- the scheduled-job names, which appear in methods_changes and methods_derive2.
+#       They are KEPT because they carry information a reader actually wants: which job
+#       refreshes which surface, and how often. Publication hygiene is about artefacts that
+#       are meaningless-but-revealing to an outsider (our paths, our interpreter, our
+#       archive ids). A job name that explains "this dataset is rebuilt every six hours" is
+#       the opposite: meaningful to the reader and revealing of nothing. It is not a path,
+#       not a credential, not a host, and not an archive reference. Leave them.
+#
+# If you are tempted to forbid a string, ask the test these allowances pass: does removing
+# it protect anything, or does it only cost the reader an explanation?
+
 # Files worth reading when a directory is handed to the CLI.
+#
+# CODE COUNTS. The first cut of this list held only web/markup/data suffixes, which meant a
+# repo-wide sweep silently skipped every .py and .ps1 -- and three absolute workspace paths
+# (one of them a full `D:/Arcanum/...` literal) were sitting in tracked Python files while
+# the sweep reported PASS. A gate that does not read a file cannot fail on it. Add a suffix
+# here before assuming a clean sweep covers a new file type.
 TEXT_SUFFIXES = {
+    # web / markup / data
     ".html", ".htm", ".json", ".js", ".mjs", ".cjs", ".css", ".md", ".txt",
-    ".ts", ".tsx", ".svg", ".xml", ".csv",
+    ".ts", ".tsx", ".jsx", ".svg", ".xml", ".csv", ".geojson",
+    # code
+    ".py", ".pyi", ".sh", ".ps1", ".psm1", ".bat", ".cmd", ".sql", ".r", ".rmd",
+    # config / metadata (an outsider reads these too)
+    ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf", ".cff", ".example",
+    ".dockerfile", ".env",
 }
 
 
@@ -124,6 +161,16 @@ def scan_text(text: str, label: str = "<text>") -> list[Finding]:
                 out.append(Finding((label, lineno, why, excerpt)))
                 break  # one finding per line is enough to fail the build
     return out
+
+
+def _is_self(p: Path) -> bool:
+    """This file necessarily CONTAINS every pattern it forbids -- it is the deny-list.
+
+    Scanning it would report ~30 findings on every repo-wide sweep and train a reader to
+    ignore the output, which is how a gate stops working. This is the ONLY self-exemption:
+    it applies to one filename, not to a directory or a pattern.
+    """
+    return p.name == "hygiene.py"
 
 
 def _is_vendor(p: Path) -> bool:
@@ -148,6 +195,8 @@ def _iter_files(target: Path, skipped: list[Path] | None = None):
             if SKIP_DIRS.intersection(p.parts):
                 continue
             if p.is_file() and p.suffix.lower() in TEXT_SUFFIXES:
+                if _is_self(p):
+                    continue
                 if _is_vendor(p):
                     if skipped is not None:
                         skipped.append(p)
