@@ -18,7 +18,7 @@ publish observed headways. Every file carries archive_depth_days + a PRELIMINARY
 License: CC-BY 4.0. Cadence: daily.
 
 STAGING (added 2026-07-25 — W6a defect 4). `build()` now ALSO stages the served
-download extracts into `Outputs/NYCPlatform/headways_dataset/` — the tree the box sync
+download extracts into the sibling outputs tree's `headways_dataset/` — the tree the sync
 (`ops/run_derived_sync.ps1`) tars and `/api/downloads` resolves. Previously that staging
 lived ONLY in `site/tools/build_content.py`, which is documented in REFRESH.md §E1 as
 part of the chain but is neither scheduled nor called by `run_derive.ps1`; the served

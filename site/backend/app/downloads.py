@@ -94,8 +94,7 @@ _ITEMS: dict[str, tuple[str, str, str, str]] = {
     "hub_bound_series.parquet": (
         "cordon/hub_bound_series.parquet",
         "NYMTC Hub-Bound CBD entries by mode, long form (Parquet)", "Hub-Bound cordon",
-        "Same series as the CSV; year x mode x entering. Source: NYMTC Hub Bound Travel Report "
-        "(KB DOC0346-DOC0374)."),
+        "Same series as the CSV; year x mode x entering. Source: NYMTC Hub Bound Travel Report."),
     "hub_bound_series_wide.csv": (
         "cordon/hub_bound_series_wide.csv",
         "NYMTC Hub-Bound CBD entries by mode, wide form (CSV)", "Hub-Bound cordon",

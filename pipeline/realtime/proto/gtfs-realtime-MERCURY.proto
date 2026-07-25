@@ -1,0 +1,57 @@
+// MTA "Mercury" GTFS-realtime alert extension  —  VENDORED, NOT MODIFIED.
+//
+// Source: MTA / Camsys Mercury service-alert extensions, shipped on the
+//         camsys%2Fall-alerts feed (and on the per-line nyct alert feeds).
+// Vendored: 2026-07-25 (W6b). Field numbers verified against the live wire on the
+//           same day — see realtime/proto/README.md for the captured bytes.
+//
+// WHY THIS MATTERS: the base GTFS-RT `Alert.cause` and `Alert.effect` fields are
+// NEVER SET on the wire by MTA. Anything read out of them is a proto2 default
+// (cause=1 UNKNOWN_CAUSE, effect=8 UNKNOWN_EFFECT), which is why a severity model
+// built on `effect` buckets 100% of alerts as "low". The taxonomy MTA actually
+// publishes — and renders verbatim on mta.info — lives in `alert_type` below.
+//
+// We do NOT compile this file. It is the normative reference for the field
+// numbers hard-coded in realtime/gtfs_ext.py.
+
+syntax = "proto2";
+
+import "gtfs-realtime.proto";
+
+package transit_realtime;
+
+message MercuryAlert {
+  // Epoch seconds the alert was first created / last updated by MTA. Distinct
+  // from active_period: an alert can be created days before it becomes active.
+  optional uint64 created_at = 1;
+  optional uint64 updated_at = 2;
+
+  // THE REAL TAXONOMY. Observed values include:
+  //   "Stops Skipped", "Special Schedule", "Boarding Change", "Delays",
+  //   "Planned - Suspended", "Planned - Part Suspended", "Planned - Reroute",
+  //   "Planned - Stops Skipped", "Extra Service", "Service Change".
+  optional string alert_type = 3;
+
+  // Seconds before the active period starts that the alert should be displayed.
+  optional int32 display_before_active = 7;
+
+  // MTA's own rider-facing rendering of the active window, e.g.
+  //   "Jul 31, Friday, 10:00 AM to 3:00 PM"
+  //   "Aug 1 - 3, Sat 1:00 AM to Mon 4:00 AM"
+  optional TranslatedString human_readable_active_period = 8;
+
+  // (Fields 4,5,6,9+ exist in the MTA original for internal routing/ids and are
+  //  not consumed here; they are skipped by the decoder rather than mis-typed.)
+}
+
+extend Alert {
+  optional MercuryAlert mercury_alert = 1001;
+}
+
+message MercuryStopTimeUpdate {
+  optional string stop_name = 1;
+}
+
+extend TripUpdate.StopTimeUpdate {
+  optional MercuryStopTimeUpdate mercury_stop_time_update = 1001;
+}

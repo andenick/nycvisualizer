@@ -14,10 +14,13 @@ HARD RULES (enforced here, see README):
     impossible.
   * Disk guard: archiving stops (loudly) if D: free < DISK_FLOOR_GB.
 
-Run:  python .../realtime/poller.py
-Stop: taskkill /IM python.exe (targeted by PID in POLLER_STATUS.json) or delete the
-      scheduled task. The service is designed to run under Windows Task Scheduler
-      (task "JaneNYCPoller") with an internal supervisor-free single-process loop.
+Run:     python realtime/poller.py
+Restart: touch realtime/poller.restart -- the next heartbeat force-flushes every buffer
+         and exits 0 for the supervisor to relaunch (LOSSLESS; see README). Prefer this
+         over killing the process, which discards up to FLUSH_SECONDS of buffered rows.
+Stop:    stop the scheduled task / service manager entry that owns it (the PID is in
+         POLLER_STATUS.json). The service is designed to run under a task scheduler
+         (task "JaneNYCPoller") with an internal supervisor-free single-process loop.
 """
 from __future__ import annotations
 
@@ -57,7 +60,11 @@ MIN_BUS_GAP = 31.0         # HARD floor between ANY two BusTime HTTP calls
 HTTP_TIMEOUT = 25
 BACKOFF_BASE = 2.0
 BACKOFF_CAP = 300.0        # max backoff added on repeated 429/5xx
-USER_AGENT = "nycvisualizer-jane-poller/1.0 (civic data research; https://github.com/andenick/nycvisualizer)"
+# Identifies us to the feed hosts on every request. Point it at the PROJECT, never at a
+# personal address: this string is transmitted to MTA on every fetch and is published in
+# the public repo. Matches the convention in changes/snapshot.py.
+USER_AGENT = ("nycvisualizer-poller/1.0 (civic data research; "
+              "https://github.com/andenick/nycvisualizer)")
 
 # ------------------------------------------------------------------ env loading
 def load_env(path: Path) -> dict:

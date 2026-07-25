@@ -58,13 +58,52 @@ DEFAULT_SCHED_HEADWAY_S = 600.0   # fallback when a route has no observed headwa
 MAX_HOTSPOTS = 200                # cap markers for the small ops map
 CACHE_TTL_S = 25
 
-# GTFS-RT `effect` enum -> severity tier (mirror of derive2/_common.ALERT_SEVERITY;
-# duplicated here so the web app has no import dependency on the derive2 package).
+# ⚠️ RETIRED AS THE PRIMARY SEVERITY MODEL (2026-07-25, W6b). MTA never sets GTFS-RT
+# `effect` on these feeds — 424/424 alerts decoded as 8 (UNKNOWN_EFFECT), so this table
+# classified 100% of alerts "low". It is retained ONLY as the fallback for alerts with no
+# Mercury `alert_type`, and such alerts are now reported as "unclassified", never "low".
 ALERT_SEVERITY = {
     1: "high", 2: "high", 3: "high",
     4: "medium", 6: "medium", 9: "medium",
     5: "low", 7: "low", 8: "low", 10: "low", 11: "low",
 }
+
+# MTA's REAL taxonomy — MercuryAlert.alert_type (extension #1001 on Alert). Mirror of
+# derive2/_common.MERCURY_ALERT_TIER, duplicated here so the web app keeps no import
+# dependency on the derive2 package. Keep the two in sync.
+MERCURY_ALERT_TIER = {
+    "Suspended": "high", "Part Suspended": "high", "Delays": "high",
+    "Expect Delays": "high", "Cancellations": "high", "Reduced Service": "high",
+    "Planned - Suspended": "high", "Planned - Part Suspended": "high",
+    "Detour": "medium", "Reroute": "medium", "Stops Skipped": "medium",
+    "Boarding Change": "medium", "Express to Local": "medium",
+    "Local to Express": "medium", "Substitute Buses": "medium",
+    "Planned - Detour": "medium", "Planned - Reroute": "medium",
+    "Planned - Stops Skipped": "medium", "Planned - Boarding Change": "medium",
+    "Planned - Express to Local": "medium", "Planned - Local to Express": "medium",
+    "Planned - Substitute Buses": "medium", "Planned - Work": "medium",
+    "Extra Service": "low", "Special Schedule": "low", "Special Notice": "low",
+    "Station Notice": "low", "Service Change": "low",
+    "Escalator": "low", "Elevator": "low",
+}
+
+
+def _mercury_tier(alert_type) -> str:
+    """Mercury alert_type -> tier. Unknown or absent -> 'unclassified' (NEVER 'low')."""
+    if not alert_type:
+        return "unclassified"
+    return MERCURY_ALERT_TIER.get(str(alert_type).strip(), "unclassified")
+
+
+def _mercury_alert_type(alert_msg) -> str | None:
+    """Decode MercuryAlert.alert_type off a live protobuf Alert (see realtime/gtfs_ext.py)."""
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(config.REALTIME_PKG_DIR))
+        import gtfs_ext  # type: ignore
+        return gtfs_ext.mercury_alert(alert_msg)["alert_type"]
+    except Exception:
+        return None
 
 # Subway/SIR route ids, for classifying an alert as subway BY ITS ROUTES rather than by
 # which feed it arrived on. The `camsys/all-alerts` endpoint is the ALL-AGENCY feed: of
@@ -391,9 +430,18 @@ def _alerts_rows_from_live() -> tuple[list[dict[str, Any]], int]:
                 "feed": feed,
                 "poll_ts": poll_ts,
                 "alert_id": ent.id,
-                # protobuf enums are ints; ALERT_SEVERITY keys on the effect int.
+                # `effect` is a proto2 DEFAULT here, not an agency value — MTA never
+                # sets it on these feeds. Kept only so the "unknown_effect" count stays
+                # measurable; the real classification is mercury alert_type below.
                 "effect": int(a.effect) if a.effect is not None else None,
+                "alert_type": _mercury_alert_type(a),
                 "header_text": [t.text for t in a.header_text.translation],
+                "description_text": [t.text for t in a.description_text.translation],
+                "active_period": [
+                    {"start": (int(p.start) if p.HasField("start") else None),
+                     "end": (int(p.end) if p.HasField("end") else None)}
+                    for p in a.active_period
+                ],
                 "informed_entity": [
                     {"route_id": ie.route_id or None, "stop_id": ie.stop_id or None}
                     for ie in a.informed_entity
@@ -435,8 +483,11 @@ def _tally_alerts(rows: list[dict[str, Any]], max_poll: int) -> dict[str, Any]:
         aid = d.get("alert_id")
         if aid and aid not in seen:
             seen[aid] = d
-    counts = {"high": 0, "medium": 0, "low": 0}
+    counts = {"high": 0, "medium": 0, "low": 0, "unclassified": 0}
     n_unknown_effect = 0
+    n_typed = 0
+    type_counts: dict[str, int] = {}
+    n_planned = 0
     alerted_lines: set[str] = set()
     items: list[dict[str, Any]] = []
     for aid, d in seen.items():
@@ -448,7 +499,15 @@ def _tally_alerts(rows: list[dict[str, Any]], max_poll: int) -> dict[str, Any]:
         # the UI can say "severity not published" instead of implying "all alerts are low".
         if eff_i == 8:
             n_unknown_effect += 1
-        sev = ALERT_SEVERITY.get(eff_i, "low")
+        # MTA's OWN taxonomy first; the never-set `effect` enum is not a fallback that can
+        # produce a tier, only "unclassified".
+        atype = d.get("alert_type")
+        sev = _mercury_tier(atype)
+        if atype:
+            n_typed += 1
+            type_counts[str(atype)] = type_counts.get(str(atype), 0) + 1
+            if str(atype).strip().lower().startswith("planned"):
+                n_planned += 1
         counts[sev] += 1
         ht = d.get("header_text")
         if isinstance(ht, list):
@@ -465,10 +524,11 @@ def _tally_alerts(rows: list[dict[str, Any]], max_poll: int) -> dict[str, Any]:
         # An alert with no informed route at all: fall back to the feed it came from.
         if not routes:
             is_subway = bool(d.get("_is_subway"))
-        items.append({"id": aid, "severity": sev, "header": _clean(str(ht)),
+        items.append({"id": aid, "severity": sev, "alert_type": atype,
+                      "header": _clean(str(ht)),
                       "routes": sorted(set(routes))[:6],
                       "subway": is_subway})
-    sev_rank = {"high": 0, "medium": 1, "low": 2}
+    sev_rank = {"high": 0, "medium": 1, "low": 2, "unclassified": 3}
     items.sort(key=lambda x: sev_rank[x["severity"]])
     total = len(seen)
     # The ticker is capped at 60. Upstream classifies NOTHING (all UNKNOWN_EFFECT), so
@@ -477,7 +537,7 @@ def _tally_alerts(rows: list[dict[str, Any]], max_poll: int) -> dict[str, Any]:
     # 344 subway alerts under the heading "bus + subway feeds". Interleave the two modes
     # round-robin WITHIN each severity tier so the capped view represents both.
     shown: list[dict[str, Any]] = []
-    for tier in ("high", "medium", "low"):
+    for tier in ("high", "medium", "low", "unclassified"):
         sub = [i for i in items if i["severity"] == tier and i["subway"]]
         bus = [i for i in items if i["severity"] == tier and not i["subway"]]
         for a, b in zip_longest(sub, bus):
@@ -489,9 +549,13 @@ def _tally_alerts(rows: list[dict[str, Any]], max_poll: int) -> dict[str, Any]:
             "items": shown[:60], "items_shown": min(60, len(shown)),
             "alerted_lines": sorted(alerted_lines),
             "unknown_effect": n_unknown_effect,
-            # "gtfs_effect" = upstream told us; "unclassified" = it did not.
-            "severity_basis": "unclassified" if (total and n_unknown_effect == total)
-                              else "gtfs_effect",
+            # MTA's own taxonomy, counted. This is what a category breakdown should show;
+            # the high/medium/low tiers above are OUR reading of these labels.
+            "alert_types": dict(sorted(type_counts.items(), key=lambda kv: -kv[1])),
+            "typed": n_typed, "planned": n_planned,
+            # "mercury_alert_type" = MTA classified it; "unclassified" = nothing on the wire.
+            # "gtfs_effect" is never returned any more — that field is never set upstream.
+            "severity_basis": "mercury_alert_type" if n_typed else "unclassified",
             "feeds": {f: {"as_of": t, "count": sum(
                 1 for d in seen.values()
                 if str(d.get("feed") or ("subway_alerts" if d.get("_is_subway")
@@ -724,15 +788,25 @@ def build_wall() -> dict[str, Any]:
             "service_ratio": ratio,
             "bunching": bunch,
             "alerts": {"high": alerts["high"], "medium": alerts["medium"],
-                       "low": alerts["low"], "total": alerts["total"],
+                       "low": alerts["low"],
+                       # W6b: alerts MTA did not classify. Previously these were silently
+                       # counted as "low", which made alerts_low == alerts_total.
+                       "unclassified": alerts.get("unclassified", 0),
+                       # W6b: MTA's OWN taxonomy (MercuryAlert.alert_type), counted.
+                       "alert_types": alerts.get("alert_types", {}),
+                       "typed": alerts.get("typed", 0),
+                       "planned": alerts.get("planned", 0),
+                       "total": alerts["total"],
                        "as_of": alerts["as_of"], "items": alerts["items"],
                        # W6a: which source won and how old it actually is, so the UI
                        # can never label a stale set "live" again.
                        "source": alerts.get("source"), "stale": alerts.get("stale", False),
                        "age_s": alerts.get("age_s"),
-                       # W6a: upstream publishes no effect classification (all
-                       # UNKNOWN_EFFECT), so the high/med/low split is OUR default, not
-                       # MTA's. Say so rather than implying "all alerts are low".
+                       # W6b: "mercury_alert_type" = MTA classified it and the
+                       # high/medium/low split is OUR reading of MTA's own labels;
+                       # "unclassified" = nothing classifiable was on the wire. The
+                       # GTFS-RT `effect` enum is never set upstream and is no longer
+                       # used to produce a tier at all.
                        "severity_basis": alerts.get("severity_basis"),
                        "unknown_effect": alerts.get("unknown_effect"),
                        "items_shown": alerts.get("items_shown", 0),

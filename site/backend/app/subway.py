@@ -442,6 +442,21 @@ def _resolve_train(row: dict[str, Any], now: float) -> dict[str, Any] | None:
         "stop_name": tgt["name"],
         "prev_stop_name": None,
         "timestamp": int(ts) if ts is not None else None,
+        # A3 — position along the pattern. Selected since the feed was first archived and
+        # then dropped before emit; it is 0% null on every subway feed.
+        "current_stop_seq": (int(row["current_stop_seq"])
+                             if row.get("current_stop_seq") is not None else None),
+        # B2 — the subway join key (vehicle_id is 100% NULL). None on rows archived
+        # before 2026-07-25; never fabricate a substitute.
+        "train_id": row.get("train_id"),
+        "nyct_direction": row.get("nyct_direction"),
+        "is_assigned": row.get("is_assigned"),
+        # A6 — MTA staleness vs our lag. header_ts is when MTA says it published;
+        # timestamp is when the train was actually observed. On subway_gtfs the p90 gap
+        # is over 9 hours, so this is not a formality.
+        "header_ts": (int(row["header_ts"]) if row.get("header_ts") is not None else None),
+        "obs_age_s": (int(row["header_ts"] - ts)
+                      if row.get("header_ts") is not None and ts is not None else None),
     }
 
     # STOPPED_AT -> observed at the station.
@@ -531,7 +546,31 @@ def _newest_partition_files(feed: str) -> list[str]:
     return []
 
 
-_ARCHIVE_COLS = "feed, poll_ts, trip_id, route_id, stop_id, current_stop_seq, current_status, timestamp"
+_ARCHIVE_COLS = ("feed, poll_ts, header_ts, trip_id, route_id, stop_id, current_stop_seq, "
+                 "current_status, timestamp")
+
+# NYCT extension columns the poller only began writing on 2026-07-25 (W6b). Absent from
+# every earlier parquet file, so projected only when the scanned files actually have them.
+# `train_id` matters: subway `vehicle_id` is 100% NULL, so it is the ONLY stable subway
+# train identity — the join key that makes a train followable across trip-id changes.
+_ARCHIVE_OPTIONAL_COLS = ("train_id", "is_assigned", "nyct_direction")
+
+_NYCT_NULL = {"train_id": None, "is_assigned": None, "nyct_direction": None}
+
+
+def _nyct_trip_ext(trip_msg) -> dict[str, Any]:
+    """Decode the NYCT TripDescriptor extension off a live protobuf message.
+
+    Shares realtime/gtfs_ext.py with the poller so the live and archive paths cannot
+    drift. Returns all-None on any failure — never a fabricated identity.
+    """
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(config.REALTIME_PKG_DIR))
+        import gtfs_ext  # type: ignore
+        return gtfs_ext.nyct_trip(trip_msg)
+    except Exception:
+        return dict(_NYCT_NULL)
 
 
 def _feed_from_archive(feed: str) -> dict[str, Any] | None:
@@ -541,9 +580,16 @@ def _feed_from_archive(feed: str) -> dict[str, Any] | None:
     lst = ",".join("'" + f + "'" for f in files)
     con = duckdb.connect()
     try:
+        src = f"read_parquet([{lst}], union_by_name=true)"
+        try:
+            have = {c[0] for c in con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()}
+        except Exception:
+            have = set()
+        cols_sql = _ARCHIVE_COLS + "".join(
+            f", {c}" for c in _ARCHIVE_OPTIONAL_COLS if c in have)
         rows = con.execute(
             f"""
-            WITH t AS (SELECT {_ARCHIVE_COLS} FROM read_parquet([{lst}])),
+            WITH t AS (SELECT {cols_sql} FROM {src}),
                  m AS (SELECT max(poll_ts) AS mx FROM t)
             SELECT t.*, (SELECT mx FROM m) AS as_of
             FROM t, m
@@ -596,6 +642,10 @@ def _feed_from_live(feed: str) -> dict[str, Any] | None:
                         "current_stop_seq": v.current_stop_sequence if v.HasField("current_stop_sequence") else None,
                         "current_status": v.current_status if v.HasField("current_status") else None,
                         "timestamp": int(v.timestamp) if v.timestamp else None,
+                        "header_ts": as_of,
+                        # NYCT extension — same decoder the poller uses (realtime/gtfs_ext.py),
+                        # so the live path and the archive path agree field-for-field.
+                        **_nyct_trip_ext(v.trip),
                     }
                 )
             elif ent.HasField("trip_update"):

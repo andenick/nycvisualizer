@@ -1,0 +1,71 @@
+// NYCT GTFS-realtime extension  —  VENDORED, NOT MODIFIED.
+//
+// Source: MTA "NYCT Subway GTFS-Realtime extensions" (published alongside the
+//         nyct%2Fgtfs* feeds on api-endpoint.mta.info).
+// Vendored: 2026-07-25 (W6b). Field numbers verified against the live wire on the
+//           same day — see realtime/proto/README.md for the captured bytes.
+//
+// We do NOT compile this file (no protoc / grpcio-tools on the box). It is the
+// normative reference for the field numbers hard-coded in realtime/gtfs_ext.py,
+// which decodes these messages straight off the unknown-field wire bytes.
+
+syntax = "proto2";
+
+import "gtfs-realtime.proto";
+
+package transit_realtime;
+
+message NyctFeedHeader {
+  // Version of the NYCT Subway extensions in use.
+  required string nyct_subway_version = 1;
+
+  enum TripReplacementPeriod {
+    // (declared inline in the MTA original; retained for fidelity)
+    UNKNOWN = 0;
+  }
+  repeated TripReplacementPeriodEntry trip_replacement_period = 2;
+}
+
+message TripReplacementPeriodEntry {
+  optional string route_id = 1;
+  optional TimeRange replacement_period = 2;
+}
+
+extend FeedHeader {
+  optional NyctFeedHeader nyct_feed_header = 1001;
+}
+
+message NyctTripDescriptor {
+  // The nyct train identity, e.g. "06 0123+ PEL/BBR" or "1A 2226 FAR/207".
+  // Format: <origin-time-in-hundredths-of-a-minute past midnight> <origin>/<dest>.
+  // THIS IS THE SUBWAY JOIN KEY: VehiclePosition.vehicle.id is never populated on
+  // the NYCT feeds, so train_id is the only stable per-train identity available.
+  optional string train_id = 1;
+
+  // false => the trip is a "scheduled" (not yet assigned to a physical train) trip.
+  optional bool is_assigned = 2;
+
+  enum Direction {
+    NORTH = 1;
+    EAST  = 2;
+    SOUTH = 3;
+    WEST  = 4;
+  }
+  optional Direction direction = 3;
+}
+
+extend TripDescriptor {
+  optional NyctTripDescriptor nyct_trip_descriptor = 1001;
+}
+
+message NyctStopTimeUpdate {
+  // Track the train is scheduled to arrive/depart on.
+  optional string scheduled_track = 1;
+  // Track the train is actually operating on. Differs from scheduled_track when
+  // the train has been rerouted — a signal nobody publishes as a statistic.
+  optional string actual_track = 2;
+}
+
+extend TripUpdate.StopTimeUpdate {
+  optional NyctStopTimeUpdate nyct_stop_time_update = 1001;
+}

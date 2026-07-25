@@ -1,0 +1,46 @@
+// OneBusAway GTFS-realtime extension  —  VENDORED, NOT MODIFIED.
+//
+// Source: OneBusAway GTFS-realtime extensions, as served by MTA BusTime
+//         (gtfsrt.prod.obanyc.com), which runs OBA.
+// Vendored: 2026-07-25 (W6b). Field numbers verified against the live wire.
+//
+// WHY THIS MATTERS: `VehiclePosition.occupancy_status` is the 5-bucket GTFS-RT
+// rounding of a real APC head-count. The head-count itself is right here, and
+// MTA Bus Time renders it to riders as "~13 passengers". Corroborated against
+// SIRI on the same fleet (EstimatedPassengerCapacity: 80, EstimatedPassengerCount).
+//
+// We do NOT compile this file. It is the normative reference for the field
+// numbers hard-coded in realtime/gtfs_ext.py.
+
+syntax = "proto2";
+
+import "gtfs-realtime.proto";
+
+package transit_realtime;
+
+message OneBusAwayVehiclePosition {
+  // Live automatic-passenger-counter head-count on board this vehicle.
+  optional int32 passenger_count = 1;
+  // Rated capacity of the vehicle. Constant 80 across the observed NYCT fleet.
+  optional int32 passenger_capacity = 2;
+}
+
+extend VehiclePosition {
+  optional OneBusAwayVehiclePosition oba_vehicle_position = 1006;
+}
+
+message OneBusAwayTripUpdate {
+  optional int32 delay = 1;
+}
+
+extend TripUpdate {
+  optional OneBusAwayTripUpdate oba_trip_update = 1003;
+}
+
+message OneBusAwayFeedHeader {
+  optional int32 incrementality_version = 1;
+}
+
+extend FeedHeader {
+  optional OneBusAwayFeedHeader oba_feed_header = 1003;
+}

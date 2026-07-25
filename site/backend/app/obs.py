@@ -22,7 +22,11 @@ Design notes
   — its two slow aggregates (ridership-by-hour, ACE counts) are precomputed to tiny Parquets.
 * NYC is EDT (UTC-4) for the whole archive window; local seconds = utc_epoch + NYC_UTC_OFFSET_S
   (= utc - 14400). Marey/headway buckets are local, matching derive2.
-* Every reliability response carries {archive_depth_days, preliminary (depth<14), gap_note}.
+* Every reliability response carries an `archive` block whose `archive_depth_days` counts
+  QUALIFYING service days (>= config.OBS_MIN_QUALIFYING_HOURS usable hours in the day's
+  DATA_QUALITY.json), NOT `date=` directories — see "THE DEPTH GATE" below. It also carries
+  `partition_days` (the raw directory count), `excluded_dates` (why each shortfall day does
+  not count), `preliminary`, `rankings_unlocked` and `gap_note`.
 * Marey y-axis is distance-along-shape in feet (offset_ft) on the route+direction's *canonical*
   (most-used) shape; observed trajectories are already 30 s-resampled by derive2 and are thinned
   to ~60 s here to cap payload; scheduled "ghost" trips come from GTFS stop_times projected onto
@@ -104,37 +108,6 @@ def _obs_file(name: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# archive-depth metadata (mtime-cached list of observed service days)
-# --------------------------------------------------------------------------- #
-def _observed_dates_sig() -> tuple:
-    base = config.DERIVED_ROOT / "observed_headways"
-    if not base.exists():
-        return ()
-    return tuple(sorted(p.name for p in base.glob("date=*")))
-
-
-@lru_cache(maxsize=4)
-def _observed_dates_cached(_sig: tuple) -> list[str]:
-    return sorted(d.split("=", 1)[1] for d in _sig)
-
-
-def _observed_dates() -> list[str]:
-    return _observed_dates_cached(_observed_dates_sig())
-
-
-def _archive_meta(dates_used: list[str] | None = None) -> dict[str, Any]:
-    dates = _observed_dates()
-    depth = len(dates)
-    return {
-        "archive_depth_days": depth,
-        "preliminary": depth < 14,
-        "gap_note": _GAP_NOTE,
-        "observed_dates": dates,
-        "dates_used": dates_used if dates_used is not None else dates,
-    }
-
-
-# --------------------------------------------------------------------------- #
 # tiny TTL cache
 # --------------------------------------------------------------------------- #
 _ttl_cache: dict[str, tuple[float, Any]] = {}
@@ -148,6 +121,215 @@ def _cached(key: str, ttl: float, fn):
     val = fn()
     _ttl_cache[key] = (now, val)
     return val
+
+
+# --------------------------------------------------------------------------- #
+# THE DEPTH GATE (W6b P3) — archive depth counted in QUALIFYING days
+# --------------------------------------------------------------------------- #
+# WHY THIS IS NOT A DIRECTORY COUNT
+# ---------------------------------
+# derive2/headways.py:206-208 writes derived/observed_headways/date=<d>/ for ANY day with
+# >= 1 observed arrival. The previous gate was a bare glob of those directories with no
+# hour predicate, no row predicate, and no reference to the data-quality report — so it
+# counted, as full service days:
+#   * 2026-07-21 — the poller was suspended by the disk guard 00:51Z-22:55Z. On
+#     bus_vehicle_positions that day has 3 hours with any rows at all and exactly ONE
+#     usable hour; 322,041 archive rows against ~2.5-3.0 M on a normal day, and only
+#     30,572 headway aggregate rows against ~300-360 k. It counted as 1.0 of the 14.
+#   * 2026-07-17 — the first archive day, which begins 09:53Z: 14 hours, not 24.
+#   * TODAY — always in progress, always counted.
+# A day now QUALIFIES only if it has a headway partition AND its DATA_QUALITY.json shows
+# enough usable hours on the depth feed. Nothing else changed: the partitions are all
+# still queried; it is the DEPTH CLAIM that is now honest.
+#
+# WHICH FEED DEFINES A BUS-HEADWAY DAY  (config.OBS_DEPTH_FEED)
+# -------------------------------------------------------------
+# `bus_vehicle_positions`, because it is the ONLY input to the observed-headway
+# derivation: derive2/headways.py globs bus_vehicle_positions and nothing else, and
+# arrival events are inferred from stop_id / shape-offset transitions in those positions
+# (bus `current_status` is 100% NULL — see derive2/_common.py, S0 findings). The other
+# three feeds in DATA_QUALITY.json (bus_trip_updates, subway_gtfs,
+# citibike_station_status) can be complete or entirely absent without changing a single
+# observed bus headway, so gating a BUS-headway depth claim on them would be measuring
+# the wrong thing. bus_trip_updates supplies only the scheduled-headway comparison; a day
+# missing it yields observed headways with no schedule join, not a missing day.
+#
+# THE HOUR BAR  (config.OBS_MIN_QUALIFYING_HOURS = 20)
+# ----------------------------------------------------
+# 20 usable hours is exactly the ">= 20 distinct hours == a full day" rule that
+# derive2/run_derive.py:_baseline_counts (lines 92-95) already uses to choose the days its
+# per-hour coverage baseline is computed from. This is a REUSE of the completeness notion
+# that already exists in the pipeline, deliberately not a second definition of "full day".
+# An hour is USABLE when it has rows, is not `in_progress` / `known_gap` / `missing` /
+# `partial`, and reaches config.OBS_MIN_HOUR_COVERAGE_PCT (60 %) of the per-hour baseline —
+# the same COVERAGE_PARTIAL_FRAC bar derive2 uses to stamp an hour "partial" and drop it.
+# Hours in DATA_QUALITY.json are UTC hour-of-day (the archive's `hour=` partition), which
+# is the same unit _baseline_counts counts, so the two rules are commensurate.
+_HOUR_EXCLUDED_STATUSES = frozenset({"in_progress", "known_gap", "missing", "partial"})
+
+
+def _hour_is_usable(h: dict[str, Any]) -> bool:
+    """One DATA_QUALITY.json hour record -> does it count toward a full day?"""
+    try:
+        rows = int(h.get("rows") or 0)
+    except (TypeError, ValueError):
+        rows = 0
+    if rows <= 0:
+        return False
+    if str(h.get("status") or "") in _HOUR_EXCLUDED_STATUSES:
+        return False
+    cov = h.get("coverage_pct")
+    if cov is not None and float(cov) < config.OBS_MIN_HOUR_COVERAGE_PCT:
+        return False
+    return True
+
+
+def _depth_sig_uncached() -> tuple:
+    """Change-detector for the depth gate.
+
+    Partition NAMES alone are not enough: DATA_QUALITY.json is rewritten in place by every
+    derive run (every 30 min) without any directory changing, so a name-only signature
+    would pin a day at whatever completeness it had when the process started. We therefore
+    include each report's mtime — but the whole signature is computed at most once per
+    config.OBS_DEPTH_SIG_TTL_S (see `_depth_sig`), so a request never stats the tree.
+    `_today_local()` is in the signature so the "today is in progress" exclusion rolls over
+    at local midnight even on a box where nothing else changed.
+    """
+    hw = config.DERIVED_ROOT / "observed_headways"
+    parts = tuple(sorted(p.name for p in hw.glob("date=*"))) if hw.exists() else ()
+    marks: list[tuple[str, int]] = []
+    dq = config.DATA_QUALITY_ROOT
+    if dq.exists():
+        for p in sorted(dq.glob("date=*")):
+            try:
+                marks.append((p.name, int((p / "DATA_QUALITY.json").stat().st_mtime)))
+            except OSError:
+                marks.append((p.name, -1))
+    return (parts, tuple(marks), _today_local())
+
+
+def _depth_sig() -> tuple:
+    return _cached("obs_depth_sig", config.OBS_DEPTH_SIG_TTL_S, _depth_sig_uncached)
+
+
+@lru_cache(maxsize=4)
+def _depth_state_cached(_sig: tuple) -> dict[str, Any]:
+    """Evaluate every headway partition against the depth bar. Cached on `_depth_sig()`,
+    so the DATA_QUALITY.json parsing happens only when a derive run actually changed one."""
+    parts, _marks, today = _sig
+    dates = sorted(d.split("=", 1)[1] for d in parts)
+    qualifying: list[str] = []
+    excluded: list[dict[str, Any]] = []
+    feed_name = config.OBS_DEPTH_FEED
+    for d in dates:
+        # A day that has not ended cannot be a full day, whatever the report says (and the
+        # report for today is itself a snapshot taken mid-day).
+        if d >= today:
+            excluded.append({
+                "date": d, "reason": "day_in_progress",
+                "detail": f"{d} is the current local service day (or later) — not yet complete.",
+            })
+            continue
+        f = config.DATA_QUALITY_ROOT / f"date={d}" / "DATA_QUALITY.json"
+        try:
+            report = json.loads(f.read_text(encoding="utf-8"))
+            hours = report["feeds"][feed_name]["hours"]
+        except Exception as e:
+            # No evidence of completeness -> not counted. Silence is not a full day.
+            excluded.append({
+                "date": d, "reason": "no_data_quality_report",
+                "detail": f"{f.name} unreadable for feed {feed_name} ({type(e).__name__}).",
+            })
+            continue
+        usable = sorted(h for h, v in hours.items() if _hour_is_usable(v))
+        with_rows = sorted(h for h, v in hours.items() if int(v.get("rows") or 0) > 0)
+        rows_total = sum(int(v.get("rows") or 0) for v in hours.values())
+        if len(usable) >= config.OBS_MIN_QUALIFYING_HOURS:
+            qualifying.append(d)
+            continue
+        status_counts: dict[str, int] = {}
+        for v in hours.values():
+            s = str(v.get("status") or "unknown")
+            status_counts[s] = status_counts.get(s, 0) + 1
+        excluded.append({
+            "date": d, "reason": "insufficient_hours",
+            "detail": (
+                f"{len(usable)}/{config.OBS_MIN_QUALIFYING_HOURS} usable {feed_name} hours "
+                f"({len(with_rows)} of 24 hours have any rows; {rows_total:,} rows; "
+                + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())) + ")."
+            ),
+            "usable_hours": len(usable),
+            "hours_with_rows": len(with_rows),
+            "rows": rows_total,
+            "coverage_pct_mean": report["feeds"][feed_name].get("coverage_pct_mean"),
+            "hour_status_counts": status_counts,
+        })
+    return {"observed_dates": dates, "qualifying_dates": qualifying, "excluded_dates": excluded}
+
+
+def _depth_state() -> dict[str, Any]:
+    return _depth_state_cached(_depth_sig())
+
+
+def _observed_dates() -> list[str]:
+    """Every service day with a headway partition on disk (query scope, NOT depth)."""
+    return _depth_state()["observed_dates"]
+
+
+def _qualifying_dates() -> list[str]:
+    """The service days that are complete enough to count toward archive depth."""
+    return _depth_state()["qualifying_dates"]
+
+
+def _archive_meta(dates_used: list[str] | None = None) -> dict[str, Any]:
+    """Archive-depth block carried by every reliability response.
+
+    DECISION (W6b P3) — `archive_depth_days` is now the QUALIFYING count, not the
+    partition count. Every consumer of this field (the PRELIMINARY badge, the league
+    gate, the box-sync verification log, the frontend depth copy) reads it as "how much
+    real observation stands behind these numbers". Leaving it as the directory count
+    while adding an honest field beside it would have kept every one of those consumers
+    wrong-by-default and made honesty opt-in. The directory count is NOT lost — it is
+    reported as `partition_days`/`partition_dates`, and the two are fully reconciled by
+    `excluded_dates`, one record per non-qualifying day with the reason and the real
+    hour/row numbers. Both numbers and their difference are therefore legible in the
+    payload. `observed_dates` keeps its old meaning (all partitions) for compatibility.
+    """
+    st = _depth_state()
+    dates: list[str] = st["observed_dates"]
+    qualifying: list[str] = st["qualifying_dates"]
+    depth = len(qualifying)
+    unlocked = depth >= config.OBS_RANKINGS_MIN_DAYS
+    return {
+        # honest depth — the gate
+        "archive_depth_days": depth,
+        "qualifying_days": depth,
+        "qualifying_dates": qualifying,
+        # raw partition count, kept visible beside it
+        "partition_days": len(dates),
+        "partition_dates": dates,
+        "non_qualifying_days": len(dates) - depth,
+        "excluded_dates": st["excluded_dates"],
+        "preliminary": depth < config.OBS_RANKINGS_MIN_DAYS,
+        "rankings_unlocked": unlocked,
+        "depth_criteria": {
+            "feed": config.OBS_DEPTH_FEED,
+            "min_qualifying_hours": config.OBS_MIN_QUALIFYING_HOURS,
+            "min_hour_coverage_pct": config.OBS_MIN_HOUR_COVERAGE_PCT,
+            "rankings_min_days": config.OBS_RANKINGS_MIN_DAYS,
+        },
+        "depth_basis": (
+            f"archive_depth_days counts QUALIFYING service days, not date= partitions. A day "
+            f"qualifies when it has an observed-headway partition AND its DATA_QUALITY.json "
+            f"shows >= {config.OBS_MIN_QUALIFYING_HOURS} usable {config.OBS_DEPTH_FEED} hours "
+            f"(an hour is usable with rows present, status not in {{in_progress, known_gap, "
+            f"missing, partial}}, and >= {config.OBS_MIN_HOUR_COVERAGE_PCT:g}% of the per-hour "
+            f"baseline). {len(dates)} partitions on disk, {depth} qualify; see excluded_dates."
+        ),
+        "gap_note": _GAP_NOTE,
+        "observed_dates": dates,
+        "dates_used": dates_used if dates_used is not None else dates,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -1020,13 +1202,14 @@ def _leagues_payload() -> dict[str, Any]:
         con.close()
 
     archive = _archive_meta()
-    # Q2.3 league gating: below 14-day depth the ordinal winner/loser naming is
+    # Q2.3 league gating: below the qualifying-day threshold the ordinal winner/loser naming is
     # NOT earned, so the frontend renders the DISTRIBUTION instead of the ranked
     # boards. `distribution` is the FULL qualifying set, sorted by route short_name
     # (natural, NOT by reliability) so it carries no implicit rank — the frontend
     # table is client-sortable but shows no rank column and no most/least framing.
     # The ranked boards (most/least reliable, most improved) still ride the payload
-    # so the page auto-flips to the leaderboard at depth ≥ 14 with no code change.
+    # so the page auto-flips to the leaderboard at depth ≥ config.OBS_RANKINGS_MIN_DAYS
+    # with no code change.
     distribution = sorted(
         (
             {
@@ -1046,13 +1229,17 @@ def _leagues_payload() -> dict[str, Any]:
             "note": (
                 f"Routes with < {_MIN_OBS_DAYS} observed days or < {_MIN_HEADWAYS} total observed "
                 "headways are excluded as thin/gap-dominated. Reliability is ranked by bunching_index "
-                "(lower = steadier gaps); it is PRELIMINARY until the archive reaches 14-day depth."
+                f"(lower = steadier gaps); it is PRELIMINARY until the archive reaches "
+                f"{config.OBS_RANKINGS_MIN_DAYS} QUALIFYING days "
+                f"(currently {archive['qualifying_days']} of {archive['partition_days']} "
+                "date= partitions qualify — see archive.excluded_dates)."
             ),
             "excluded_thin_routes": excluded,
             "qualifying_routes": len(reliable_rows),
         },
-        # Q2.3: the boards are gated CLIENT-SIDE on archive.archive_depth_days ≥ 14.
-        "rankings_unlocked": archive["archive_depth_days"] >= 14,
+        # Q2.3: the boards are gated CLIENT-SIDE on archive.archive_depth_days, which is the
+        # QUALIFYING-day count (W6b P3) — a suspended or part-day never unlocks a ranking.
+        "rankings_unlocked": archive["rankings_unlocked"],
         "most_reliable": reliable_rows[:15],
         "least_reliable": list(reversed(reliable_rows))[:15],
         "slowest_corridors": slowest,

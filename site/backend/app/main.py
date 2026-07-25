@@ -14,8 +14,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import (busshapes, changes, config, downloads, gtfs, isochrone, obs, opswall,
-               realtime, renters, runtime, siri, subway)
+from . import (autostats, busshapes, changes, config, downloads, gtfs, isochrone, obs,
+               opswall, realtime, renters, runtime, siri, subway)
 
 app = FastAPI(title="nycvisualizer API", version="0.1.0")
 
@@ -40,6 +40,11 @@ app.include_router(renters.router)
 
 # Live Ops Wall (S6): /api/wall — one aggregate control-room JSON + SSE.
 app.include_router(opswall.router)
+
+# Auto-stats (W6b P4): /api/autostats/* — plain-language route summary, time-of-day
+# reliability profile, borough rollups, corridor slow-spots, archive completeness,
+# and the route ladder.
+app.include_router(autostats.router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -12,6 +12,87 @@ All notable changes to nycvisualizer are recorded here.
 > work, that citation (e.g. NBER w33584, arXiv:2606.17530) is unchanged and remains
 > the reader's referent.
 
+## 2026-07-25 — API: honest alert severity, real subway train identity, a depth gate that counts qualifying days, and auto-stats
+
+The backend half of the 2026-07-25 work, deployed together (one API image rebuild).
+
+### Publication hygiene (visitor-facing)
+
+- `/api/downloads` no longer ships an internal research-archive identifier in the
+  Hub-Bound Parquet note. The reader's provenance is the published report series:
+  *NYMTC Hub Bound Travel Report*. This string was rendered on the public Data page.
+- The realtime poller's outbound `User-Agent` carried a **personal email address** —
+  published in this repository and transmitted to the feed host on every fetch. It now
+  points at this repository: the same courtesy signal to MTA, without the PII.
+- `OTP_URL` **lost its built-in default**. The routing engine is deployment-specific
+  infrastructure, so its address comes from the environment and nowhere else; the
+  hostname and private network name are gone from the source. This is a **functional**
+  change: with `OTP_URL` unset, `/api/isochrone` returns an honest 503 naming the missing
+  variable instead of resolving a guessed internal hostname. It has never faked a polygon
+  and still does not.
+
+### Service alerts are classified by MTA's own taxonomy, not by a field MTA never sets
+
+GTFS-RT `effect` is a proto2 default on these feeds — every alert decodes as
+`UNKNOWN_EFFECT`, so the previous severity table classified **100% of alerts "low"**
+(417/417 on the live feed). MTA's real classification rides in the Mercury `alert_type`
+extension, which the stock bindings cannot see.
+
+- New `pipeline/realtime/gtfs_ext.py` decodes the NYCT, Mercury and OneBusAway vendor
+  extensions straight from the wire, with the three `.proto` files vendored under
+  `pipeline/realtime/proto/` as the normative reference (no codegen step). Every decode is
+  fault-isolated: a changed extension yields `None`, never an exception.
+- `/api/wall` now tiers alerts by `alert_type`, and an alert with nothing on the wire is
+  **"unclassified"** — never "low". Measured live at deploy: 71 high / 251 medium /
+  20 low / 76 unclassified, `severity_basis: mercury_alert_type`. The 76 are the bus feed,
+  which genuinely carries no Mercury extension; that is reported, not guessed at.
+- `/api/rt/alerts` gains `description_text` (the "What's happening?" copy and the
+  suggested alternative), `active_period`, `active_now`, `alert_type`, `created_at`,
+  `updated_at`, `count`, `stale` and a `severity_note` stating what MTA does and does not
+  publish.
+
+### Subway trains have an identity again
+
+Subway `vehicle_id` is 100% NULL on these feeds, so a train could not be followed across
+trip-id changes. The NYCT `TripDescriptor` extension supplies `train_id`, and
+`/api/rt/subway` now carries it (238/238 non-null at deploy) alongside `nyct_direction`,
+`is_assigned`, `current_stop_seq`, and `header_ts` + `obs_age_s` — MTA's own publication
+time versus when the train was observed, which is not a formality on a feed whose p90 gap
+is over nine hours. Rows archived before this change return `null`; nothing is substituted.
+
+### The archive depth gate counts qualifying service days
+
+`archive_depth_days` was a bare count of `date=` partition directories, and a partition is
+written for any day with a single observed arrival — so a two-hour day and a
+twenty-four-hour day counted the same. A day now qualifies only if its own per-hour
+data-quality report shows enough usable hours on the feed the derivation actually reads.
+Live at deploy: **6 qualifying days of 9 partitions** (2026-07-17 begins mid-morning;
+2026-07-21 lost the day to the disk guard, 1 usable hour; today is in progress), each
+exclusion published with its reason and row counts under `archive.excluded_dates`.
+`partition_days` keeps the raw count visible. Rankings stay locked until 14 qualifying
+days — unchanged, and now honestly measured.
+
+### New: `/api/autostats/*`
+
+Six read-only endpoints that answer a planner's question in words rather than a chart:
+`/completeness` (which days and hours are partial, missing, a known gap or in progress,
+plus an equivalent-complete-days number), `/route/{id}/today`, `/profile`, `/boroughs`,
+`/route/{id}/slowspots`, `/ladder`. Every payload carries the same `archive` honesty block
+and a coverage stamp; a thin sample is reported as thin, never smoothed over.
+
+### Internals
+
+- `config.REALTIME_PKG_DIR` resolves the directory the API imports `gtfs_ext` from. The
+  development tree and the container image put the pipeline in different places, and the
+  three import sites fault-isolate to all-`None` extension fields — so a wrong path would
+  have degraded **silently** in production, classifying every alert "unclassified" and
+  nulling every `train_id`, with no error anywhere. It is resolved explicitly and
+  overridable with `NYCV_REALTIME_DIR`.
+- The archive readers project newly-written optional columns (`header_ts`,
+  `occupancy_status`, `passenger_count`, `passenger_capacity`, `train_id`,
+  `is_assigned`, `nyct_direction`) only when the scanned files actually carry them, so
+  older Parquet files still read.
+
 ## 2026-07-25 — Publication hygiene: the Methodology tabs stop leaking the build environment
 
 A visitor who clicked a **Methodology** tab was shown our build environment. The

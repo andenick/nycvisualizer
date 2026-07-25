@@ -2,7 +2,7 @@
 """
 Realtime derivation engine v2 (derive2) — shared helpers.
 
-Public-repo hygiene: NO absolute D:/Arcanum literals anywhere. The pipeline root is
+Public-repo hygiene: NO absolute workspace paths anywhere. The pipeline root is
 resolved from the NYCV_PIPELINE_ROOT env var (the convention the poller / snapshot /
 derive scripts share), falling back to the NYCPlatform dir two levels above this file
 (realtime/derive2/_common.py -> derive2 -> realtime -> NYCPlatform).

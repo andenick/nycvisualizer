@@ -98,6 +98,12 @@ def _cache_put(key: str, data: dict) -> None:
 
 def _fetch_otp(lat: float, lon: float, minutes: int, depart: str) -> dict:
     """Call OTP's TravelTime isochrone endpoint. Raises OTPUnavailable on any failure."""
+    # The OTP endpoint has no built-in default (config.py): it is deployment-specific
+    # infrastructure. Unconfigured is an honest 503, not a guessed hostname.
+    if not config.OTP_URL:
+        raise OTPUnavailable(
+            "OTP is not configured on this deployment (set the OTP_URL environment "
+            "variable to the routing service)")
     url = f"{config.OTP_URL}/otp/traveltime/isochrone"
     params = {
         "location": f"{lat},{lon}",

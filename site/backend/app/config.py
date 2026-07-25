@@ -43,7 +43,36 @@ DERIVED_ROOT: Path = _path_env("NYCV_DERIVED_ROOT", PLATFORM_ROOT / "realtime" /
 DERIVE2_CACHE: Path = _path_env(
     "NYCV_DERIVE2_CACHE", PLATFORM_ROOT / "realtime" / "derive2" / "cache"
 )
-# Analysis outputs tree:  Jane/Outputs/NYCPlatform/  (two levels up from the platform root).
+
+
+def _first_existing(*cands: Path) -> Path:
+    """First candidate that exists, else the first candidate (so errors name it)."""
+    for c in cands:
+        if c.exists():
+            return c
+    return cands[0]
+
+
+# Directory holding the realtime helper MODULES the API imports at runtime — today
+# just `gtfs_ext.py`, the GTFS-RT vendor-extension decoder (NYCT / Mercury / OneBusAway)
+# that realtime.py, subway.py and opswall.py share with the poller so the live and
+# archive paths cannot drift.
+#
+# WHY THIS IS NOT `PLATFORM_ROOT / "realtime"`. The layouts genuinely differ:
+#   dev tree  : <platform root>/realtime/gtfs_ext.py
+#   container : the Dockerfile copies pipeline/ to /opt/nycvisualizer/pipeline/, so it is
+#               <platform root>/pipeline/realtime/gtfs_ext.py and there is NO
+#               <platform root>/realtime at all.
+# The three call sites fault-isolate a failed import to all-None extension fields, which
+# means a wrong path here degrades SILENTLY in production: every alert would classify as
+# "unclassified" and every subway train_id would be NULL, with no error anywhere. Resolve
+# it explicitly instead, and let NYCV_REALTIME_DIR override on any other layout.
+REALTIME_PKG_DIR: Path = _path_env(
+    "NYCV_REALTIME_DIR",
+    _first_existing(PLATFORM_ROOT / "realtime", PLATFORM_ROOT / "pipeline" / "realtime"),
+)
+# Analysis outputs tree. Defaults to a sibling outputs directory two levels above the
+# platform root; override with NYCV_OUTPUTS_ROOT on any deployment.
 NYC_OUTPUTS_ROOT: Path = _path_env(
     "NYCV_OUTPUTS_ROOT", PLATFORM_ROOT.parents[1] / "Outputs" / "NYCPlatform"
 )
@@ -52,6 +81,35 @@ OBS_PRECOMPUTE_DIR: Path = _path_env("NYCV_OBS_PRECOMPUTE", BUS_OUTPUTS_DIR / "o
 SAI_DIR: Path = _path_env("NYCV_SAI_DIR", NYC_OUTPUTS_ROOT / "sai")
 # NYC is EDT (UTC-4) for the whole archive window (no DST transition inside it).
 NYC_UTC_OFFSET_S = int(os.environ.get("NYCV_UTC_OFFSET_S", "-14400"))
+
+# --- Archive DEPTH GATE (W6b P3) -------------------------------------------
+# The gate that decides whether the Observatory's reliability numbers are PRELIMINARY
+# and whether the league boards may be ranked at all. It counts QUALIFYING service days,
+# never `date=*` directories — derive2/headways.py writes a partition for any day with
+# >= 1 observed arrival, so a 2-hour day and a 24-hour day used to count the same.
+# Every threshold below is env-overridable (config.py header rule: never hardcoded).
+#
+# derived/data_quality/date=*/DATA_QUALITY.json — the per-day, per-feed, per-hour
+# coverage report derive2 already writes. It is the evidence the gate reads.
+DATA_QUALITY_ROOT: Path = _path_env("NYCV_DATA_QUALITY_ROOT", DERIVED_ROOT / "data_quality")
+# Qualifying-day depth at which ordinal ranking ("most/least reliable") is earned and the
+# PRELIMINARY flag drops. Was a bare `14` literal in obs.py (twice).
+OBS_RANKINGS_MIN_DAYS = int(os.environ.get("NYCV_OBS_RANKINGS_MIN_DAYS", "14"))
+# Usable hours a day must have to count as a full service day. 20 is NOT a new number:
+# it is the ">= 20 distinct hours == a full day" rule derive2/run_derive.py:_baseline_counts
+# already uses when picking the days its per-hour coverage baseline is built from.
+OBS_MIN_QUALIFYING_HOURS = int(os.environ.get("NYCV_OBS_MIN_QUALIFYING_HOURS", "20"))
+# An hour counts as usable only at/above this % of the per-hour baseline row count.
+# 60 mirrors derive2/_common.py COVERAGE_PARTIAL_FRAC (0.60), the same bar derive2 uses
+# to stamp an hour "partial" and drop it from stats.
+OBS_MIN_HOUR_COVERAGE_PCT = float(os.environ.get("NYCV_OBS_MIN_HOUR_COVERAGE_PCT", "60"))
+# The feed whose hourly coverage defines completeness for a BUS-headway day. See the long
+# comment in obs.py — bus_vehicle_positions is the only input to the headway derivation.
+OBS_DEPTH_FEED = os.environ.get("NYCV_OBS_DEPTH_FEED", "bus_vehicle_positions")
+# The depth signature (partition names + DATA_QUALITY.json mtimes + local date) is recomputed
+# at most once per this many seconds, so a request never stats the whole data_quality tree.
+# derive2 rewrites DATA_QUALITY.json every 30 min, so 60 s is far inside the write cadence.
+OBS_DEPTH_SIG_TTL_S = float(os.environ.get("NYCV_OBS_DEPTH_SIG_TTL_S", "60"))
 
 # Server-side credentials — never sent to the client.
 MTA_BUSTIME_KEY: str = os.environ.get("MTA_BUSTIME_KEY", "")
@@ -107,12 +165,14 @@ ALERTS_LIVE_TTL_S = int(os.environ.get("NYCV_ALERTS_LIVE_TTL_S", "60"))
 ALERTS_STALE_AFTER_S = int(os.environ.get("NYCV_ALERTS_STALE_AFTER_S", "900"))
 
 # ---------------------------------------------------------------------------
-# OTP routing engine (isochrones).  The browser NEVER talks to OTP directly;
-# only this backend does, over the internal docker network.  In production
-# OTP_URL points at the `nycvis-otp` container on homelab_default; for local
-# dev it is an ssh-tunnel to the box (e.g. http://localhost:8080) or absent.
-# If OTP is unreachable the isochrone endpoint returns 503 (never fake polygons).
-OTP_URL: str = os.environ.get("OTP_URL", "http://nycvis-otp:8080").rstrip("/")
+# OTP routing engine (isochrones).  The browser NEVER talks to OTP directly; only this
+# backend does, over a private network the deployment supplies.  There is deliberately
+# NO built-in default: the OTP endpoint is deployment-specific infrastructure, so it is
+# configured entirely through the `OTP_URL` environment variable (docker compose in
+# production, an ssh-tunnel such as http://localhost:8080 for local dev).
+# Unset -> the isochrone endpoint returns 503 with a plain reason. It NEVER fakes a
+# polygon, and it never falls back to guessing a hostname.
+OTP_URL: str = os.environ.get("OTP_URL", "").rstrip("/")
 OTP_TIMEOUT_S: float = float(os.environ.get("OTP_TIMEOUT_S", "20"))
 
 # Departure-time windows for isochrones. Anchored to the next weekday within the
