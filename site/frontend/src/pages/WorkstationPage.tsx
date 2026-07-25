@@ -374,6 +374,13 @@ export default function WorkstationPage() {
     }
     if (selRoutesRef.current.length) p.set("routes", selRoutesRef.current.join(","));
     if (selLinesRef.current.length) p.set("lines", selLinesRef.current.join(","));
+    // Preserve ?perf. This effect is declared BEFORE the map-init effect, so on mount it
+    // ran first and rewrote the URL without `perf` — and map init then read
+    // `window.location.search`, found no flag, and never installed the `__nycvFlow` /
+    // `__nycvMap` diagnostic handles. The documented perf hook was therefore dead on this
+    // page specifically (found while instrumenting the 2026-07-25 freeze; the harness had
+    // to shim history.replaceState to get engine stats at all).
+    if (new URLSearchParams(window.location.search).has("perf")) p.set("perf", "1");
     window.history.replaceState(null, "", window.location.pathname + (p.toString() ? "?" + p.toString() : ""));
   });
   useEffect(() => {
@@ -394,6 +401,30 @@ export default function WorkstationPage() {
         maxBounds: NYC_BOUNDS,
         maxBoundsViscosity: 0.6,
         zoomControl: true,
+        // ---------------------------------------------------------------------------
+        // THE FREEZE FIX (2026-07-25). This is the ONLY multi-select map in the app:
+        // `redrawStops()` draws one dot per stop for EVERY selected route, so a borough
+        // "select all" is not a handful of markers, it is thousands. Measured on the
+        // live site, all 57 Bronx routes: **3,193 stop dots**.
+        //
+        // Without `preferCanvas` every one of those is an individual SVG <path> in the
+        // overlay pane. At citywide zoom Leaflet clips most of them to an empty `d`, so
+        // the page looks fine; pan into the Bronx and all 3,193 become live paths that
+        // the browser must re-attribute and re-raster on every map move. Measured at
+        // 4x CPU throttle, Bronx z14, 57 routes: a drag-pan took **954 ms** of wall
+        // clock and the page spent 2,821 ms in long tasks over ten gestures. Removing
+        // just these dots took the same gestures to 498 ms / 480 ms; removing the flow
+        // engine instead changed nothing (982 ms). The dots were the whole problem.
+        //
+        // `preferCanvas` routes every L.circleMarker/L.polyline on this map into ONE
+        // shared canvas — no per-stop DOM node, no per-stop style/layout/raster — while
+        // keeping popups and hit-testing (Leaflet canvas hit-tests on a 32 ms throttle).
+        // This is the same remedy already applied to the three other dot-heavy maps in
+        // this codebase; see `RentersMap.tsx` ("the cold cluster of stop circleMarkers
+        // can stall the SVG renderer"), `SidewalkMap.tsx` and `ReliabilityRibbon.tsx`.
+        // The workstation was simply the one that was missed — and the only one that
+        // can put thousands of dots on screen at once.
+        preferCanvas: true,
       });
     } catch (e) {
       trackMapError("init:" + (e instanceof Error ? e.message : String(e)));
