@@ -40,6 +40,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from google.transit import gtfs_realtime_pb2
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gtfs_ext  # noqa: E402  (vendor-extension decoder; see realtime/proto/README.md)
+
 # ------------------------------------------------------------------ paths / const
 ROOT = Path(__file__).resolve().parent                     # .../realtime
 PLATFORM = ROOT.parent                                     # .../NYCPlatform
@@ -48,6 +51,7 @@ ARCHIVE = ROOT / "archive"
 LOGDIR = ROOT / "logs"
 STATUS_FILE = ROOT / "POLLER_STATUS.json"
 LOCKFILE = ROOT / "poller.lock"
+RESTART_FILE = ROOT / "poller.restart"   # touch to request a lossless graceful restart
 
 LOCK_PORT = 47654          # single-instance guard (localhost bind)
 DISK_FLOOR_GB = 30.0       # stop archiving below this free space on D:
@@ -105,22 +109,27 @@ FEEDS = [
     dict(name="bus_alerts", url=bus_url("alerts"), interval=300,
          parser="alert", group="bus", fmt="jsonl"),
     # --- Subway / SIR line-group feeds (key-free) every 30s ---
+    # parser="vehicle_trip": ONE fetch, BOTH entity kinds. Each NYCT payload is ~50%
+    # TripUpdate entities (57 of 114 on the reference capture) and, until 2026-07-25,
+    # every one of those subway arrival predictions was parsed away and discarded. The
+    # trip rows are routed to a derived sink feed `<name>_trip_updates` (see
+    # DERIVED_TRIP_FEEDS); NO extra HTTP request is made.
     dict(name="subway_gtfs", url=f"{SUBWAY_BASE}/nyct%2Fgtfs", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_ace", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-ace", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_bdfm", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-bdfm", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_g", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-g", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_jz", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-jz", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_nqrw", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-nqrw", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_l", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-l", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     dict(name="subway_si", url=f"{SUBWAY_BASE}/nyct%2Fgtfs-si", interval=30,
-         parser="vehicle", group="other", fmt="parquet"),
+         parser="vehicle_trip", group="other", fmt="parquet"),
     # --- Commuter rail every 60s ---
     dict(name="lirr", url=f"{SUBWAY_BASE}/lirr%2Fgtfs-lirr", interval=60,
          parser="vehicle", group="other", fmt="parquet"),
@@ -138,6 +147,20 @@ FEEDS = [
     dict(name="ferry_trip_updates", url=f"{FERRY_BASE}/tripupdate", interval=60,
          parser="trip", group="other", fmt="parquet"),
 ]
+
+# ------------------------------------------------------------------ derived sinks
+# A "derived" feed is NEVER fetched. It is an archive sink for rows a parser extracts
+# from a payload another feed already downloaded. group="derived" keeps it out of both
+# schedulers (bus_scheduler_loop takes group=="bus", run() takes group=="other"), while
+# maintenance_loop still flushes it and write_status still reports it.
+def trip_sink_name(feed: str) -> str:
+    return f"{feed}_trip_updates"
+
+DERIVED_TRIP_FEEDS = [trip_sink_name(f["name"]) for f in FEEDS if f["parser"] == "vehicle_trip"]
+
+FEEDS += [dict(name=n, url=None, interval=0, parser="derived", group="derived",
+               fmt="parquet", source=n[:-len("_trip_updates")])
+          for n in DERIVED_TRIP_FEEDS]
 
 # ------------------------------------------------------------------ shared state
 class FeedState:
@@ -185,22 +208,36 @@ def _enum(v):
     except Exception:
         return None
 
-def parse_vehicle(content: bytes, feed: str, poll_ts: int):
-    fm = gtfs_realtime_pb2.FeedMessage()
-    fm.ParseFromString(content)
-    hdr = int(fm.header.timestamp) if fm.header.HasField("timestamp") else None
+def _trip_common(trip) -> dict:
+    """Fields carried on a TripDescriptor, base + NYCT extension.
+
+    start_date/start_time disambiguate a trip_id ACROSS SERVICE DAYS (a 25-hour-clock
+    late trip vs today's). The NYCT extension supplies train_id — the only stable subway
+    train identity, since VehiclePosition.vehicle.id is 100% NULL on the NYCT feeds.
+    """
+    out = dict(
+        trip_id=(trip.trip_id or None),
+        route_id=(trip.route_id or None),
+        direction_id=(int(trip.direction_id) if trip.HasField("direction_id") else None),
+        start_date=(trip.start_date or None),
+        start_time=(trip.start_time or None),
+        trip_sched_rel=(_enum(trip.schedule_relationship)
+                        if trip.HasField("schedule_relationship") else None),
+    )
+    out.update(gtfs_ext.nyct_trip(trip))   # train_id, is_assigned, nyct_direction
+    return out
+
+
+def _vehicle_rows(fm, feed: str, poll_ts: int, hdr: int | None) -> list[dict]:
     rows = []
     for e in fm.entity:
         if not e.HasField("vehicle"):
             continue
         v = e.vehicle
         pos = v.position
-        rows.append(dict(
+        row = dict(
             feed=feed, poll_ts=poll_ts, header_ts=hdr,
             vehicle_id=(v.vehicle.id or None),
-            trip_id=(v.trip.trip_id or None),
-            route_id=(v.trip.route_id or None),
-            direction_id=(int(v.trip.direction_id) if v.trip.HasField("direction_id") else None),
             lat=(pos.latitude if v.HasField("position") else None),
             lon=(pos.longitude if v.HasField("position") else None),
             bearing=(pos.bearing if v.HasField("position") and pos.HasField("bearing") else None),
@@ -210,33 +247,41 @@ def parse_vehicle(content: bytes, feed: str, poll_ts: int):
             current_stop_seq=(int(v.current_stop_sequence) if v.HasField("current_stop_sequence") else None),
             current_status=(_enum(v.current_status) if v.HasField("current_status") else None),
             occupancy_status=(_enum(v.occupancy_status) if v.HasField("occupancy_status") else None),
-        ))
-    return rows, hdr
+        )
+        row.update(_trip_common(v.trip))
+        # OneBusAway APC head-count — the real number `occupancy_status` rounds into
+        # 5 buckets. NULL means "no APC on this vehicle", NEVER "empty".
+        row.update(gtfs_ext.oba_vehicle(v))
+        rows.append(row)
+    return rows
 
-def parse_trip(content: bytes, feed: str, poll_ts: int):
-    fm = gtfs_realtime_pb2.FeedMessage()
-    fm.ParseFromString(content)
-    hdr = int(fm.header.timestamp) if fm.header.HasField("timestamp") else None
+
+def _trip_rows(fm, feed: str, poll_ts: int, hdr: int | None) -> list[dict]:
     rows = []
     for e in fm.entity:
         if not e.HasField("trip_update"):
             continue
         tu = e.trip_update
-        trip_id = tu.trip.trip_id or None
-        route_id = tu.trip.route_id or None
+        common = _trip_common(tu.trip)
         vid = tu.vehicle.id or None
+        # TRIP-LEVEL delay: MTA publishes schedule deviation directly here, at 100%
+        # coverage on the bus tripUpdates feed. The PER-STOP stu.*.delay below is never
+        # set. Reading only the per-stop one discarded the agency's own adherence number.
+        trip_delay = int(tu.delay) if tu.HasField("delay") else None
+        trip_ts = int(tu.timestamp) if tu.HasField("timestamp") else None
+        base = dict(feed=feed, poll_ts=poll_ts, header_ts=hdr, vehicle_id=vid,
+                    trip_delay=trip_delay, trip_ts=trip_ts, **common)
         if not tu.stop_time_update:
             rows.append(dict(
-                feed=feed, poll_ts=poll_ts, header_ts=hdr, trip_id=trip_id,
-                route_id=route_id, vehicle_id=vid, stop_id=None, stop_seq=None,
+                base, stop_id=None, stop_seq=None,
                 arrival_time=None, arrival_delay=None, departure_time=None,
                 departure_delay=None, schedule_relationship=None,
+                scheduled_track=None, actual_track=None,
             ))
             continue
         for stu in tu.stop_time_update:
-            rows.append(dict(
-                feed=feed, poll_ts=poll_ts, header_ts=hdr, trip_id=trip_id,
-                route_id=route_id, vehicle_id=vid,
+            row = dict(
+                base,
                 stop_id=(stu.stop_id or None),
                 stop_seq=(int(stu.stop_sequence) if stu.HasField("stop_sequence") else None),
                 arrival_time=(int(stu.arrival.time) if stu.HasField("arrival") and stu.arrival.HasField("time") else None),
@@ -244,8 +289,39 @@ def parse_trip(content: bytes, feed: str, poll_ts: int):
                 departure_time=(int(stu.departure.time) if stu.HasField("departure") and stu.departure.HasField("time") else None),
                 departure_delay=(int(stu.departure.delay) if stu.HasField("departure") and stu.departure.HasField("delay") else None),
                 schedule_relationship=(_enum(stu.schedule_relationship) if stu.HasField("schedule_relationship") else None),
-            ))
-    return rows, hdr
+            )
+            # NYCT platform assignment: scheduled != actual is a rerouting signal.
+            row.update(gtfs_ext.nyct_stu(stu))
+            rows.append(row)
+    return rows
+
+
+def parse_vehicle(content: bytes, feed: str, poll_ts: int):
+    fm = gtfs_realtime_pb2.FeedMessage()
+    fm.ParseFromString(content)
+    hdr = int(fm.header.timestamp) if fm.header.HasField("timestamp") else None
+    return _vehicle_rows(fm, feed, poll_ts, hdr), hdr
+
+
+def parse_trip(content: bytes, feed: str, poll_ts: int):
+    fm = gtfs_realtime_pb2.FeedMessage()
+    fm.ParseFromString(content)
+    hdr = int(fm.header.timestamp) if fm.header.HasField("timestamp") else None
+    return _trip_rows(fm, feed, poll_ts, hdr), hdr
+
+
+def parse_vehicle_trip(content: bytes, feed: str, poll_ts: int):
+    """Parse BOTH entity kinds out of one payload (NYCT feeds ship ~50/50).
+
+    Returns (vehicle_rows, hdr, {sink_feed: trip_rows}) — the third element routes the
+    trip rows to their own archive feed without a second HTTP request.
+    """
+    fm = gtfs_realtime_pb2.FeedMessage()
+    fm.ParseFromString(content)
+    hdr = int(fm.header.timestamp) if fm.header.HasField("timestamp") else None
+    sink = trip_sink_name(feed)
+    return (_vehicle_rows(fm, feed, poll_ts, hdr), hdr,
+            {sink: _trip_rows(fm, sink, poll_ts, hdr)})
 
 def parse_alert(content: bytes, feed: str, poll_ts: int):
     """GTFS-RT alerts -> list of JSON dicts (written as JSON-lines)."""
@@ -270,11 +346,21 @@ def parse_alert(content: bytes, feed: str, poll_ts: int):
         periods = [dict(start=(int(p.start) if p.HasField("start") else None),
                         end=(int(p.end) if p.HasField("end") else None))
                    for p in a.active_period]
+        # cause / effect are NEVER SET on the wire by MTA. proto2 hands back 1
+        # (UNKNOWN_CAUSE) and 8 (UNKNOWN_EFFECT) regardless, which is why a severity
+        # model built on `effect` buckets 100% of alerts "low". Record whether the
+        # agency actually sent them so no downstream consumer can mistake a proto
+        # default for an agency value; the REAL taxonomy is mercury alert_type below.
+        on_wire = gtfs_ext.alert_wire_fields(a)
         rows.append(dict(
             feed=feed, poll_ts=poll_ts, header_ts=hdr, alert_id=e.id,
             cause=_enum(a.cause), effect=_enum(a.effect),
+            cause_on_wire=("cause" in on_wire), effect_on_wire=("effect" in on_wire),
             header_text=_tr(a.header_text), description_text=_tr(a.description_text),
             active_period=periods, informed_entity=informed,
+            **gtfs_ext.mercury_alert(a),   # alert_type, created_at, updated_at,
+                                           # display_before_active,
+                                           # human_readable_active_period
         ))
     return rows, hdr
 
@@ -302,8 +388,10 @@ def parse_gbfs_station(content: bytes, feed: str, poll_ts: int):
 PARSERS = {
     "vehicle": parse_vehicle,
     "trip": parse_trip,
+    "vehicle_trip": parse_vehicle_trip,
     "alert": parse_alert,
     "gbfs_station": parse_gbfs_station,
+    # "derived" feeds are archive sinks only — never fetched, never parsed.
 }
 
 # ------------------------------------------------------------------ archiving
@@ -404,7 +492,22 @@ def poll_once(st: FeedState):
             st.backoff_until = time.monotonic() + 30.0
             log(f"WARN {cfg['name']} unexpected HTTP {r.status_code}")
             return
-        rows, hdr = PARSERS[cfg["parser"]](r.content, cfg["name"], poll_ts)
+        parsed = PARSERS[cfg["parser"]](r.content, cfg["name"], poll_ts)
+        # A parser may return (rows, hdr) or (rows, hdr, {sink_feed: rows}) when one
+        # payload carries entities that belong in more than one archive feed.
+        extra = {}
+        if len(parsed) == 3:
+            rows, hdr, extra = parsed
+        else:
+            rows, hdr = parsed
+        for sink, srows in (extra or {}).items():
+            sst = STATE.get(sink)
+            if sst is None:
+                continue
+            sst.buffer.extend(srows)
+            sst.last_success = datetime.now(timezone.utc).isoformat()
+            sst.last_status = r.status_code
+            sst.last_header_ts = hdr
         # stale-feed detection
         wall = time.monotonic()
         if hdr is not None:
@@ -480,9 +583,35 @@ async def bus_scheduler_loop():
         next_due[st.name] = time.monotonic() + st.cfg["interval"]
 
 async def maintenance_loop():
-    """Periodic flush, disk guard, heartbeat."""
+    """Periodic flush, disk guard, heartbeat, graceful-restart check."""
     global ARCHIVING_ENABLED, DISK_FREE_GB
     while True:
+        # GRACEFUL RESTART (added 2026-07-25, W6b). Every hard kill of this process
+        # discards up to FLUSH_SECONDS (5 min) of buffered rows across 25 feeds, and a
+        # code change cannot take effect without a restart. Touch realtime/poller.restart
+        # and the next heartbeat (<=15 s) force-flushes every buffer and exits 0; the
+        # supervisor relaunches with the new code and loses nothing but the seconds since
+        # the flush. Use this instead of taskkill.
+        try:
+            if RESTART_FILE.exists():
+                log("GRACEFUL RESTART requested (realtime/poller.restart) — "
+                    "force-flushing all buffers before exit.")
+                for st in STATE.values():
+                    try:
+                        flush_feed(st, force=True)
+                    except Exception as e:
+                        log(f"WARN restart flush {st.name}: {e}")
+                write_status()
+                try:
+                    RESTART_FILE.unlink()
+                except Exception:
+                    pass
+                log(f"GRACEFUL RESTART: flushed "
+                    f"{sum(s.rows_archived for s in STATE.values())} cumulative rows; "
+                    f"exiting 0 for supervisor relaunch.")
+                os._exit(0)
+        except Exception as e:
+            log(f"WARN restart-check: {e}")
         DISK_FREE_GB = disk_free_gb(ARCHIVE.anchor or "D:/")
         if DISK_FREE_GB < DISK_FLOOR_GB:
             if ARCHIVING_ENABLED:
