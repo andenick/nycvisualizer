@@ -86,11 +86,26 @@ export function drawSpeck(fr: DrawFrame, u: Unit, f: number, alpha: number, spec
 }
 
 // a true-scale, bearing-oriented rounded slab (buses). [VehicleFlowLayer.ts L971-1047]
+//
+// W11.7 (2026-07-25): when `fr.arrows` is on, the SAME unit is drawn as a
+// direction-of-travel arrow instead of the slab. Everything else about the call is
+// unchanged — same position, same rotation, same colour, same outline, same hit push,
+// same dock pulse. It is a different path in the one `ctx`, not a new layer.
 export function drawBus(fr: DrawFrame, u: Unit, f: number, alpha: number): void {
   let lat: number, lon: number, blat: number, blon: number;
+  // Is the direction of travel actually KNOWN, or are we about to point somewhere
+  // arbitrary? A stationary bus with a confident arrow is a small lie, so this flag
+  // gates the arrow (never the slab, which has always been drawn on a best-effort
+  // orientation and does not claim to be a heading indicator).
+  let hasHeading = true;
   if (u.offPoly && u.soDisp !== undefined) {
     // shape-following: position AT the displayed offset; bearing from ~20 ft ahead along
     // the shape (so the slab points down the road, never corner-cuts).
+    // This tangent is ALSO the arrow's heading source, and it is better than the feed's
+    // reported `bearing`: it is smooth frame to frame and always consistent with the
+    // path the bus is visibly drawn on. (Decision N12 — verified 2026-07-25 that the
+    // GTFS-RT `bearing` field is in fact 100 % populated, 2,208/2,208 live vehicles, so
+    // this is a quality choice, not a coverage workaround.)
     const s = u.soDisp;
     const p = pointAtOffset(u.offPoly, s);
     const ahead = pointAtOffset(u.offPoly, Math.min(s + 20, u.offPoly.lenFt));
@@ -110,8 +125,11 @@ export function drawBus(fr: DrawFrame, u: Unit, f: number, alpha: number): void 
       blat = lat + Math.cos(b) * 0.0005;
       blon = lon + (Math.sin(b) * 0.0005) / Math.cos(lat * DEG);
     } else {
+      // no shape, no movement, no reported bearing — the orientation below is a
+      // placeholder (due north). Never dress it up as an arrow.
       blat = lat + 0.0005;
       blon = lon;
+      hasHeading = false;
     }
   }
   fr.pr.project(lat, lon);
@@ -129,18 +147,38 @@ export function drawBus(fr: DrawFrame, u: Unit, f: number, alpha: number): void 
   const mpp = fr.mpp;
   const lenPx = Math.max(MIN_LEN_PX, u.lenM / mpp);
   const wPx = Math.max(MIN_W_PX, u.widM / mpp);
+  // W11.7: arrow only when the heading is real AND the bus is actually moving. A
+  // docked/dwelling bus falls back to the slab rather than pointing somewhere it is
+  // not going. `u.docked` is the engine's own dwell flag (offset not advancing between
+  // reports) — the honest "speed ≈ 0" signal, not a guess from the payload.
+  const arrow = fr.arrows && hasHeading && !u.docked;
+  // "slightly bigger than the buses are" (user directive) — 1.35x the true-scale slab,
+  // with a floor so it stays legible at city zoom. Not huge.
+  const aLen = arrow ? Math.max(MIN_LEN_PX * 1.6, lenPx * 1.35) : lenPx;
+  const aHalfW = aLen * 0.39;
   ctx.globalAlpha = alpha;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(ang);
-  roundRect(ctx, -lenPx / 2, -wPx / 2, lenPx, wPx, Math.min(wPx / 2, lenPx / 2));
+  if (arrow) {
+    // a dart: nose forward, swept tail, notched base — reads as a direction at 3-4 px
+    // in a way a triangle does not, and keeps the borough/route colour as the fill.
+    ctx.beginPath();
+    ctx.moveTo(aLen * 0.5, 0);
+    ctx.lineTo(-aLen * 0.5, -aHalfW);
+    ctx.lineTo(-aLen * 0.26, 0);
+    ctx.lineTo(-aLen * 0.5, aHalfW);
+    ctx.closePath();
+  } else {
+    roundRect(ctx, -lenPx / 2, -wPx / 2, lenPx, wPx, Math.min(wPx / 2, lenPx / 2));
+  }
   ctx.fillStyle = u.color;
   ctx.fill();
-  if (lenPx > 5) {
+  if (arrow ? aLen > 5 : lenPx > 5) {
     ctx.lineWidth = Math.max(0.6, wPx * 0.18);
     ctx.strokeStyle = fr.outline;
     ctx.stroke();
-    if (fr.zoom >= 15) {
+    if (!arrow && fr.zoom >= 15) {
       ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.beginPath();
       ctx.arc(lenPx / 2 - wPx * 0.5, 0, Math.max(0.8, wPx * 0.22), 0, Math.PI * 2);
@@ -161,7 +199,7 @@ export function drawBus(fr: DrawFrame, u: Unit, f: number, alpha: number): void 
     ctx.stroke();
     ctx.globalAlpha = alpha;
   }
-  fr.hit.push(cx, cy, Math.max(8, lenPx / 2), 0, u.data);
+  fr.hit.push(cx, cy, Math.max(8, aLen / 2), 0, u.data);
 }
 
 // Subway train with no inter-station segment: at-station RING or point-estimate bullet.

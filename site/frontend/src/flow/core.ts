@@ -118,6 +118,7 @@ export class FlowEngine {
   private _dirty = true; // in tick-jump mode, only redraw when data/view changed
   private _trails = false; // motion trails enabled (page sets default per surface)
   private _focus: FocusPred | null = null; // focus-dim predicate (null = no focus)
+  private _arrows = false; // W11.7: draw buses as direction-of-travel arrows
 
   constructor(host: FlowHost, hooks: FlowPopupHooks) {
     this._host = host;
@@ -142,6 +143,7 @@ export class FlowEngine {
       now: 0,
       dt: 16,
       tickJump: false,
+      arrows: false,
       lastColor: "",
       tx: new Float32Array(TRAIL_CAP),
       ty: new Float32Array(TRAIL_CAP),
@@ -198,6 +200,16 @@ export class FlowEngine {
     if (this._trails === on) return;
     this._trails = on;
     if (!on) for (const u of this._units.values()) u.tN = 0; // clear buffers
+    this._dirty = true;
+  }
+
+  /** W11.7 — draw buses as direction-of-travel arrows rather than true-scale slabs.
+   *  One boolean read in the existing draw call; no new layer, no new per-frame work,
+   *  no change to positioning or to the report cadence. Units with no known heading and
+   *  units the engine has flagged as docked keep the slab (see drawBus). */
+  setArrows(on: boolean): void {
+    if (this._arrows === on) return;
+    this._arrows = on;
     this._dirty = true;
   }
 
@@ -685,6 +697,7 @@ export class FlowEngine {
     fr.dt = rawDt < 0 ? 0 : rawDt > 100 ? 100 : rawDt; // clamp (tab-switch / long frame)
     this._lastFrameT = now;
     fr.tickJump = this._ladder.tickJump;
+    fr.arrows = this._arrows;
     fr.lastColor = "";
 
     // projection constants for this zoom (see Projector.configure / project)

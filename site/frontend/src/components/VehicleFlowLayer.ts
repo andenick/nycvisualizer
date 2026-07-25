@@ -73,6 +73,10 @@ export class VehicleFlowLayer extends L.Layer {
   setTrails(on: boolean): void {
     this._engine.setTrails(on);
   }
+  /** W11.7 — buses as direction-of-travel arrows (legend toggle on the workstation). */
+  setArrows(on: boolean): void {
+    this._engine.setArrows(on);
+  }
   setFocus(pred: FocusPred | null): void {
     this._engine.setFocus(pred);
   }

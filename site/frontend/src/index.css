@@ -1910,3 +1910,267 @@ i.obs-hw-obs.key { border-radius: 50%; }
   .ark-action-footer .ark-action-bar { flex-direction: column; align-items: stretch; }
   .ark-action-footer .ark-triad-compact { max-width: none; }
 }
+
+/* =========================================================================
+   W11 — STOP CARDS + MEASURE DISTANCE (Planner Workstation)
+   Chrome pact: the tray is docked bottom-centre and its readout has a CONSTANT
+   height at 2 stops and at 10 — all five products piloted in
+   analysis/MEASURE_DISTANCE_DESIGN_20260725.md dock the total in fixed chrome and
+   put the increments on the geometry. Nothing here grows a list.
+   ========================================================================= */
+
+/* Armed measure mode: crosshair. The !important is deliberate and load-bearing — the
+   flow engine writes map.getContainer().style.cursor on EVERY mousemove
+   (flow/hosts/leaflet.ts), so an ordinary rule would flicker once per frame. A
+   stylesheet !important beats a non-important inline style. */
+.ws-measuring .leaflet-container,
+.ws-measuring .leaflet-container .leaflet-interactive { cursor: crosshair !important; }
+
+/* ---- the tray ---- */
+.stray {
+  position: absolute; z-index: 1150;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 0.7rem);
+  width: min(96vw, 880px);
+  max-height: min(58dvh, 560px);
+  display: flex; flex-direction: column;
+  border-radius: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--ark-bg-soft, #161b22) 92%, transparent);
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  border: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 85%, transparent);
+  box-shadow: var(--ark-shadow, 0 6px 22px -12px rgba(0, 0, 0, 0.4));
+}
+.stray-head {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  padding: 0.4rem 0.55rem; flex: 0 0 auto;
+  border-bottom: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 70%, transparent);
+}
+.stray-title { font-weight: 700; font-size: 0.85rem; }
+.stray-count {
+  font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--ark-accent, #2563eb) 18%, transparent);
+  color: var(--ark-accent, #2563eb); white-space: nowrap;
+}
+.stray-btn {
+  font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+  padding: 0.24rem 0.5rem; border-radius: 7px; min-height: 28px;
+  border: 1px solid var(--ark-line, #2a313b); background: transparent;
+  color: var(--ark-fg, #e7edf3);
+}
+.stray-btn:hover:not(:disabled) { border-color: var(--ark-accent, #2563eb); color: var(--ark-accent, #2563eb); }
+.stray-btn:disabled { opacity: 0.4; cursor: default; }
+.stray-measure.on {
+  background: color-mix(in srgb, #e11d48 22%, transparent);
+  border-color: #e11d48; color: #ffa6bd;
+}
+.stray-exp { display: inline-flex; gap: 0.25rem; }
+.stray-x { margin-left: auto; }
+
+/* ---- the docked measure readout — CONSTANT SIZE, never a growing list ---- */
+.stray-measure-card {
+  flex: 0 0 auto; padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 70%, transparent);
+  background: color-mix(in srgb, #e11d48 7%, transparent);
+}
+.stray-mrow {
+  display: flex; align-items: baseline; gap: 0.6rem; justify-content: space-between;
+  font-size: 0.82rem; line-height: 1.5;
+}
+.stray-mlbl { opacity: 0.85; }
+.stray-mval { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.stray-mnote { font-weight: 400; opacity: 0.7; font-size: 0.76rem; font-style: italic; }
+.stray-dash { opacity: 0.5; font-weight: 400; }
+.stray-mfoot { font-size: 0.72rem; opacity: 0.85; margin-top: 0.25rem; line-height: 1.4; }
+.stray-mactions { display: flex; gap: 0.35rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.stray-mprov { font-size: 0.68rem; opacity: 0.62; line-height: 1.45; margin-top: 0.4rem; }
+
+/* ---- the cards: one horizontal comparison strip ---- */
+.stray-cards {
+  display: flex; gap: 0.45rem; padding: 0.5rem;
+  overflow-x: auto; overflow-y: auto; scrollbar-width: thin;
+}
+.stray-card {
+  flex: 0 0 216px; min-width: 216px;
+  border-radius: 10px; padding: 0.45rem 0.5rem;
+  border: 1px solid var(--ark-line, #2a313b);
+  background: color-mix(in srgb, var(--ark-bg, #0e1116) 70%, transparent);
+}
+.stray-card-head { display: flex; align-items: center; gap: 0.35rem; }
+.stray-idx {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 700 10px/1 system-ui, sans-serif; color: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.stray-card-x {
+  margin-left: auto; font: inherit; font-size: 0.75rem; cursor: pointer;
+  background: none; border: none; color: var(--ark-fg-dim, #9aa7b4);
+  padding: 0.15rem 0.2rem; min-height: 24px;
+}
+.stray-card-x:hover { color: var(--ark-fg, #e7edf3); }
+/* THE STOP CODE IS THE HEADLINE. A named planner carries this number into
+   meetings; it is not a technical detail. Large, monospaced, and copyable. */
+.stray-code {
+  font: 800 1.15rem/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em; cursor: pointer; padding: 0.05rem 0.15rem;
+  background: none; border: none; color: inherit;
+  display: inline-flex; align-items: baseline; gap: 0.35rem;
+}
+.stray-code:hover { color: var(--ark-accent, #2563eb); }
+.stray-code-hint {
+  font: 600 0.58rem/1 system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 0.06em; opacity: 0.45;
+}
+.stray-code.copied .stray-code-hint { opacity: 0.9; color: #34d399; }
+.stray-code-lbl {
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em;
+  opacity: 0.5; margin-top: 0.1rem;
+}
+.stray-name { font-size: 0.8rem; font-weight: 600; line-height: 1.3; margin-top: 0.25rem; }
+.stray-routes { font-size: 0.72rem; opacity: 0.8; margin-top: 0.15rem; }
+.stray-coord {
+  font: 0.66rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.5; margin-top: 0.15rem;
+}
+/* `not captured` is a first-class value, never a blank and never a zero: a planner has
+   to be able to tell "none" from "unknown". */
+.stray-nc { font-size: 0.7rem; font-style: italic; opacity: 0.55; }
+.stray-v { font-variant-numeric: tabular-nums; }
+.stray-detail {
+  margin-top: 0.4rem; padding-top: 0.35rem;
+  border-top: 1px dashed color-mix(in srgb, var(--ark-line, #2a313b) 80%, transparent);
+}
+.stray-dir { margin-bottom: 0.35rem; }
+.stray-dir-head { display: flex; align-items: baseline; gap: 0.3rem; font-size: 0.74rem; flex-wrap: wrap; }
+.stray-dir-lbl { opacity: 0.7; font-size: 0.68rem; }
+.stray-prelim {
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 0.02rem 0.25rem; border-radius: 4px;
+  background: color-mix(in srgb, #fbbf24 25%, transparent); color: #fbbf24;
+}
+.stray-kv {
+  display: grid; grid-template-columns: 1fr auto; gap: 0.05rem 0.4rem;
+  font-size: 0.7rem; line-height: 1.45;
+}
+.stray-kv > span:nth-child(odd) { opacity: 0.7; }
+.stray-sub {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em;
+  opacity: 0.55; font-weight: 700; margin: 0.35rem 0 0.15rem;
+}
+.stray-line { font-size: 0.68rem; line-height: 1.4; margin-top: 0.25rem; }
+.stray-dim { opacity: 0.6; }
+.stray-empty { padding: 0.7rem 0.6rem; font-size: 0.76rem; }
+.stray-note { padding: 0.35rem 0.6rem 0.5rem; font-size: 0.68rem; opacity: 0.7; }
+
+/* ---- on-geometry labels: the graduated tape. <= 2*points+1 elements total. ---- */
+.wsm-icon { background: none; border: none; }
+.wsm-lbl {
+  position: absolute; left: 9px; top: -10px; white-space: nowrap;
+  font: 600 10px/1.25 system-ui, sans-serif;
+  padding: 1px 4px; border-radius: 4px;
+  background: rgba(225, 29, 72, 0.92); color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.wsm-lbl b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.wsm-lbl i { font-style: normal; opacity: 0.72; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.wsm-lbl--0 { background: rgba(30, 41, 59, 0.9); font-weight: 800; }
+
+/* ---- the right-click context menu ---- */
+.mctx {
+  position: absolute; z-index: 1400; min-width: 232px; max-width: 300px;
+  border-radius: 10px; overflow: hidden;
+  background: var(--ark-bg-soft, #161b22);
+  border: 1px solid var(--ark-line, #2a313b);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+}
+.mctx-head {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 70%, transparent);
+}
+.mctx-head-name { font-size: 0.8rem; font-weight: 700; line-height: 1.3; }
+.mctx-head-sub { font-size: 0.68rem; opacity: 0.72; margin-top: 0.1rem; }
+.mctx-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+.mctx-items { display: flex; flex-direction: column; padding: 0.2rem; }
+.mctx-item {
+  font: inherit; font-size: 0.78rem; text-align: left; cursor: pointer;
+  padding: 0.4rem 0.45rem; border-radius: 6px; min-height: 32px;
+  background: none; border: none; color: inherit;
+}
+.mctx-item:hover { background: color-mix(in srgb, var(--ark-accent, #2563eb) 18%, transparent); }
+.mctx-note { font-size: 0.68rem; opacity: 0.65; line-height: 1.4; padding: 0.35rem 0.45rem; }
+
+/* ---- W11.7 arrows toggle, in the legend where the user asked for it ---- */
+.ws-legend-toggle { display: inline; cursor: pointer; }
+.ws-legend-toggle input { width: auto; margin: 0 0.35rem 0 0; vertical-align: middle; }
+
+/* ---- WHERE THE TRAY GOES, AND WHAT MOVES OUT OF ITS WAY ------------------------
+   The workstation's chrome is already tightly packed (see the 391-1329 as-of block
+   above, which exists because the centred chip collided with the data rail). The tray
+   is a real new surface, so it gets an explicit berth at every width rather than being
+   dropped on top of the rail. `.ws-hastray` is on the root only while the tray has
+   content — with nothing selected NOTHING below applies and the page is byte-identical
+   to before, which is also why the 24-shot canary is unaffected. */
+
+/* >= 1330 px: the tray sits in the map band BETWEEN the left panel (300 px) and the
+   right rail (460 px). No overlap with either, nor with the bottom-right chip column. */
+@media (min-width: 1330px) {
+  .stray {
+    left: calc(max(0.7rem, env(safe-area-inset-left)) + 300px + 0.5rem);
+    right: calc(max(0.7rem, env(safe-area-inset-right)) + 460px + 0.5rem);
+    transform: none; width: auto;
+    max-height: min(46dvh, 430px);
+  }
+}
+
+/* <= 1329 px: panel + rail + tray cannot share a row, so the tray takes the bottom
+   band and the rail SHORTENS while it is open. Shortening the rail is deliberate: a
+   panel that covers the lower half of a data table hides content silently, and the
+   whole point of the rail is that its numbers are findable. */
+@media (max-width: 1329px) {
+  .stray {
+    left: max(0.5rem, env(safe-area-inset-left));
+    right: max(0.5rem, env(safe-area-inset-right));
+    transform: none; width: auto; max-height: 42dvh;
+  }
+  .ws-hastray .ws-rail { max-height: calc(100dvh - 3.4rem - 42dvh - 2.2rem); }
+  .ws-hastray .ws-asof { bottom: calc(42dvh + 0.9rem); top: auto; }
+  .ws-hastray .ws-clock { bottom: calc(42dvh + 0.9rem); top: auto; }
+  .ws-hastray .maplegend--imm.ws-legend { bottom: calc(42dvh + 0.9rem + 2.4rem); }
+  .ws-hastray .imm-info { bottom: calc(42dvh + 0.9rem + 4.8rem); }
+  /* Leaflet's own zoom control lives bottom-LEFT on this page; lift it too, or the
+     tray sits on it (measured 34x66 px of occlusion at 834 px before this rule). */
+  .ws-hastray .leaflet-bottom.leaflet-left { bottom: calc(42dvh + 0.6rem); }
+}
+
+/* <= 700 px: touch. Bigger tap targets; the provenance paragraph folds away (it is
+   restated in the legend). Hover affordances do not exist here at all, which is
+   exactly why Undo and tap-to-remove are real buttons and not conveniences. */
+@media (max-width: 700px) {
+  .stray-btn { min-height: 34px; padding: 0.35rem 0.6rem; }
+  .stray-card { flex-basis: 190px; min-width: 190px; }
+  .stray-mprov { display: none; }
+}
+
+/* <= 390 px: every piece of chrome has to be placed by hand, because the left panel is
+   itself a bottom sheet, the rail rides the top, and the as-of chip already lives in the
+   band between them. With the tray open the bottom 40dvh is the tray's, the rail
+   shortens to 22dvh, and the four corner chips stack upward in their established order
+   (as-of · clock · legend · info) so none of them lands on another. The as-of chip stops
+   being full-width here so the zoom control keeps a berth on the left. Every offset below
+   was measured against the rendered rects, not guessed. */
+@media (max-width: 390px) {
+  .stray { bottom: 3.1rem; max-height: 40dvh; border-radius: 12px; }
+  .ws-hastray .ws-rail { max-height: 22dvh; }
+  .ws-hastray .ws-asof {
+    bottom: calc(40dvh + 3.9rem); top: auto;
+    left: auto; right: max(0.5rem, env(safe-area-inset-right));
+    max-width: 72vw; transform: none;
+  }
+  .ws-hastray .ws-clock { bottom: calc(40dvh + 3.9rem + 3.9rem); top: auto; }
+  .ws-hastray .maplegend--imm.ws-legend { bottom: calc(40dvh + 3.9rem + 6.3rem); }
+  .ws-hastray .imm-info { bottom: calc(40dvh + 3.9rem + 8.7rem); }
+  .ws-hastray .leaflet-bottom.leaflet-left { bottom: calc(40dvh + 3.9rem); }
+}
+}

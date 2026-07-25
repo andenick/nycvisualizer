@@ -164,6 +164,9 @@ export interface DrawFrame {
   now: number;
   dt: number;
   tickJump: boolean;
+  /** W11.7 — draw buses as direction-of-travel arrows instead of true-scale slabs.
+   *  A per-unit draw-call change, NOT a new layer and NOT new per-frame work. */
+  arrows: boolean;
   // per-frame fillStyle-set dedupe for the speck loop (reset to "" each frame) [L898]
   lastColor: string;
   // reusable scratch for projected trail vertices (no per-unit allocation)

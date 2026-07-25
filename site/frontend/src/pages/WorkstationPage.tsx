@@ -65,8 +65,37 @@ import { BOROUGH_LEGEND_NOTE, boroughColor, boroughLabel, routeGroup } from "../
 import { VehicleFlowLayer } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch } from "../components/MapLegend";
 import MapThemePicker from "../components/MapThemePicker";
+import StopTray, { type MeasureLeg } from "../components/StopTray";
+import MapContextMenu, { type ContextTarget } from "../components/MapContextMenu";
+import {
+  buildSnapIndex,
+  chainFeet,
+  EMPTY_SNAP_INDEX,
+  feetBetween,
+  fmtFeet,
+  SNAP_MAX_FT,
+  toggleCapped,
+  type SnapStop,
+  type StopSnapIndex,
+} from "../lib/stopGeo";
 
 const APEX = "https://nycvisualizer.com";
+
+// ---------------------------------------------------------------------------
+// W11 — stop cards + measure. Constants live here so the cost contract is legible.
+// ---------------------------------------------------------------------------
+
+/** Persistent stop cards are capped and oldest-evicted, with the count always on
+ *  screen (decision N9). Unbounded accumulating DOM is precisely the W12 failure
+ *  mode that was fixed on 2026-07-25 — this feature does not get to reintroduce it. */
+const CARD_CAP = 10;
+/** Snap radius in CSS pixels. A fingertip is bigger than a cursor. */
+const SNAP_PX_POINTER = 18;
+const SNAP_PX_TOUCH = 30;
+/** The measure path's own colour — deliberately not any route/borough colour, so the
+ *  measurement can never be mistaken for a selected population. */
+const MEASURE_COLOR = "#e11d48";
+const ARROWS_KEY = "nycv-bus-arrows";
 const AUTHOR = { name: "nickanderson.us", url: "https://nickanderson.us" };
 
 // Site links carried in the floating top strip (within-family SPA links).
@@ -253,6 +282,11 @@ export default function WorkstationPage() {
   const flow = useRef<VehicleFlowLayer | null>(null);
   const stopsLayer = useRef<L.LayerGroup | null>(null); // bus stops + subway stations
   const linesLayer = useRef<L.LayerGroup | null>(null); // optional bus route lines
+  // W11 measure geometry: its OWN pane + its OWN SVG renderer, so it never touches the
+  // shared stop canvas and can never trigger a redrawStops(). At most 2·points+1
+  // elements — 21 at the 10-stop cap, against 3,193 stop dots already on the map.
+  const measureLayer = useRef<L.LayerGroup | null>(null);
+  const measureRenderer = useRef<L.Renderer | null>(null);
 
   const init = useRef<InitState>(parseUrlState());
 
@@ -316,6 +350,41 @@ export default function WorkstationPage() {
   const [navOpen, setNavOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null); // open drawer rowKey
   const [, forceThemeTick] = useState(0);
+
+  // ---- W11: persistent stop selection + measure mode ----
+  const [selStops, setSelStops] = useState<SnapStop[]>([]);
+  const selStopsRef = useRef(selStops);
+  selStopsRef.current = selStops;
+  const [measuring, setMeasuring] = useState(false);
+  const measuringRef = useRef(measuring);
+  measuringRef.current = measuring;
+  const [hoverName, setHoverName] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; target: ContextTarget } | null>(null);
+  const ctxOpenRef = useRef(false);
+  ctxOpenRef.current = !!ctxMenu;
+  const snapIndex = useRef<StopSnapIndex>(EMPTY_SNAP_INDEX);
+  /** Bumped whenever a route shape lands, so the snap index rebuilds off real data. */
+  const [shapesTick, setShapesTick] = useState(0);
+
+  // ---- W11.7: bus direction arrows (legend toggle, persisted with the other map prefs) ----
+  const [busArrows, setBusArrows] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ARROWS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const busArrowsRef = useRef(busArrows);
+  busArrowsRef.current = busArrows;
+
+  // The three map-level handlers are bound ONCE at map init and dispatch through these
+  // refs, so they always see current state without ever re-binding a Leaflet listener.
+  const mapClickRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {});
+  const mapCtxRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {});
+  const mapHoverRef = useRef<(e: L.LeafletMouseEvent) => void>(() => {});
+  /** True between movestart and moveend — gates the hover snap during a drag-pan. */
+  const dragging = useRef(false);
 
   // per-row dossier drawer cache (bus only; reuses /api/obs/dossier headline fields)
   const dossierCache = useRef<Map<string, DossierResponse>>(new Map());
@@ -444,10 +513,19 @@ export default function WorkstationPage() {
     );
     linesLayer.current = L.layerGroup().addTo(m);
     stopsLayer.current = L.layerGroup().addTo(m);
+    // W11: a dedicated pane above the stop canvas, with its OWN SVG renderer. The
+    // measure path must never share the stop layer's canvas — sharing it would make a
+    // measurement redraw a redraw of 3,193 dots, which is the exact cost shape W12 removed.
+    m.createPane("wsMeasurePane");
+    const mp = m.getPane("wsMeasurePane");
+    if (mp) mp.style.zIndex = "615";
+    measureRenderer.current = L.svg({ pane: "wsMeasurePane" });
+    measureLayer.current = L.layerGroup().addTo(m);
     const fl = new VehicleFlowLayer({ busPopup: popupHtml, trainPopup: trainPopupHtml });
     fl.addTo(m);
     fl.setVisibility(true, true); // UNIFIED: both populations render at once
     fl.setTrails(false); // planner clarity: trails off by default on the workstation
+    fl.setArrows(busArrowsRef.current); // W11.7 — restore the persisted legend preference
     fl.setShapeSource(new RouteShapeCache());
     flow.current = fl;
     if (new URLSearchParams(window.location.search).has("perf")) {
@@ -456,6 +534,24 @@ export default function WorkstationPage() {
       w.__nycvMap = m;
     }
     m.on("moveend", () => writeUrl.current());
+    // ---------------------------------------------------------------------------
+    // W11 — EXACTLY THREE map-level listeners for the whole stop-card + measure
+    // feature. Zero listeners on the 3,193 stop markers: the snap is derived from the
+    // click's coordinates against an index built once per selection change and queried
+    // in O(1), so cost is O(clicks) and never O(stops). (The markers are canvas paths
+    // and do receive pointer events, which is exactly why the handler is bound on the
+    // MAP and not on them.)
+    // ---------------------------------------------------------------------------
+    m.on("click", (e: L.LeafletMouseEvent) => mapClickRef.current(e));
+    m.on("contextmenu", (e: L.LeafletMouseEvent) => mapCtxRef.current(e));
+    m.on("mousemove", (e: L.LeafletMouseEvent) => mapHoverRef.current(e));
+    // Two one-line flags, not handlers with work in them: they only gate the hover.
+    m.on("movestart", () => {
+      dragging.current = true;
+    });
+    m.on("moveend", () => {
+      dragging.current = false;
+    });
     map.current = m;
     requestAnimationFrame(() => m.invalidateSize());
     return () => {
@@ -625,6 +721,9 @@ export default function WorkstationPage() {
       ),
     ).then(() => {
       if (cancelled) return;
+      // W11: the snap index is built from `shapeCache`, so it must be rebuilt whenever a
+      // new shape lands — not merely when the selection array changes.
+      setShapesTick((t) => t + 1);
       ll.clearLayers();
       // NOTE: bus geometry owns stopsLayer sub-clearing via a keyed rebuild below; to keep
       // bus + subway station dots independent, we redraw the WHOLE stops layer from both
@@ -652,6 +751,7 @@ export default function WorkstationPage() {
       getStations()
         .then((sts) => {
           stationsAll.current = sts;
+          setShapesTick((t) => t + 1);
           redrawStops();
         })
         .catch(() => {});
@@ -661,26 +761,39 @@ export default function WorkstationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selLines]);
 
+  // W11.4: when measure mode is armed every snappable stop is emphasised — CalTopo's
+  // trick (arming a measure tool makes the whole snappable network glow), adapted to
+  // point features. It answers "what can I click?" without a tooltip or a manual, which
+  // is exactly what a non-technical planner needs. Held in a ref because redrawStops()
+  // must rebuild markers at the CURRENT emphasis, not the resting one.
+  const emphasis = useRef(false);
+
   // Redraw the unified stops layer: bus stop dots (palette) + subway station dots (official).
   const redrawStops = () => {
     const sl = stopsLayer.current;
     if (!sl) return;
     sl.clearLayers();
-    // bus stops
+    const em = emphasis.current;
+    const rad = em ? 4 : 3;
+    const fo = em ? 1 : 0.9;
+    // bus stops.
+    // W11: the per-marker `.bindPopup()` that used to live here is GONE. The stop card
+    // replaces it — it holds strictly more (a copyable stop code, every route serving the
+    // stop, and the server-side detail), it persists so several stops can be compared,
+    // and it is what the measure tool measures over. Keeping both would have meant two
+    // competing answers to one click, and a bound popup on every one of 3,193 markers.
     for (const r of selRoutesRef.current) {
       const s = shapeCache.current.get(r);
       if (!s) continue;
       const color = routeColorRef.current.get(r) ?? "#2563eb";
       for (const stop of s.stops) {
         L.circleMarker([stop.lat, stop.lon], {
-          radius: 3,
-          weight: 1,
+          radius: rad,
+          weight: em ? 1.3 : 1,
           color,
           fillColor: color,
-          fillOpacity: 0.9,
-        })
-          .bindPopup(`<strong>${stop.stop_name}</strong><br/>Route ${r} · stop ${stop.stop_id}`)
-          .addTo(sl);
+          fillOpacity: fo,
+        }).addTo(sl);
       }
     }
     // subway stations (colour by the FIRST selected line the station serves)
@@ -692,15 +805,281 @@ export default function WorkstationPage() {
         if (!match) continue;
         const color = subwayColor(match);
         L.circleMarker([st.lat, st.lon], {
-          radius: 3,
-          weight: 1.2,
+          radius: rad,
+          weight: em ? 1.5 : 1.2,
           color,
           fillColor: color,
-          fillOpacity: 0.9,
-        })
-          .bindPopup(`<strong>${st.name}</strong><br/><span style="opacity:.75">${st.routes.join(" · ")}</span>`)
-          .addTo(sl);
+          fillOpacity: fo,
+        }).addTo(sl);
       }
+    }
+  };
+
+  // =========================================================================
+  // W11 — STOP CARDS + MEASURE
+  //
+  // Cost contract, restated against the code below (see CONTINUOUS_STATE.json,
+  // PERF_WORKSTATION_FREEZE, fixed 2026-07-25):
+  //   * three map-level listeners, bound once at init; ZERO per-stop listeners;
+  //   * one snap index built per selection change, queried O(1) per click/hover;
+  //   * measure geometry is <= 2·points+1 elements in its own pane;
+  //   * nothing here participates in the flow engine's rAF loop;
+  //   * `redrawStops()` is NEVER called by any of it.
+  // =========================================================================
+
+  /** Snap radius converted from CSS pixels to feet at the click's latitude + zoom, so
+   *  the target stays a constant size on screen at every zoom level.
+   *
+   *  CLAMPED at both ends, deliberately. The upper clamp (SNAP_MAX_FT) keeps the index
+   *  lookup exhaustive in one 3×3 ring AND stops a citywide-zoom click from snapping to
+   *  a stop a quarter-mile away, which would be an answer the planner did not ask for.
+   *  Zoom in to pick a stop — that is honest, and it is what every snapping tool does. */
+  const snapFeetAt = (lat: number): number => {
+    const m = map.current;
+    if (!m) return 0;
+    const mPerPx = (40075016.686 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, m.getZoom() + 8);
+    const px =
+      typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches
+        ? SNAP_PX_TOUCH
+        : SNAP_PX_POINTER;
+    return Math.max(35, Math.min(SNAP_MAX_FT, mPerPx * px * 3.280839895));
+  };
+
+  /** Add a stop, or remove it if it is already selected. Click-a-point-to-remove is the
+   *  strongest convention in the study — Google and MapLibre reached it independently —
+   *  and here it doubles as "close this card", so there is one rule, not two. */
+  const toggleStop = (s: SnapStop) => setSelStops((prev) => toggleCapped(prev, s, CARD_CAP));
+  const removeStop = (key: string) => setSelStops((prev) => prev.filter((x) => x.key !== key));
+  const undoStop = () => setSelStops((prev) => prev.slice(0, -1));
+  const clearStops = () => setSelStops([]);
+
+  // On a phone the route selector is itself a bottom sheet, and two bottom sheets cannot
+  // both own the bottom of the screen. Opening a stop card closes the selector — the
+  // planner has finished choosing routes by the time they are clicking stops, and the
+  // ▶ toggle brings it straight back.
+  useEffect(() => {
+    if (!selStops.length) return;
+    if (typeof window !== "undefined" && window.innerWidth <= 700) setPanelOpen(false);
+  }, [selStops.length]);
+
+  // ---- the snap index: built ONCE per selection change, from data already in memory ----
+  useEffect(() => {
+    const t0 = performance.now();
+    snapIndex.current = buildSnapIndex(
+      selRoutes,
+      shapeCache.current,
+      selLines,
+      stationsAll.current,
+      lineKey,
+    );
+    if (perfVisible()) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `[W11] snap index: ${snapIndex.current.size} distinct stops in ` +
+          `${(performance.now() - t0).toFixed(1)} ms`,
+      );
+    }
+  }, [selRoutes, selLines, shapesTick]);
+
+  // ---- measure geometry -----------------------------------------------------------
+  // Redrawn on selection/mode change ONLY. Leaflet reprojects the layer itself on pan
+  // and zoom, so there is deliberately no moveend/zoomend hook here.
+  useEffect(() => {
+    const ml = measureLayer.current;
+    if (!ml) return;
+    ml.clearLayers();
+    if (!measuring || selStops.length === 0) return;
+    const pts = selStops.map((s) => [s.lat, s.lon] as [number, number]);
+    const rend = measureRenderer.current ?? undefined;
+    if (pts.length >= 2) {
+      L.polyline(pts, {
+        color: MEASURE_COLOR,
+        weight: 3,
+        opacity: 0.95,
+        interactive: false,
+        renderer: rend,
+      }).addTo(ml);
+    }
+    let cum = 0;
+    pts.forEach((ll, i) => {
+      const legFt = i === 0 ? 0 : feetBetween(pts[i - 1], ll);
+      cum += legFt;
+      L.circleMarker(ll, {
+        radius: 5,
+        weight: 2,
+        color: "#ffffff",
+        fillColor: MEASURE_COLOR,
+        fillOpacity: 1,
+        interactive: false,
+        renderer: rend,
+      }).addTo(ml);
+      // The graduated-tape idea: the incremental numbers live ON the geometry, so the
+      // docked card never has to grow a list. Origin is labelled `0`, exactly as Google
+      // labels its first vertex.
+      const html =
+        i === 0
+          ? `<span class="wsm-lbl wsm-lbl--0">0</span>`
+          : `<span class="wsm-lbl"><b>${fmtFeet(cum)}</b><i>+${fmtFeet(legFt)}</i></span>`;
+      L.marker(ll, {
+        icon: L.divIcon({ className: "wsm-icon", html, iconSize: [1, 1], iconAnchor: [0, 0] }),
+        interactive: false,
+        keyboard: false,
+        pane: "wsMeasurePane",
+      }).addTo(ml);
+    });
+  }, [selStops, measuring]);
+
+  // ---- arming the tool makes every snappable stop visible as a target ----------------
+  // A one-off restyle of the EXISTING canvas markers (2 passes per measure session, not
+  // per frame, not per click). It is emphatically NOT a redrawStops() — rule 4 of the
+  // freeze constraints. The cost is logged under ?perf so the claim stays measured.
+  useEffect(() => {
+    const sl = stopsLayer.current;
+    emphasis.current = measuring;
+    if (!sl) return;
+    const t0 = performance.now();
+    let n = 0;
+    sl.eachLayer((l) => {
+      const cm = l as L.CircleMarker;
+      if (typeof cm.setStyle !== "function") return;
+      n++;
+      cm.setStyle(
+        measuring
+          ? { radius: 4, weight: 1.3, fillOpacity: 1 }
+          : { radius: 3, weight: 1, fillOpacity: 0.9 },
+      );
+    });
+    if (perfVisible()) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `[W11] stop emphasis ${measuring ? "on" : "off"}: ${n} markers in ` +
+          `${(performance.now() - t0).toFixed(1)} ms`,
+      );
+    }
+  }, [measuring]);
+
+  // ---- keyboard: the two genre-wide gaps we get to fix for free ---------------------
+  useEffect(() => {
+    if (!measuring) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "Escape") {
+        // One Escape, one thing: if the context menu is open it closes that and nothing
+        // else. Dismissing a menu and leaving a mode on the same keystroke would make the
+        // key unpredictable.
+        if (ctxOpenRef.current) return;
+        // Escape is inert in Google, MapLibre AND leaflet-measure. It works here, and it
+        // matches this site's own map-mode convention ("tap map or press ESC to stop").
+        // It leaves the MODE and keeps the stops and the number — CalTopo's ✓ throws the
+        // answer away, and that is the one anti-pattern the research told us to avoid.
+        setMeasuring(false);
+        e.preventDefault();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        undoStop();
+        e.preventDefault();
+      } else if (e.key === "Backspace" || e.key === "Delete") {
+        undoStop();
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measuring]);
+
+  // ---- the three map-level handlers (bound once at init; dispatched through refs) ----
+  mapClickRef.current = (e: L.LeafletMouseEvent) => {
+    if (ctxOpenRef.current) {
+      setCtxMenu(null);
+      return;
+    }
+    const hit = snapIndex.current.nearest(e.latlng.lat, e.latlng.lng, snapFeetAt(e.latlng.lat));
+    // No stop in reach: do nothing at all, so the flow engine's own click behaviour
+    // (vehicle popups) is untouched. Free map points are deliberately not offered —
+    // a distance between two sidewalk pixels is not a fact about the network.
+    if (hit) toggleStop(hit);
+  };
+  mapCtxRef.current = (e: L.LeafletMouseEvent) => {
+    e.originalEvent?.preventDefault();
+    const hit = snapIndex.current.nearest(e.latlng.lat, e.latlng.lng, snapFeetAt(e.latlng.lat));
+    setCtxMenu({
+      x: e.containerPoint.x,
+      y: e.containerPoint.y,
+      target: {
+        lat: e.latlng.lat,
+        lon: e.latlng.lng,
+        stopKey: hit?.key ?? null,
+        stopId: hit?.stopId ?? null,
+        stopName: hit?.name ?? null,
+        routes: hit?.routes ?? [],
+        alreadySelected: !!hit && selStopsRef.current.some((s) => s.key === hit.key),
+      },
+    });
+  };
+  const hoverPending = useRef(false);
+  mapHoverRef.current = (e: L.LeafletMouseEvent) => {
+    // A drag-pan fires `mousemove` continuously, and the snap under the cursor during a
+    // pan is not information anyone asked for. Measured: leaving this ungated cost ~17 ms
+    // of frame P95 across a ten-gesture pan run. Gated, the hover costs nothing while
+    // panning and still answers instantly when the pointer is actually being aimed.
+    if (!measuringRef.current || hoverPending.current || dragging.current) return;
+    // rAF-throttled, and it does not run at all unless measure mode is armed — the
+    // "zero cost when inactive" rule.
+    hoverPending.current = true;
+    const lat = e.latlng.lat;
+    const lon = e.latlng.lng;
+    requestAnimationFrame(() => {
+      hoverPending.current = false;
+      const hit = snapIndex.current.nearest(lat, lon, snapFeetAt(lat));
+      setHoverName((cur) => (cur === (hit?.name ?? null) ? cur : hit?.name ?? null));
+    });
+  };
+
+  // ---- W11.7: arrows -> engine, and persist the preference with the other map prefs ----
+  useEffect(() => {
+    flow.current?.setArrows(busArrows);
+    try {
+      localStorage.setItem(ARROWS_KEY, busArrows ? "1" : "0");
+    } catch {
+      /* storage blocked — the toggle still works for this session */
+    }
+  }, [busArrows]);
+
+  // ---- straight-line legs (client-side, instant, geodesic) ---------------------------
+  const legs: MeasureLeg[] = useMemo(() => {
+    const out: MeasureLeg[] = [];
+    for (let i = 1; i < selStops.length; i++) {
+      const a = selStops[i - 1];
+      const b = selStops[i];
+      out.push({
+        fromKey: a.key,
+        toKey: b.key,
+        fromName: a.name,
+        toName: b.name,
+        straightFt: feetBetween([a.lat, a.lon], [b.lat, b.lon]),
+      });
+    }
+    return out;
+  }, [selStops]);
+  const totalStraightFt = useMemo(
+    () => chainFeet(selStops.map((s) => [s.lat, s.lon] as [number, number])),
+    [selStops],
+  );
+
+  const stopColorFor = (s: SnapStop): string => {
+    if (s.kind === "subway") {
+      const k = selLines.find((x) => s.routes.some((r) => lineKey(r) === x));
+      return k ? subwayColor(k) : "#6b7280";
+    }
+    return routeColor.get(s.routes[0]) ?? "#6b7280";
+  };
+
+  const copyCoords = (lat: number, lon: number) => {
+    try {
+      void navigator.clipboard?.writeText(`${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    } catch {
+      /* clipboard blocked */
     }
   };
 
@@ -851,7 +1230,16 @@ export default function WorkstationPage() {
   const trainCount = [...liveTrain.values()].reduce((a, b) => a + b, 0);
 
   return (
-    <div className={"imm-root ws-root ws-unified" + (dark ? " imm-dark" : "")}>
+    <div
+      className={
+        "imm-root ws-root ws-unified" +
+        (dark ? " imm-dark" : "") +
+        (measuring ? " ws-measuring" : "") +
+        // Only while the tray actually has content: with nothing selected the page is
+        // byte-identical to before, chrome included.
+        (selStops.length || measuring ? " ws-hastray" : "")
+      }
+    >
       <div className="imm-map" ref={mapRef} />
 
       {/* ---- floating top strip ---- */}
@@ -1258,10 +1646,87 @@ export default function WorkstationPage() {
         )}
       </div>
 
+      {/* ---- W11: persistent stop cards + the docked measure readout ---- */}
+      <StopTray
+        stops={selStops}
+        cap={CARD_CAP}
+        measuring={measuring}
+        legs={legs}
+        totalStraightFt={totalStraightFt}
+        totalAlongFt={null}
+        totalAlongNote="not measured in this build"
+        hoverName={measuring ? hoverName : null}
+        colorFor={stopColorFor}
+        onToggleMeasure={() => setMeasuring((v) => !v)}
+        onRemove={removeStop}
+        onUndo={undoStop}
+        onClear={() => {
+          clearStops();
+          setMeasuring(false);
+        }}
+      />
+
+      {/* ---- W11: the map context menu (right-click). Leads with WHAT you clicked. ---- */}
+      {ctxMenu && (
+        <MapContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          target={ctxMenu.target}
+          measuring={measuring}
+          onAddAndMeasure={() => {
+            const s = ctxMenu.target.stopKey ? snapIndex.current.get(ctxMenu.target.stopKey) : null;
+            // The invocation point becomes point 1 — no separate "now click your first
+            // point" step (Google and CalTopo both do this).
+            if (s && !selStopsRef.current.some((x) => x.key === s.key)) toggleStop(s);
+            setMeasuring(true);
+            setCtxMenu(null);
+          }}
+          onAdd={() => {
+            const s = ctxMenu.target.stopKey ? snapIndex.current.get(ctxMenu.target.stopKey) : null;
+            if (s) toggleStop(s);
+            setCtxMenu(null);
+          }}
+          onRemove={() => {
+            if (ctxMenu.target.stopKey) removeStop(ctxMenu.target.stopKey);
+            setCtxMenu(null);
+          }}
+          onUndo={() => {
+            undoStop();
+            setCtxMenu(null);
+          }}
+          onClear={() => {
+            clearStops();
+            setMeasuring(false);
+            setCtxMenu(null);
+          }}
+          onCopyCoords={() => {
+            copyCoords(ctxMenu.target.lat, ctxMenu.target.lon);
+            setCtxMenu(null);
+          }}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
+
       {/* ---- unified legend ---- */}
       <MapLegend
         className="maplegend--imm ws-legend"
         items={[
+          // W11.7 — the user asked for this control to live in the legend, next to the
+          // colour controls. Persisted in localStorage with the other map preferences.
+          <label className="ws-legend-toggle">
+            <input
+              type="checkbox"
+              checked={busArrows}
+              onChange={(e) => setBusArrows(e.target.checked)}
+            />
+            Show buses as <strong>direction arrows</strong>
+            <span className="ws-hint">
+              {" "}
+              — pointed along the route the bus is actually on. A bus that is dwelling at a
+              stop, or whose heading we do not know, stays a plain marker rather than
+              pointing somewhere arbitrary.
+            </span>
+          </label>,
           busColorMode === "borough" ? (
             <span>
               Bus routes are coloured by <strong>home borough</strong> — routes in the same borough share

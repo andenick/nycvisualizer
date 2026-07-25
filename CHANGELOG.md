@@ -12,6 +12,103 @@ All notable changes to nycvisualizer are recorded here.
 > work, that citation (e.g. NBER w33584, arXiv:2606.17530) is unchanged and remains
 > the reader's referent.
 
+## 2026-07-25 — Workstation: stop cards you can keep, and a measure tool that snaps to stops
+
+Stage 1 of the measure feature. Client-only: no API change, no container but
+`nycvisualizer-web` touched.
+
+### The stop card
+
+Clicking a stop dot on the Planner Workstation now opens a **card that stays up**. Click
+another and you get a second one; click a card's stop again (or its ✕) and it closes. The
+selection is capped at **10, oldest evicted, with the count always on screen** — an
+unbounded, accumulating panel is the exact failure mode the 2026-07-25 freeze fix removed,
+and this feature does not get to reintroduce it.
+
+**The stop code is the headline** — large, monospaced, and copyable, because it is the
+number a planner reads off a pole and carries into a meeting. The card also names the stop,
+lists every selected route serving it, and shows the surveyed coordinate to six decimals.
+Fields we do not hold read **`not captured`**, never a blank and never a zero: the six NYC
+bus GTFS feeds publish no `stop_code` and no `wheelchair_boarding` column, and saying so is
+more useful than leaving a gap.
+
+The per-marker Leaflet popup that used to answer a stop click is **gone**. The card holds
+strictly more, it persists so several stops can be compared, and it is what the measure
+tool measures over — two competing answers to one click was the worse design.
+
+### Measure distance
+
+Measurement is a **mode of the stop card**, not a separate tool: the path is the selection,
+in click order. Two doors — a visible **`⟷ Measure`** button and **right-click → "Measure
+distance from here"** — because the desktop convention has no touch equivalent to copy, and
+right-click is undiscoverable to a non-technical reader. The context menu **leads with what
+you clicked** (the stop's name, code and routes) before offering any verb, and it is
+**mode-sensitive**: while measuring it offers *Measure to here · Undo last stop · Clear
+measurement*.
+
+- **Arming the tool emphasises every stop on screen**, so the map says what it can snap to
+  before the first click.
+- **The readout docks and never grows.** It is the same size at 2 stops and at 10; the
+  incremental numbers live on the geometry, as a graduated tape with `0` at the origin and
+  cumulative + per-leg distances at each vertex.
+- **Click a stop again to remove it**, and the chain re-stitches across the gap. **Ctrl+Z**,
+  **Backspace** and **Delete** undo the last stop; an **↺ Undo** button does the same for
+  touch. **Escape** leaves the mode and **keeps your stops and your number** — committing
+  must never destroy the answer.
+- **There is no finish gesture**, deliberately: `dblclick` is already the map's zoom.
+- **Both units at once, no toggle**: feet primary, miles in parentheses.
+
+### The numbers, and how honest they are
+
+Distances are **geodesic** — a local-radius WGS84 reduction, exact to far better than a
+foot at this scale. A Web-Mercator *pixel* distance would be wrong by about 30 % at New
+York's latitude, which is a correctness bug rather than a rounding question.
+
+They are measured **between surveyed stop positions and never from live bus locations**.
+Stop coordinates are uniformly six decimal places — about 0.3–0.4 ft — against a
+~160–200 ft positional floor on live vehicle tracking, so this is one of the few numbers on
+this site that is genuinely exact, and the page says so. Results are **rounded to the
+nearest 10 ft**: the geometry is better than that, but a stop coordinate is one surveyed
+point standing for a ~40 ft kerbside zone, and finer precision would be false.
+
+Distance **along the bus route** and **walking distance** are named in the readout and
+currently say they are not measured, rather than letting the straight line quietly stand in
+for either. Snapping is to bus stops and subway stations only — free map points are not
+offered, because a distance between two sidewalk pixels is not a fact about the network.
+
+### Bus direction arrows
+
+A legend toggle draws each bus as an **arrow pointing the way it is travelling**, slightly
+larger than the marker it replaces and keeping its route colour. The heading comes from the
+**route-shape tangent** the motion engine already computes for positioning — smooth, and
+always consistent with the path the bus is drawn on. (The feed's own `bearing` field was
+checked and is 100 % populated, 2,208 of 2,208 live vehicles; the tangent is a quality
+choice, not a coverage workaround.) A bus that is dwelling at a stop, or whose heading is
+unknown, **keeps the plain marker** rather than pointing somewhere arbitrary. The choice is
+remembered with the other map preferences.
+
+### Cost
+
+The freeze that was fixed earlier today stays fixed, and this feature was built to the same
+rules and measured against the same reproduction (57 Bronx routes, Bronx z14, 4× CPU
+throttle, ten drag-pan gestures, three runs each):
+
+| | pan median | frame P50 | frame P95 | frames over 33 ms |
+|---|---|---|---|---|
+| before this change | 539 ms | 16.7 ms | 33.4 ms | 5.7 % |
+| after, nothing selected | 517 ms | 16.7 ms | 33.3 ms | 4.7 % |
+| after, four stop cards open | 574 ms | 16.7 ms | 33.3 ms | 5.1 % |
+| after, measuring | 535 ms | 16.7 ms | 33.4 ms | 6.2 % |
+| after, arrows on | 543 ms | 16.7 ms | 33.3 ms | 4.6 % |
+
+60 fps stays locked at every route count, and the arrows are free to within measurement
+noise. The whole feature binds **three** map-level listeners and **zero** per-stop
+listeners; the snap index is built once per selection change (1,985 distinct stops in
+1.5–4.9 ms, from data already in the browser) and queried in O(1); the measure path is at
+most `2 × points + 1` elements in its own pane; and it never triggers a stop redraw.
+Emphasising the stops when the tool arms is a single restyle pass — 3,098 markers in
+6–10 ms, twice per measure session.
+
 ## 2026-07-25 — API: honest alert severity, real subway train identity, a depth gate that counts qualifying days, and auto-stats
 
 The backend half of the 2026-07-25 work, deployed together (one API image rebuild).
