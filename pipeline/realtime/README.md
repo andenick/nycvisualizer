@@ -1,20 +1,29 @@
 # NYC Platform — Realtime Infrastructure (`realtime/`)
 
 Single-process asyncio poller that harvests every NYC realtime transit feed and
-archives it to an hourly-partitioned Parquet lake, plus a batch derivation job.
+archives it to an hourly-partitioned Parquet lake, plus the **derive2** derivation engine.
 Part of the Jane / **nycvisualizer** NYC Granular Mapping Platform (MASTER_PLAN B3).
 
 ```
 realtime/
 ├── poller.py            # the always-on service (one process, all feeds)
-├── derive.py            # batch derivations (run manually / hourly)
+├── derive2/             # THE LIVE derivation engine (run_derive.py + run_derive.ps1)
+├── derive.py            # DEPRECATED v1 batch engine — invoked by nothing (see below)
 ├── POLLER_STATUS.json   # heartbeat: per-feed health, written every ~15s
 ├── poller.lock          # single-instance lockfile (PID + port)
 ├── logs/poller-YYYY-MM-DD.log
-├── archive/<feed>/date=YYYY-MM-DD/hour=HH/part-*.parquet   # raw snapshots
-│   └── (alerts feeds write part-*.jsonl instead)
-└── derived/             # observed_headways / segment_speeds / schedule_adherence
+└── derived/             # observed_headways / adherence / kpis / trajectories / data_quality
+
+# raw archive (location is env-driven — see below):
+$NYCV_ARCHIVE_ROOT/<feed>/date=YYYY-MM-DD/hour=HH/part-*.parquet   # raw snapshots
+                                          └── (alerts feeds write part-*.jsonl instead)
 ```
+
+**Archive location is env-driven.** Set `NYCV_ARCHIVE_ROOT` (and `REALTIME_ARCHIVE`) in `.env`;
+poller, derive2 and the site backend all read it from there, never from a literal in code. It
+defaults to `realtime/archive/` but is normally pointed at a **separate drive** so archive growth
+never contends with the working tree — which is how the reference deployment runs it, so the
+in-tree `realtime/archive/` directory may not exist at all.
 
 ## Feeds polled
 
@@ -122,15 +131,51 @@ departure_delay, schedule_relationship`. GBFS: per-station availability counts.
 
 - **Raw snapshots**: **kept indefinitely** — the archive is the raw material for the
   telemetry we preserve (per-bus behavior, the motion model). It is **never silently
-  deleted**. Growth is modest (~0.3 GB/day) against ample free space, so keep-forever is
-  safe for years. **When the archive crosses ~200 GB**, MOVE the *oldest whole month* of
-  raw partitions to cold storage, never delete — a manual/curated, size-triggered move
-  (not a rolling age prune):
+  deleted**.
+
+  **Measured growth.** Over the six **complete** days in the reference deployment's archive
+  (2026-07-18, 07-19, 07-20, 07-22, 07-23, 07-24 — excluding a partial start day, a disk-guard
+  outage day, and the in-progress day):
+
+  | | |
+  |---|---|
+  | per-day | 0.517 · 0.488 · 0.529 · 0.522 · 0.492 · 0.541 GiB |
+  | **mean** | **0.515 GiB/day** |
+  | | **15.7 GiB/month ≈ 188 GiB/year** |
+  | archive total at measurement | **3.790 GiB across 17 feeds** |
+
+  Budget ~**190 GiB/year** for all 17 feeds. (An earlier "~0.3 GB/day (≈110 GB/yr)" figure in
+  this file was wrong — it understated growth by ~1.7×.)
+
+  **Two feeds dominate the volume** (>77% of all archive bytes):
+
+  | Feed | Share | Size | Note |
+  |---|---|---|---|
+  | `bus_trip_updates` | **38.8%** | 1.472 GiB | second compaction candidate |
+  | `subway_alerts` | **38.3%** | 1.451 GiB | **the compaction target** — 0.188 GiB/day ≈ 69 GiB/yr on complete days |
+
+  `subway_alerts` is **uncompressed JSONL that re-publishes the FULL alert set every 5 minutes**,
+  so successive parts are almost entirely redundant — the obvious place to compact first.
+  **Compaction is NOT implemented and is deferred**: there is no compaction script and no
+  schedule. Recorded so the growth budget is honest, not as a pending action.
+
+- **Cold-storage move at ~200 GB** — when the archive crosses ~200 GB, MOVE the *oldest whole
+  month* of raw partitions to cold storage, never delete: a manual/curated, size-triggered move,
+  not a rolling age prune.
+
+  > ⚠️ **The cold-storage destination must be a DIFFERENT PHYSICAL VOLUME than the archive.**
+  > Check for symlinks/junctions first — a "cold" path that resolves onto the same volume as
+  > `NYCV_ARCHIVE_ROOT` frees **zero bytes**, which is exactly the trap the earlier version of
+  > this guidance fell into. Verify with the resolved target, not the pretty path.
+
   ```powershell
   # Archive size check (run periodically; act only when over ~200 GB):
-  '{0:N1} GB' -f ((Get-ChildItem realtime/archive -Recurse -File |
+  $archive = $env:NYCV_ARCHIVE_ROOT
+  if (-not $archive) { $archive = 'realtime/archive' }
+  '{0:N1} GB' -f ((Get-ChildItem $archive -Recurse -File |
     Measure-Object Length -Sum).Sum / 1GB)
-  # If over threshold: MOVE (never Remove) the oldest date=YYYY-MM-* partitions to cold storage.
+  # If over threshold: MOVE (never Remove) the oldest date=YYYY-MM-* partitions to a
+  # cold-storage dir on a DIFFERENT physical volume.
   ```
   There is **no age-based pruning routine** in the poller: it only writes/flushes and, on a
   low-disk guard, *suspends* archiving — it never deletes archive data.
@@ -140,28 +185,41 @@ departure_delay, schedule_relationship`. GBFS: per-station availability counts.
 ## Resume behavior
 
 The poller holds **no durable cursor** — every cycle is an independent snapshot pull,
-so restart is trivial and lossless beyond the current unflushed buffer. `derive.py`
-is fully re-runnable: it recomputes from whatever is in `archive/` and overwrites
-`derived/*.parquet` each run (pass `--window-hours N` to limit to recent data).
+so restart is trivial and lossless beyond the current unflushed buffer. derive2 is
+likewise fully re-runnable: it is **idempotent by day-partition** and reprocesses only
+days whose archive input changed (state in `derive2/DERIVE2_STATE.json`).
 
-## Derivations (`derive.py`)
+## Derivations — `derive2/` is the live engine
+
+**`realtime/derive2/` is the only derivation engine that runs.** It is driven by the
+scheduled task **`JaneNYCDerive`**, which fires **every 30 minutes** — implemented as two
+`PT1H` repeat triggers, one at **:20** and one at **:50**. Verify with
+`(Get-ScheduledTask -TaskName JaneNYCDerive).Triggers`.
 
 ```powershell
-python realtime/derive.py                 # all archive
-python realtime/derive.py --window-hours 24
+# what the scheduled task actually runs:
+powershell -NoProfile -ExecutionPolicy Bypass -File realtime/derive2/run_derive.ps1
+
+# or the two steps directly (both idempotent, safe to run anytime):
+python realtime/derive2/run_derive.py         # incremental derivation
+python realtime/derive2/package_headways.py   # published dataset roll
 ```
 
-Produces (skipping any it can't yet compute, with a note in `derived/DERIVE_REPORT.json`):
-- `observed_headways.parquet` — route×dir×stop×hour observed headways + **bunching
-  index** (share of gaps < 0.5× the median observed gap).
-- `segment_speeds.parquet` — realized mph between consecutive stops from GPS pings
-  (haversine/dt, GPS-jump outliers > 80 mph dropped).
-- `schedule_adherence.parquet` — **optional**: observed arrival vs GTFS-static
-  scheduled arrival. Requires `../data/raw/transit_static/…/stop_times.txt`; if absent
-  the join is skipped (noted in the report). Realtime vs static trip_id/stop_id
-  namespaces may differ (esp. NYCT) — a 0-row join is reported honestly, not faked.
+It reads the settled Parquet archive only (never the live feeds — no BusTime key contention)
+and writes `derived/{trajectories,observed_headways,adherence,kpis,data_quality}/date=*`.
+Full method: **`derive2/METHODS_derive2.md`**.
 
-Run it hourly via a second scheduled task if desired; it is safe to run anytime.
+**This cadence is local to the machine that derives.** Publishing the derived tree to a serving
+host is a separate deployment step on its own, slower cadence — do not quote the 30-minute
+interval as the freshness of anything a site visitor sees.
+
+### `derive.py` — DEPRECATED v1 engine (uninvoked)
+
+`realtime/derive.py` is the original v1 batch engine. It is **superseded by `derive2/` and is
+invoked by nothing** — no scheduled task, no wrapper script, no import (the only remaining
+references are documentation and its own docstring). It is retained for provenance only.
+**Do not use it**; it defines an arrival differently from derive2 (see `METHODS_derive2.md` §1)
+and its output is not what any site surface reads.
 
 ## Known issues (ops)
 

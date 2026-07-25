@@ -1,10 +1,15 @@
 import { useEffect, useRef } from "react";
 
-// Tiny canvas sparkline for the Ops Wall: draws the trailing-3h parquet series as a
-// line + soft area, breaking the line across null gaps. If `liveValue` is given it is
-// drawn beyond a dashed "splice" marker as a distinct pulsing-color dot — the honest
-// boundary between the hourly parquet rollup and the live NOW computation. The two are
-// never connected by a solid line (they are computed differently).
+// Tiny canvas sparkline for the Ops Wall: draws the rollup series as a line + soft area,
+// breaking the line across null gaps. If `liveValue` is given it is drawn beyond a dashed
+// "splice" marker as a distinct dot — the honest boundary between the parquet rollup and
+// the live NOW computation. The two are never connected by a solid line (they are
+// computed differently).
+//
+// W6a: callers MUST omit `liveValue` unless the series really is the trailing window.
+// Splicing a live point onto a series that ends hours ago draws the eye across an
+// unmarked gap and implies a continuity that does not exist — see OpsWallPage's
+// `canSplice`. Every caller also renders a caption stating the window it actually got.
 export default function OpsSparkline({
   values,
   color,

@@ -173,19 +173,34 @@ except Exception:
 HEADWAYS_SRC = ANALYSIS / "headways_dataset"
 ACCESS_SRC = ANALYSIS / "access"
 
-# S2 — NYC Observed Bus Headways (beta): all-days Parquet + datapackage + latest daily CSV.
+# S2 — NYC Observed Bus Headways (beta).
+#
+# MOVED 2026-07-25 (W6a defect 4). This staging used to live here, and ONLY here — but
+# build_content.py is a SITE-BUILD tool that nothing schedules and that run_derive.ps1
+# never calls, while the dataset it stages is regenerated every 30 minutes by
+# JaneNYCDerive. The served copy therefore froze at whenever a human last ran a site
+# build (measured 2026-07-25: staged 25,691,216 B dated 07-23 01:51 vs produced
+# 36,138,004 B dated 07-24 22:21 — two whole service days missing) and the nightly
+# JaneNYCDerivedSync faithfully tarred the stale copy to the box, directly under the
+# flagship "NYC Observed Bus Headways" dataset on /api/downloads.
+#
+# The staging now runs in the PRODUCER — realtime/derive2/package_headways.py
+# stage_downloads(), called from build(), on every derive cycle — so the served copy
+# cannot lag the computed copy by more than one cycle. Re-copying here would be a
+# REGRESSION: this block picked `csvs[-1]`, which is always the in-progress UTC day,
+# whereas /api/downloads advertises "the most recent COMPLETE service day".
+#
+# We only VERIFY here, and say so loudly if the producer has not run.
 hw_out = OUT_ROOT / "headways_dataset"
-hw_out.mkdir(parents=True, exist_ok=True)
-allp = HEADWAYS_SRC / "observed_bus_headways_all.parquet"
-if allp.exists():
-    shutil.copy2(allp, hw_out / "observed_bus_headways_all.parquet")
-dp = HEADWAYS_SRC / "datapackage.json"
-if dp.exists():
-    shutil.copy2(dp, hw_out / "datapackage.json")
-csvs = sorted((HEADWAYS_SRC / "data").glob("observed_bus_headways_*.csv"))
-if csvs:
-    shutil.copy2(csvs[-1], hw_out / "observed_bus_headways_latest.csv")
-    print(f"  headways extract: staged {csvs[-1].name} -> latest.csv (+ all.parquet, datapackage)")
+_stamp = hw_out / "STAGING.json"
+if _stamp.exists():
+    _s = json.loads(_stamp.read_text(encoding="utf-8"))
+    print(f"  headways extract: staged by package_headways at {_s.get('staged_at')} "
+          f"(latest_service_day={_s.get('latest_service_day')}, "
+          f"{len(_s.get('files', {}))} files) — not re-copied here")
+else:
+    print(f"  headways extract: NOT STAGED — no {_stamp}. "
+          f"Run: PYTHONIOENCODING=utf-8 python realtime/derive2/package_headways.py")
 
 # S4 — Access & isochrones: isochrone grid as GeoParquet (from geom_wkt, EPSG:4326),
 # jobs-accessibility-by-block CSV, access-equity CSV/XLSX/Parquet.

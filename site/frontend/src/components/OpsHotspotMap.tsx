@@ -33,7 +33,9 @@ export default function OpsHotspotMap({ hotspots }: { hotspots: WallHotspot[] })
       zoomControl: false,
       attributionControl: false,
     });
-    addBasemap(m);
+    // W4/W3: the ops-wall inset caps at z16, below the house-number gate, so street
+    // numbers are switched off rather than left to never fire.
+    addBasemap(m, { streetNumbers: false });
     L.control.zoom({ position: "bottomright" }).addTo(m);
     layerRef.current = L.layerGroup().addTo(m);
     mapRef.current = m;

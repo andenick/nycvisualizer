@@ -26,7 +26,15 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, MAP_MAX_ZOOM, type BasemapInfo } from "../lib/basemap";
+import {
+  addBasemap,
+  bboxParam,
+  NYC_CENTER,
+  NYC_BOUNDS,
+  MAP_MAX_ZOOM,
+  STREET_NUMBER_MIN_ZOOM,
+  type BasemapInfo,
+} from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
 import {
@@ -52,8 +60,10 @@ import {
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
 import { BOROUGH_GROUP_ORDER } from "../lib/boroughs";
 import { assignColors, DISTINCT_CAP } from "../lib/palette";
+import { BOROUGH_LEGEND_NOTE, boroughColor, boroughLabel, routeGroup } from "../lib/boroughs";
 import { VehicleFlowLayer } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch } from "../components/MapLegend";
+import MapThemePicker from "../components/MapThemePicker";
 
 const APEX = "https://nycvisualizer.com";
 const AUTHOR = { name: "nickanderson.us", url: "https://nickanderson.us" };
@@ -66,21 +76,9 @@ const STRIP_LINKS: { label: string; to: string }[] = [
   { label: "Data", to: "/data" },
 ];
 
-// ---- borough grouping (mirrors the immersive page; boroughs.ts is the order SoT) ----
-function routeGroup(routeId: string): string {
-  const up = routeId.toUpperCase();
-  if (up.startsWith("BX")) return "Bx";
-  if (up.startsWith("SIM")) return "SIM";
-  if (up.startsWith("X")) return "X";
-  const c = up.charAt(0);
-  return "MBQS".includes(c) ? c : "M";
-}
-function boroughLabel(g: string): string {
-  return (
-    { M: "Manhattan", B: "Brooklyn", Q: "Queens", Bx: "Bronx", S: "Staten Island", SIM: "SI Express", X: "Express" }[g] ??
-    g
-  );
-}
+// (W2, 2026-07-24) routeGroup / boroughLabel were duplicated verbatim here from
+// ImmersiveMapPage.tsx. They now come from lib/boroughs.ts (imported above), which is
+// also where the CVD-verified borough palette lives.
 
 // ---- subway line groups (numbered / lettered / shuttle+SIR — simple, by judgment) ----
 const SUBWAY_GROUPS: { label: string; lines: string[] }[] = [
@@ -268,8 +266,22 @@ export default function WorkstationPage() {
   const lineSet = useMemo(() => new Set(selLines), [selLines]);
   const totalSelected = selRoutes.length + selLines.length;
 
-  // bus route → palette colour (order-stable); subway lines keep their official colour.
-  const routeColor = useMemo(() => assignColors(selRoutes), [selRoutes]);
+  // W2 (2026-07-24) — THE WORKSTATION KEEPS ITS PER-SELECTION PALETTE AS THE DEFAULT,
+  // deliberately, even though borough is now the default on /live/bus and /bus.
+  // `assignColors()` hands each selected route one of 12 mutually-distinct colours;
+  // collapsing a 15-route selection into 5 borough colours would make the selections
+  // indistinguishable from each other — a real regression on the planner's own comparison
+  // tool. Borough is offered here as an OPT-IN, for the one case it is better: "show me
+  // everything in Queens".
+  const [busColorMode, setBusColorMode] = useState<"selection" | "borough">("selection");
+  // bus route → colour (order-stable); subway lines keep their official colour.
+  const routeColor = useMemo(
+    () =>
+      busColorMode === "borough"
+        ? new Map(selRoutes.map((id) => [id, boroughColor(id)]))
+        : assignColors(selRoutes),
+    [selRoutes, busColorMode],
+  );
   const routeColorRef = useRef(routeColor);
   routeColorRef.current = routeColor;
   // engine colour callback for BUSES ONLY (setTrains uses subwayColor internally).
@@ -865,10 +877,43 @@ export default function WorkstationPage() {
 
         {panelOpen && (
           <div className="ws-panel-body">
-            {overCap && (
+            {overCap && busColorMode === "selection" && (
               <div className="ws-warn">
                 {selRoutes.length} bus routes selected — palette colours repeat past {DISTINCT_CAP}; the extra
                 routes reuse a hue with a lightness shift.
+              </div>
+            )}
+
+            {/* W2: opt-in borough colouring. NOT the default here — see the comment on
+                busColorMode: a per-selection palette is what makes a multi-route
+                comparison legible, and borough would collapse it. */}
+            <div className="ws-colormode">
+              <span className="ws-colormode-lbl" id="wsColorLbl">
+                Bus colours
+              </span>
+              <div className="imm-colortoggle" role="group" aria-labelledby="wsColorLbl">
+                <button
+                  type="button"
+                  className={busColorMode === "selection" ? "on" : ""}
+                  onClick={() => setBusColorMode("selection")}
+                  title="One distinct colour per selected route — best for comparing routes"
+                >
+                  Per selection
+                </button>
+                <button
+                  type="button"
+                  className={busColorMode === "borough" ? "on" : ""}
+                  onClick={() => setBusColorMode("borough")}
+                  title="Colour every route by its home borough — routes in the same borough share a colour"
+                >
+                  Borough
+                </button>
+              </div>
+            </div>
+            {busColorMode === "borough" && selRoutes.length > 1 && (
+              <div className="ws-warn">
+                Borough colouring: routes in the same borough share one colour, so selected routes are
+                no longer individually distinguishable. {BOROUGH_LEGEND_NOTE}
               </div>
             )}
 
@@ -1162,10 +1207,17 @@ export default function WorkstationPage() {
       <MapLegend
         className="maplegend--imm ws-legend"
         items={[
-          <span>
-            Each selected <strong>bus route</strong> gets a distinct colourblind-safe colour — its stops (dots, no
-            connecting lines) and its live buses share it.
-          </span>,
+          busColorMode === "borough" ? (
+            <span>
+              Bus routes are coloured by <strong>home borough</strong> — routes in the same borough share
+              one colour. {BOROUGH_LEGEND_NOTE}
+            </span>
+          ) : (
+            <span>
+              Each selected <strong>bus route</strong> gets a distinct colourblind-safe colour — its stops (dots, no
+              connecting lines) and its live buses share it.
+            </span>
+          ),
           <span>
             <Swatch color="#4e79a7" />
             <Swatch color="#f28e2b" />
@@ -1178,6 +1230,15 @@ export default function WorkstationPage() {
           <span>
             Reports arrive ~31&nbsp;s apart · between them motion is <em>modeled</em> (buses glide along their
             shape; trains estimate along the track), never fabricated.
+          </span>,
+        ]}
+        details={[
+          <MapThemePicker id="wsMapTheme" />,
+          <span>
+            Zoom past z{STREET_NUMBER_MIN_ZOOM} and OSM <strong>house numbers</strong> appear on buildings.
+            Coverage is volunteered and patchy — roughly 0.8&ndash;1.6 numbered points per
+            mapped building, denser in Manhattan and Brooklyn than in Queens or Staten Island,
+            and the tiles carry the number only, never the street name.
           </span>,
         ]}
         stamps={

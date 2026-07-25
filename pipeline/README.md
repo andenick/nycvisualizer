@@ -225,7 +225,12 @@ Productionized replacement for the original `derive.py`. Reads the settled Parqu
    artifact MTA does not publish.
 
 `run_derive.py` runs the incremental cycle; `run_derive.ps1` is the `JaneNYCDerive` scheduled
-task wrapper (hourly, offset from poller flush windows). Methods: `derive2/METHODS_derive2.md`.
+task wrapper (**every 30 min** — two `PT1H` triggers at :20 and :50, offset from poller flush
+windows). That cadence refreshes the **local** derived tree; publishing it to a serving host is a
+separate deployment step on its own, slower cadence. Methods: `derive2/METHODS_derive2.md`.
+
+`realtime/derive.py` is the superseded v1 engine and is **invoked by nothing** — kept for
+provenance only. Use `derive2/`.
 
 ### GTFS change monitor — `changes/`
 

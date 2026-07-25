@@ -82,7 +82,8 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
       // container has a size, contributing to the blank-basemap symptom.
       preferCanvas: true,
     });
-    setBasemap(addBasemap(m));
+    // W4: defaults to Focus — the SAI / rent ramps carry the colour on this surface.
+    setBasemap(addBasemap(m, { theme: "focus" }));
     markerLayer.current = L.layerGroup().addTo(m);
     isoLayer.current = L.layerGroup().addTo(m);
     stopLayer.current = L.layerGroup().addTo(m);

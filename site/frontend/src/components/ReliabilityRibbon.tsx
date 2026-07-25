@@ -53,7 +53,8 @@ export default function ReliabilityRibbon({ route, displayName }: { route: strin
       center: [40.75, -73.97], zoom: 12, minZoom: 9, maxZoom: 17,
       maxBounds: NYC_BOUNDS, maxBoundsViscosity: 0.5, preferCanvas: true,
     });
-    setBasemap(addBasemap(m));
+    // W3: a small segment-speed inset — house numbers would be noise here.
+    setBasemap(addBasemap(m, { streetNumbers: false }));
     segLayer.current = L.layerGroup().addTo(m);
     vehLayer.current = L.layerGroup().addTo(m);
     map.current = m;

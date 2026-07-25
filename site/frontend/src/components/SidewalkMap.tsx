@@ -147,6 +147,10 @@ export default function SidewalkMap() {
   const [loading, setLoading] = useState<string | null>(null);
   const [zoomNote, setZoomNote] = useState<string | null>(null);
 
+  /** True once the basemap has reported a theme — from then on it, not `data-theme`,
+   *  decides whether the coverage ramp uses its light or dark variant. */
+  const basemapDrivesTone = useRef(false);
+
   const rerenderCov = () => {
     const cl = covLayer.current as unknown as { rerenderTiles?: () => void; redraw?: () => void } | null;
     if (!cl) return;
@@ -165,7 +169,27 @@ export default function SidewalkMap() {
     m.createPane("nta").style.zIndex = "350";
     m.createPane("coverage").style.zIndex = "400";
     m.createPane("points").style.zIndex = "450";
-    setBasemap(addBasemap(m));
+    // W4: this surface's DEFAULT is Focus — the coverage ramp and the SAI ramp own the
+    // colour budget here (one-hot law), so the basemap should recede. An explicit user
+    // choice still wins (see resolveMapTheme). House numbers stay on: this map maxes at
+    // z17 and "which building is that" is exactly the question a sidewalk audit asks.
+    setBasemap(
+      addBasemap(m, {
+        theme: "focus",
+        // W4 defect (a), fixed at the root: the coverage overlay used to derive its
+        // light/dark from `data-theme` while the basemap read only the OS
+        // `prefers-color-scheme`, so overlay and basemap could disagree. The overlay now
+        // takes its tone from the theme the BASEMAP actually painted — one source of
+        // truth, and it also follows a Paper/Night-Ops choice, not just light/dark.
+        onTheme: (t) => {
+          basemapDrivesTone.current = true;
+          if (t.tone !== covStyle.current.theme) {
+            covStyle.current.theme = t.tone;
+            rerenderCov();
+          }
+        },
+      }),
+    );
 
     for (const k of ["nta", "sai", "ada"] as const) groups.current[k] = L.layerGroup();
 
@@ -231,8 +255,12 @@ export default function SidewalkMap() {
     map.current = m;
     sync(m);
 
-    // theme reactivity: OS setting + manual [data-theme] toggle
+    // theme reactivity: OS setting + manual [data-theme] toggle. Retained ONLY as the
+    // fallback path for when the vector basemap degraded to raster and therefore never
+    // reports a theme — otherwise the basemap's own theme is authoritative (above), so
+    // a Paper/Night-Ops choice is not fought by a data-theme mutation.
     const applyTheme = () => {
+      if (basemapDrivesTone.current) return;
       const t = effectiveTheme();
       if (t !== covStyle.current.theme) {
         covStyle.current.theme = t;

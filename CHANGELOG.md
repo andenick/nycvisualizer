@@ -2,6 +2,115 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-24 — W2/W3/W4: borough colouring by default, street numbers, map themes
+
+Three map-layer packages, all unlocked by the W0 upgrade to `protomaps-leaflet` 5.1.0
+(below). Shipped together with the W6a Ops Wall honesty fixes.
+
+### W2 — buses are coloured by home borough by default
+
+The GTFS `route_color` we had been using is not route identity. Across all **345 routes
+there are only 7 distinct values**, the largest covering 77 routes: they encode MTA
+**service type** (local / limited / SBS / express). Borough grouping gives 6 meanings for
+the same 7 colours — a lateral move in colour count, a large gain in meaning.
+
+- Default flipped to borough on **`/live/bus`** and **`/bus`**. `/bus` previously had **no
+  borough branch at all**: it always used `route_color` and reached the borough palette only
+  through a `!== "#ffffff"` fallback that, measured over the full GTFS universe, **never
+  fires** — 0 of 345 routes have a white/blank colour. The palette was dead code while the
+  legend already claimed "Buses by borough".
+- `?color=route` opts back in and is carried in the shared URL; the toggle is unchanged
+  (borough now sits first).
+- **`routeGroup` / `GROUP_COLORS` / `boroughLabel` moved into `src/lib/boroughs.ts`.** They
+  were duplicated verbatim across `ImmersiveMapPage.tsx`, `WorkstationPage.tsx` and
+  `BusMap.tsx` while `boroughs.ts` already declared itself the single source of truth.
+- **`/workstation` deliberately keeps its per-selection palette as the default** — collapsing
+  a 15-route selection into 5 borough colours would make the selections indistinguishable,
+  a regression on the planner's own comparison tool. Borough is offered there as opt-in,
+  with an on-screen note saying what it costs.
+
+#### The palette was re-derived, and the old one was measurably unsafe
+
+The shipped palette was not drawn from `lib/palette.ts CATEGORICAL_12` and failed twice:
+
+- **Bronx `#dc2626` vs Brooklyn `#16a34a` is the textbook red/green deuteranopia collision.**
+  Simulated they become `#898900` and `#88884f` — CIEDE2000 **ΔE00 9.61** (protanopia 17.77).
+  Two of the five boroughs were near-indistinguishable for ~6% of men.
+- **X and SIM were the identical hex** (`#0891b2`), ΔE00 **0.00**.
+
+The replacement takes its five borough hues from `CATEGORICAL_12` and derives the two express
+families as a +58% lightness shift of their home borough (the same `lightnessShift` the
+palette already uses for its >12 wrap), so an express route reads as "a paler <home borough>".
+Verified with a Brettel-Viénot-Mollon dichromat simulation + CIEDE2000 over all 21 pairs:
+
+| vision | min ΔE00 | worst pair |
+|---|---|---|
+| normal | 17.34 | Bronx vs SI-express |
+| deuteranopia | 12.21 | Manhattan vs Queens |
+| protanopia | 13.07 | Queens vs Man-express |
+| tritanopia | 12.53 | Man-express vs SI-express |
+
+- **New canary `tools/cvd_check.py`**, wired into `paint_canary.py` (11 → 12 checks). It reads
+  the palette out of `boroughs.ts` and fails the deploy gate if any pair drops below ΔE00 10
+  under any of the four vision types. A screenshot cannot see this class of defect.
+- New unit tests for the prefix parser's two ordering traps (Bx-before-B, SIM-before-S/X)
+  and for palette completeness/distinctness. vitest 55 → 65.
+- **Legend honesty:** `routeGroup` classifies by short-name prefix only, so a Bx route keeps
+  its Bronx colour all the way into Manhattan. There is no per-segment logic and none is
+  planned. Every borough legend now says "coloured by the route's home borough".
+- The backend `borough` field is still **not** used: `app/gtfs.py` derives it from the owning
+  GTFS feed directory and files 92 routes (27%) under "MTA Bus Co.", which is not a borough.
+
+### W3 — OSM house numbers at z17+
+
+Zero new data and zero new bytes: the `buildings` layer already carries `kind: "address"`
+point features with `addr_housenumber` at data zoom 15 (Midtown 1,213 of 2,665 features;
+Park Slope 2,110; Bayside 1,603 with Queens hyphenation preserved — `215-29`, `48-01`), and
+`maxDataZoom: 15` keeps them available over-zoomed. One `CenteredTextSymbolizer` label rule.
+Already ODbL/OSM and already attributed.
+
+- **Coverage is partial and uneven and the legend says so** — 0.83–1.56 address points per
+  mapped building across five sampled tiles, denser in Manhattan and Brooklyn. The tiles carry
+  the number only; `addr_street` is not present, so a label can never be "42 W 42nd St".
+- **The zoom gate is not the rule's `minzoom`.** protomaps keys its labeler on the Leaflet
+  *tile* zoom, which we clamp at 16, so `minzoom: 17` would never fire. The rule is declared at
+  16 and gated on the map's *display* zoom at runtime.
+- W0 inferred that protomaps' internal over-zoom path still drops roads on 5.1.0. **That was
+  re-tested rather than trusted**: built with `maxNativeZoom` 19 and shot Midtown at z18 —
+  street names render natively and crisply, but road casings and fills are gone. The defect
+  survives the major, so the z16 clamp stays, and house numbers (like street names) are
+  CSS-upscaled above z16: larger and softer than a native label.
+- `tools/rule_canary.mjs` gains a **street-number data contract** check (14 → 15) that decodes
+  the served archive and asserts the address points still carry numbers. A future basemap
+  rebuild that drops them would otherwise pass every existing guard.
+
+### W4 — four purpose-built map themes, and two wiring defects fixed
+
+**Night Ops** (near-black, minor street names suppressed — ops wall and ant farms) ·
+**Planner Light** (white road ribbons over dark casings, prominent labels, muted landuse) ·
+**Paper** (grayscale, for print and report figures) · **Focus** (desaturated, so a thematic
+overlay owns the colour budget). Auto follows the site theme: Planner Light in light,
+Night Ops in dark. `/sidewalks` and `/renters` default to Focus; an explicit choice always
+wins. Picker lives in each map legend's Details fold.
+
+Two defects fixed at the root, both of which existed regardless of themes:
+
+1. **The basemap read only the OS `prefers-color-scheme`** and never
+   `document.documentElement[data-theme]`, so the in-app theme toggle did not move it —
+   while `SidewalkMap.tsx` *did* read `data-theme`. Overlay and basemap could disagree.
+2. **`addBasemap` is called from `[]`-dep effects at all 7 map sites**, so the theme was fixed
+   at mount and nothing listened for `ark:themechange`. The listeners now live with the layer
+   inside `addBasemap`, so no call site had to change its effect deps, and they are torn down
+   on Leaflet's `unload`.
+
+The sidewalk coverage overlay now takes its light/dark tone from the theme the basemap
+actually painted, not from `data-theme` — one source of truth, and it follows a Paper or
+Night Ops choice too.
+
+Custom themes pass explicit `paintRules`/`labelRules` rather than a `flavor` name (the two are
+mutually exclusive in `leafletLayer`). They come from protomaps' own generators, so the
+filters are identical to `flavor: "light"` and `rule_canary.mjs` still speaks for them.
+
 ## 2026-07-24 — W0: the basemap had no roads. It does now.
 
 **The site has been shipping a basemap that draws no roads and no street labels.** Not

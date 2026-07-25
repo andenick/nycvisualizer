@@ -24,9 +24,17 @@
  *   For one known tile (default: Midtown Manhattan, the z16 acceptance view):
  *     * the archive is reachable and the tile decodes;
  *     * for every required dataLayer, the shipped paint/label rules MATCH > 0 features;
- *     * named streets specifically produce label matches (street NAMES, not just casings).
- *   Runs for every flavor the app can select (light + dark) — a flavor-specific style
- *   regression is a real possibility.
+ *     * named streets specifically produce label matches (street NAMES, not just casings);
+ *     * the W3 street-number DATA contract: `kind: "address"` features in the `buildings`
+ *       layer still carry `addr_housenumber` (the layer/kind/property names are read out
+ *       of `lib/basemap.ts`, never restated here).
+ *   Runs for the two NAMED flavors (light + dark). NOTE (W4, 2026-07-24): the app now
+ *   paints four CUSTOM themes (Planner Light / Night Ops / Paper / Focus) built as
+ *   `Flavor` objects rather than `namedFlavor()` names. That does not weaken this canary:
+ *   every theme feeds the SAME `paintRules(flavor)` / `labelRules(flavor, lang)`
+ *   generators, and those generators build their filters from the tile schema, not from
+ *   the colours — so rule/tileset agreement is identical across all four. The colours are
+ *   what differ, and colours are a screenshot question, not a rule-match one.
  *
  * SCOPE, STATED HONESTLY. The rules come from the WORKING TREE's installed protomaps-leaflet
  * (`frontend/node_modules`); the tiles come from whatever SOURCE you point it at. So it
@@ -76,6 +84,31 @@ function maxDataZoom() {
   const src = fs.readFileSync(BASEMAP_TS, "utf8");
   const m = src.match(/BASEMAP_MAX_DATA_ZOOM\s*=\s*(\d+)/);
   return m ? Number(m[1]) : 15;
+}
+
+// W3 (2026-07-24): the street-number labels read `addr_housenumber` off `kind: "address"`
+// point features in the `buildings` layer. That is DATA, not style — a future basemap
+// rebuild could silently drop it and every other guard would stay green (roads still
+// paint, pixels still count, the rules still match). So assert the data is there, and
+// read the layer/kind/property names out of the app rather than restating them.
+function streetNumberContract() {
+  const src = fs.readFileSync(BASEMAP_TS, "utf8");
+  // The rule body, so a `dataLayer:` somewhere else in the file cannot be picked up.
+  const body = src.match(/function streetNumberRule\([\s\S]*?\n}/);
+  if (!body) return { enabled: false };
+  const b = body[0];
+  const dataLayer = b.match(/dataLayer:\s*"([^"]+)"/);
+  const kind = b.match(/f\.props\.kind === "([^"]+)"/);
+  const prop = b.match(/labelProps:\s*\["([^"]+)"\]/);
+  if (!dataLayer || !kind || !prop) {
+    // Refuse to guess — guessing is exactly how paint_canary came to assert a retired
+    // archive for weeks. A shape change here should be a loud failure, not a default.
+    throw new Error(
+      "could not read the street-number rule's dataLayer/kind/labelProps out of " +
+        `${BASEMAP_TS}; the canary refuses to guess`,
+    );
+  }
+  return { enabled: true, dataLayer: dataLayer[1], kind: kind[1], prop: prop[1] };
 }
 
 // --- module loading: the deps live in the frontend's node_modules ------------------
@@ -392,6 +425,31 @@ async function main() {
       roadsNamed > 0 && roadsNamedMatched > 0,
       `[${flavorName}] named streets reach a label rule`,
       `${roadsNamedMatched} matches over ${roadsNamed} name-bearing road features`,
+    ]);
+  }
+
+  // W3 street-number data contract (flavor-independent — it is about the TILES).
+  const sn = streetNumberContract();
+  if (sn.enabled) {
+    const pool = layers.get(sn.dataLayer) || [];
+    const addr = pool.filter((f) => f.props.kind === sn.kind);
+    const withNum = addr.filter((f) => {
+      const v = f.props[sn.prop];
+      return typeof v === "string" ? v.length > 0 : v != null;
+    });
+    report.streetNumbers = {
+      dataLayer: sn.dataLayer,
+      kind: sn.kind,
+      prop: sn.prop,
+      layerFeatures: pool.length,
+      addressFeatures: addr.length,
+      withHouseNumber: withNum.length,
+      sample: withNum.slice(0, 5).map((f) => String(f.props[sn.prop])),
+    };
+    checks.push([
+      withNum.length > 0,
+      `street numbers: '${sn.kind}' features in '${sn.dataLayer}' carry ${sn.prop}`,
+      `${withNum.length} numbered of ${addr.length} address points, in ${pool.length} ${sn.dataLayer} features`,
     ]);
   }
 

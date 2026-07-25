@@ -15,7 +15,20 @@
 // start (manual escape hatch). The raster codepath is referenced from the runtime guard
 // below, so it is NOT tree-shaken out of the build (the F5 fix).
 import L from "leaflet";
-import { leafletLayer } from "protomaps-leaflet";
+import {
+  leafletLayer,
+  CenteredTextSymbolizer,
+  type Feature,
+  type LabelRule,
+} from "protomaps-leaflet";
+import {
+  MAP_THEME_EVENT,
+  resolveMapTheme,
+  themeLabelRules,
+  themePaintRules,
+  type MapThemeChoice,
+  type MapThemeDef,
+} from "./mapThemes";
 
 // W6.1: the deeper (maxzoom-15) extract ships under a NEW filename so the immutable
 // edge/browser cache on the old /basemap/nyc-basemap.pmtiles (36 MB, maxzoom 14) is bypassed
@@ -43,6 +56,29 @@ export const NYC_BOUNDS: L.LatLngBoundsExpression = [
   [40.95, -73.65],
 ];
 
+/** W3 (2026-07-24) — STREET NUMBERS.
+ *
+ *  The house numbers were already in the tiles: the `buildings` layer carries
+ *  `kind: "address"` POINT features with an `addr_housenumber` property, at data zoom 15
+ *  only. Measured on the shipped archive, five z15 tiles:
+ *    Midtown 1,213 address points / 2,665 features · Park Slope 2,110 / 4,306 ·
+ *    Bayside 1,603 / 3,525 (Queens hyphenation preserved: `215-29`, `48-01`) ·
+ *    St George 369 / 764 · Riverdale 366 / 730.
+ *  100% of address features carry a number; `addr_street` is NOT in the tiles, so a
+ *  label can only ever be the number, never "42 W 42nd St".
+ *
+ *  COVERAGE IS PARTIAL AND UNEVEN — say so wherever this is surfaced. Address points per
+ *  mapped building polygon range 0.83 (Bayside) to 1.56 (Midtown) across those samples;
+ *  plenty of buildings have none and some have several. This is OpenStreetMap
+ *  volunteered data, not a cadastre.
+ *
+ *  ZOOM GATING — the trap. protomaps-leaflet keys its labeler on the LEAFLET TILE zoom
+ *  (`leaflet_layer.ts`: `this.labelers.add(coords.z, …)`), and we clamp that pyramid at
+ *  `BASEMAP_MAX_NATIVE_ZOOM = 16`. A LabelRule with `minzoom: 17` would therefore NEVER
+ *  fire. So the rule is declared at minzoom 16 and gated on the map's DISPLAY zoom at
+ *  runtime by flipping `rule.visible` (see `gateStreetNumbers`). */
+export const STREET_NUMBER_MIN_ZOOM = 17;
+
 export interface BasemapInfo {
   mode: "pmtiles" | "raster";
   attribution: string;
@@ -51,6 +87,10 @@ export interface BasemapInfo {
   fallbackEngaged?: boolean;
   /** why the fallback engaged (for telemetry): empty_paint_rules | tile_errors_NN | zero_tiles. */
   reason?: string;
+  /** id of the map theme currently painted (W4). Absent in raster fallback. */
+  themeId?: MapThemeDef["id"];
+  /** user-facing name of that theme, for the legend. */
+  themeLabel?: string;
 }
 
 /** Guard callbacks the map components pass so they can react to a degraded basemap
@@ -62,6 +102,21 @@ export interface BasemapGuardHooks {
   onFallback?: (info: BasemapInfo, reason: string) => void;
   /** no basemap pixels detected after ~10s (beacon-only signal; may precede a swap). */
   onZeroTiles?: (detail: string) => void;
+}
+
+/** Everything `addBasemap` accepts. Extends the guard hooks so the 7 existing call
+ *  sites keep working unchanged. */
+export interface BasemapOptions extends BasemapGuardHooks {
+  /** This surface's DEFAULT map theme — used only when the visitor has never picked one
+   *  (an explicit choice always wins). The thematic-overlay maps pass "focus" so the
+   *  DATA carries the colour budget (ARKMAP §7: one hot encoding per view). */
+  theme?: MapThemeChoice;
+  /** Render OSM house numbers at display zoom >= STREET_NUMBER_MIN_ZOOM. Default true.
+   *  Costs nothing below that zoom (the rule is not evaluated). */
+  streetNumbers?: boolean;
+  /** Called on mount and again whenever the applied theme changes, so a legend can
+   *  name the theme honestly instead of guessing. */
+  onTheme?: (theme: { id: MapThemeDef["id"]; label: string; tone: "light" | "dark" }) => void;
 }
 
 const RASTER_INFO: BasemapInfo = {
@@ -152,56 +207,125 @@ function countPaintedPixels(map: L.Map): number {
   }
 }
 
+/** The W3 street-number label rule, built against the active theme's flavor so the
+ *  numbers inherit that theme's `address_label` / `address_label_halo` colours.
+ *
+ *  One rule, one dataLayer, zero new bytes: the data is already in the basemap archive
+ *  (see STREET_NUMBER_MIN_ZOOM above), already ODbL/OSM, and already attributed at
+ *  `chrome/ReactChrome.tsx:168`. Nothing is fetched that was not fetched before.
+ *
+ *  Collision handling is protomaps' own labeler: address points are laid out AFTER the
+ *  road-name rules in this array, so a street name always wins the pixel and the numbers
+ *  thin themselves out automatically at density (which is why Midtown shows far fewer
+ *  than its 1,213 candidates). */
+function streetNumberRule(theme: MapThemeDef): LabelRule {
+  return {
+    id: "nycv-address-housenumber",
+    dataLayer: "buildings",
+    // must be <= BASEMAP_MAX_NATIVE_ZOOM — the labeler is keyed on the Leaflet TILE
+    // zoom, which we clamp at 16. Display-zoom gating happens in gateStreetNumbers().
+    minzoom: BASEMAP_MAX_NATIVE_ZOOM,
+    visible: false,
+    filter: (_z: number, f: Feature) => f.props.kind === "address",
+    symbolizer: new CenteredTextSymbolizer({
+      labelProps: ["addr_housenumber"],
+      fill: theme.flavor.address_label,
+      stroke: theme.flavor.address_label_halo,
+      width: 2,
+      font: "500 9px sans-serif",
+    }),
+  };
+}
+
 /** Add the basemap layer to a map and return metadata for the legend/attribution.
- *  Wires the F5 reliability guard: auto-engage the raster fallback if the vector
- *  basemap is provably broken, and surface a "simplified basemap" chip. */
-export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
+ *
+ *  Wires three things:
+ *    * the F5 reliability guard — auto-engage the raster fallback if the vector basemap
+ *      is provably broken, and surface a "simplified basemap" chip;
+ *    * W4 THEME REACTIVITY. Two defects existed here before 2026-07-24 and are fixed
+ *      together: (a) the basemap read ONLY the OS `prefers-color-scheme` and never
+ *      `document.documentElement[data-theme]`, so the in-app theme toggle did not move
+ *      it — while `SidewalkMap.tsx` DID read `data-theme`, meaning overlay and basemap
+ *      could disagree; (b) `addBasemap` is called from `[]`-dep effects at all 7 map
+ *      sites, so the theme was fixed AT MOUNT and nothing listened for
+ *      `ark:themechange`. Both are now handled INSIDE this function — the listeners live
+ *      with the layer, so no call site has to change its effect deps to get a live theme.
+ *    * W3 STREET NUMBERS — a display-zoom-gated house-number label rule.
+ */
+export function addBasemap(map: L.Map, opts?: BasemapOptions): BasemapInfo {
   // Manual escape hatch: force raster from the start (never the shipped default).
   if (BASEMAP_MODE === "raster-todo" || BASEMAP_MODE === "raster") {
     addRasterLayer(map);
     return { ...RASTER_INFO, reason: "forced_mode" };
   }
+  const hooks = opts;
+  const wantNumbers = opts?.streetNumbers !== false;
 
-  const prefersDark =
-    typeof window !== "undefined" &&
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  let theme = resolveMapTheme(opts?.theme);
+  let addrRule: LabelRule | null = null;
 
-  let layer: ReturnType<typeof leafletLayer>;
-  try {
-    layer = leafletLayer({
-    url: BASEMAP_URL,
-    // ⚠️ VERSION-SPECIFIC OPTION NAME — THIS RULE INVERTED AT protomaps-leaflet v5.
-    //   * protomaps-leaflet **4.x**: the option was `theme`, and passing `flavor`
-    //     was the bug (it silently yielded empty paintRules — the 2026-07 outage).
-    //   * protomaps-leaflet **5.x (what we ship)**: the option is `flavor`, backed by
-    //     `namedFlavor()` from `@protomaps/basemaps`. Passing `theme` is now the bug.
-    // So the old "never use `flavor`" warning is DEAD and must not be reinstated while
-    // we are on 5.x. Check the installed major before trusting any advice about this
-    // option name. Valid 5.x flavor names: light | dark | white | grayscale | black.
-    // (`namedFlavor` THROWS on an unknown name — hence the try/catch around this call —
-    // whereas *omitting* the option still yields empty paintRules, which guard (1) catches.)
-      flavor: prefersDark ? "dark" : "light",
+  /** Build a protomaps layer for the current theme. Throws only if protomaps does. */
+  const build = (): ReturnType<typeof leafletLayer> => {
+    const labels = themeLabelRules(theme);
+    addrRule = wantNumbers ? streetNumberRule(theme) : null;
+    if (addrRule) labels.push(addrRule);
+    return leafletLayer({
+      url: BASEMAP_URL,
+      // ⚠️ VERSION-SPECIFIC OPTION NAME — THIS RULE INVERTED AT protomaps-leaflet v5.
+      //   * protomaps-leaflet **4.x**: the option was `theme`, and passing `flavor`
+      //     was the bug (it silently yielded empty paintRules — the 2026-07 outage).
+      //   * protomaps-leaflet **5.x (what we ship)**: the option is `flavor`, backed by
+      //     `namedFlavor()` from `@protomaps/basemaps`. Passing `theme` is now the bug.
+      // So the old "never use `flavor`" warning is DEAD and must not be reinstated while
+      // we are on 5.x. Check the installed major before trusting any advice about this
+      // option name.
+      //
+      // W4 NOTE — we now pass EXPLICIT rules instead of a flavor NAME, because
+      // `leafletLayer` treats the two as mutually exclusive (`if (options.flavor) {…}
+      // else { paintRules/labelRules }`) and our four purpose-built themes are custom
+      // `Flavor` OBJECTS, not one of the five names `namedFlavor()` knows. The rules come
+      // from protomaps' own `paintRules()`/`labelRules()` generators, so the FILTERS are
+      // byte-identical to what `flavor: "light"` would have produced — only the colours
+      // differ, and `site/tools/rule_canary.mjs` therefore still speaks for them.
+      paintRules: themePaintRules(theme),
+      labelRules: labels,
+      backgroundColor: theme.flavor.background,
       // W6.1 basemap depth — "roads must never disappear when zooming in". The NYC build is
-      // generated at maxzoom 15 (Planetiler 0.10.2 — see `site/tools/build_basemap.sh`);
-      // the previous 36 MB extract stopped at z14.
+      // generated at maxzoom 15 (see `site/tools/build_basemap.sh`); the previous 36 MB
+      // extract stopped at z14.
       //   * maxDataZoom=15 tells protomaps-leaflet the deepest zoom with tile data, so a display
       //     tile at z16 resolves to the z15 data tile (verified: full roads at z15 AND z16).
       //   * maxNativeZoom=16 is the RELIABLE over-zoom for z17-19: protomaps-leaflet's OWN
       //     internal scale path (display zoom > maxDataZoom+levelDiff) renders buildings but
-      //     DROPS roads (verified on 4.1.1; the View math is byte-identical in 5.1.0, so the
-      //     clamp is retained). Clamping the Leaflet tile pyramid at z16 instead makes
+      //     DROPS roads. W0 verified that on 4.1.1 and INFERRED it for 5.1.0; W3 (2026-07-24)
+      //     RE-TESTED IT on 5.1.0 rather than trusting the inference — built with
+      //     maxNativeZoom=19 and shot Midtown at z18: street NAMES render natively and
+      //     crisply, but road casings and fills are gone and the buildings wash out. The
+      //     defect survives the major. The clamp stays. Clamping the Leaflet tile pyramid at z16 makes
       //     Leaflet request the known-good z16 tile and CSS-scale that canvas for z17-19 — every
       //     road stays rendered, just visually upscaled. protomaps overrides only createTile/
       //     renderTile, NOT Leaflet's _clampZoom/_setZoomTransform, so native scaling is intact.
+      //     The same upscale applies to the z17+ house numbers (W3) — they are laid out on the
+      //     z16 tile and CSS-scaled, so they are larger and softer than a native z18 label.
       maxDataZoom: BASEMAP_MAX_DATA_ZOOM,
       maxNativeZoom: BASEMAP_MAX_NATIVE_ZOOM,
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
     });
+  };
+
+  let layer: ReturnType<typeof leafletLayer>;
+  /** Set by the tile-error guard below so a W4 theme rebuild can move its counters onto
+   *  the replacement layer instead of leaving them on a detached one. */
+  let onRebuild: (
+    oldLayer: ReturnType<typeof leafletLayer>,
+    newLayer: ReturnType<typeof leafletLayer>,
+  ) => void = () => {};
+  try {
+    layer = build();
   } catch (e) {
     // 5.x `namedFlavor()` throws on an unrecognized flavor name (4.x silently produced
-    // empty rules). Never let that take the whole map down — degrade to raster.
+    // empty rules). Never let a style problem take the whole map down — degrade to raster.
     console.error("[basemap] leafletLayer() threw — auto-engaging raster fallback.", e);
     addRasterLayer(map);
     showChip(map, "imm-basemap-fallback", "simplified basemap");
@@ -230,6 +354,61 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
     const info = { ...RASTER_INFO, reason };
     hooks?.onFallback?.(info, reason);
   };
+
+  // ---- W3: display-zoom gate for the house numbers -------------------------------
+  // The rule's own minzoom cannot express this (see STREET_NUMBER_MIN_ZOOM), so flip
+  // `visible` when the DISPLAY zoom crosses the threshold and re-lay-out the labels.
+  // Only fires on an actual crossing — at most a couple of relayouts per session.
+  const gateStreetNumbers = (): void => {
+    if (!addrRule || engaged || !mapAlive(map)) return;
+    const want = map.getZoom() >= STREET_NUMBER_MIN_ZOOM;
+    if (want === addrRule.visible) return;
+    addrRule.visible = want;
+    try {
+      layer.clearLayout();
+      layer.rerenderTiles();
+    } catch {
+      /* layer torn down mid-flight */
+    }
+  };
+  map.on("zoomend", gateStreetNumbers);
+  gateStreetNumbers();
+
+  // ---- W4: live theme changes ------------------------------------------------------
+  hooks?.onTheme?.({ id: theme.id, label: theme.label, tone: theme.tone });
+  const applyTheme = (): void => {
+    if (engaged || !mapAlive(map)) return; // raster fallback owns the map now
+    const next = resolveMapTheme(opts?.theme);
+    if (next.id === theme.id && next.tone === theme.tone) return;
+    theme = next;
+    let rebuilt: ReturnType<typeof leafletLayer>;
+    try {
+      rebuilt = build();
+    } catch (e) {
+      console.error("[basemap] rebuilding for a theme change threw — keeping the old layer.", e);
+      return;
+    }
+    const old = layer;
+    layer = rebuilt;
+    layer.addTo(map);
+    try {
+      map.removeLayer(old as unknown as L.Layer);
+    } catch {
+      /* already gone */
+    }
+    onRebuild(old, layer);
+    gateStreetNumbers();
+    hooks?.onTheme?.({ id: theme.id, label: theme.label, tone: theme.tone });
+  };
+  const mql =
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(prefers-color-scheme: dark)")
+      : null;
+  if (typeof document !== "undefined") {
+    document.addEventListener("ark:themechange", applyTheme);
+    document.addEventListener(MAP_THEME_EVENT, applyTheme);
+  }
+  mql?.addEventListener?.("change", applyTheme);
 
   // (1) Immediate structural check on the generated style.
   //
@@ -278,12 +457,32 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
   //     'tileloadstart' when a tile begins and 'tileload' ONLY on success (it swallows
   //     fetch failures as console.error and never fires Leaflet's 'tileerror'). So the
   //     honest error signal is: requested (tileloadstart) vs succeeded (tileload).
+  //     A theme change (W4) rebuilds the layer, so the counters MOVE to the new layer and
+  //     reset — otherwise a rebuild inside the 15 s window would look like a wall of
+  //     failed tiles and falsely engage the raster fallback.
   let started = 0;
   let loaded = 0;
   const onStart = () => started++;
   const onLoad = () => loaded++;
-  layer.on("tileloadstart", onStart);
-  layer.on("tileload", onLoad);
+  const attachCounters = (l: ReturnType<typeof leafletLayer>) => {
+    l.on("tileloadstart", onStart);
+    l.on("tileload", onLoad);
+  };
+  const detachCounters = (l: ReturnType<typeof leafletLayer>) => {
+    try {
+      l.off("tileloadstart", onStart);
+      l.off("tileload", onLoad);
+    } catch {
+      /* already gone */
+    }
+  };
+  onRebuild = (oldLayer, newLayer) => {
+    detachCounters(oldLayer);
+    started = 0;
+    loaded = 0;
+    attachCounters(newLayer);
+  };
+  attachCounters(layer);
 
   // (2a) Zero-painted-tiles beacon after 10s (F5.2). Beacon-only here; the 15s check
   //      decides whether to actually swap.
@@ -298,8 +497,7 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
   // (2b) At 15s, decide: >30% of requested tiles failed to load, OR nothing painted at
   //      all ⇒ the vector basemap is broken ⇒ swap to raster.
   const t15 = setTimeout(() => {
-    layer.off("tileloadstart", onStart);
-    layer.off("tileload", onLoad);
+    detachCounters(layer);
     if (engaged || !mapAlive(map)) return;
     const errRate = started > 0 ? 1 - loaded / started : 0;
     const painted = countPaintedPixels(map);
@@ -312,11 +510,20 @@ export function addBasemap(map: L.Map, hooks?: BasemapGuardHooks): BasemapInfo {
     }
   }, 15_000);
 
-  // Best-effort cleanup if the map is torn down before the timers fire.
+  // Best-effort cleanup if the map is torn down before the timers fire. Leaflet fires
+  // 'unload' from Map.remove(), which is what every map surface calls on unmount — so
+  // the theme listeners this function installs do NOT outlive their map. (Without this
+  // the document-level listeners would leak one closure per SPA navigation.)
   map.on("unload", () => {
     clearTimeout(t10);
     clearTimeout(t15);
+    map.off("zoomend", gateStreetNumbers);
+    if (typeof document !== "undefined") {
+      document.removeEventListener("ark:themechange", applyTheme);
+      document.removeEventListener(MAP_THEME_EVENT, applyTheme);
+    }
+    mql?.removeEventListener?.("change", applyTheme);
   });
 
-  return { ...PMTILES_INFO };
+  return { ...PMTILES_INFO, themeId: theme.id, themeLabel: theme.label };
 }

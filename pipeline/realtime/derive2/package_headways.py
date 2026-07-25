@@ -16,22 +16,42 @@ publish observed headways. Every file carries archive_depth_days + a PRELIMINARY
 (<14 days of archive) and excludes hours flagged PARTIAL/known-gap in DATA_QUALITY.json.
 
 License: CC-BY 4.0. Cadence: daily.
+
+STAGING (added 2026-07-25 — W6a defect 4). `build()` now ALSO stages the served
+download extracts into `Outputs/NYCPlatform/headways_dataset/` — the tree the box sync
+(`ops/run_derived_sync.ps1`) tars and `/api/downloads` resolves. Previously that staging
+lived ONLY in `site/tools/build_content.py`, which is documented in REFRESH.md §E1 as
+part of the chain but is neither scheduled nor called by `run_derive.ps1`; the served
+copy therefore froze at whenever a human last ran the site build (43+ h stale, missing
+whole service days) while this producer kept writing fresh files two directories away.
+Staging at the PRODUCER is what makes the drift structurally impossible: the file that
+gets served is written by the same run that computes it, every 30 minutes.
 """
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import glob
 import json
+import os
+import shutil
 from pathlib import Path
 
 import pandas as pd
 
-from _common import ANALYSIS, DERIVED, now_iso
+from _common import ANALYSIS, DERIVED, PLATFORM, now_iso
 
 DATASET_DIR = ANALYSIS / "headways_dataset"
 DATA_DIR = DATASET_DIR / "data"
 HEADWAY_DIR = DERIVED / "observed_headways"
 DQ_DIR = DERIVED / "data_quality"
+
+# Served-extract staging target. Same resolution the backend (config.NYC_OUTPUTS_ROOT)
+# and site/tools/build_content.py use, so all three agree on one directory.
+OUT_ROOT = Path(os.environ.get("NYCV_OUTPUTS_ROOT")
+                or os.environ.get("OUTPUTS_ROOT")
+                or (PLATFORM.parents[1] / "Outputs" / "NYCPlatform"))
+STAGE_DIR = OUT_ROOT / "headways_dataset"
 
 PUBLISH_COLS = [
     "route_id", "direction_id", "stop_id", "stop_name", "local_date", "local_hour",
@@ -130,9 +150,61 @@ def build(min_headways: int = 2) -> dict:
     }
     (DATASET_DIR / "datapackage.json").write_text(json.dumps(dp, indent=2))
     _write_readme(dp, per_day, depth, preliminary)
+    staged = stage_downloads(per_day)
     return {"status": "ok", "days": len(per_day), "total_rows": int(len(alldf)),
             "archive_depth_days": depth, "preliminary": preliminary,
-            "dataset_dir": DATASET_DIR.as_posix()}
+            "dataset_dir": DATASET_DIR.as_posix(), "staged": staged}
+
+
+def _latest_complete_day(per_day: dict) -> str | None:
+    """The newest service-day partition that is NOT still accruing.
+
+    Partitions are named by the UTC archive day, so the newest one is always today and
+    always incomplete. `/api/downloads` advertises this file as "the most recent COMPLETE
+    service day", so serving today's part-day would make that label false. Pick the newest
+    day strictly before the current UTC date; if only an in-progress day exists, return it
+    (the caller labels it honestly rather than shipping nothing).
+    """
+    days = sorted(per_day)
+    if not days:
+        return None
+    today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+    complete = [d for d in days if d < today]
+    return complete[-1] if complete else days[-1]
+
+
+def stage_downloads(per_day: dict) -> dict:
+    """Copy the served download extracts into OUT_ROOT so the box sync ships them.
+
+    Runs inside build(), i.e. on every JaneNYCDerive cycle — see the module docstring for
+    why this cannot live only in site/tools/build_content.py. Idempotent; never deletes.
+    """
+    STAGE_DIR.mkdir(parents=True, exist_ok=True)
+    out: dict = {"stage_dir": STAGE_DIR.as_posix(), "files": {}}
+
+    for name in ("observed_bus_headways_all.parquet", "datapackage.json"):
+        src = DATASET_DIR / name
+        if src.exists():
+            shutil.copy2(src, STAGE_DIR / name)
+            out["files"][name] = src.stat().st_size
+
+    day = _latest_complete_day(per_day)
+    if day:
+        src = DATA_DIR / f"observed_bus_headways_{day}.csv"
+        if src.exists():
+            shutil.copy2(src, STAGE_DIR / "observed_bus_headways_latest.csv")
+            out["files"]["observed_bus_headways_latest.csv"] = src.stat().st_size
+            out["latest_service_day"] = day
+            out["latest_is_complete"] = day < _dt.datetime.now(
+                _dt.timezone.utc).strftime("%Y-%m-%d")
+
+    # Machine-readable staging stamp: proves WHEN the served copy was last refreshed and
+    # from what, so a future drift is visible without diffing two multi-MB parquet files.
+    out["staged_at"] = now_iso()
+    (STAGE_DIR / "STAGING.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print(f"  staged -> {STAGE_DIR.as_posix()}  "
+          f"({len(out['files'])} files, latest_service_day={out.get('latest_service_day')})")
+    return out
 
 
 def _write_readme(dp: dict, per_day: dict, depth: int, preliminary: bool) -> None:

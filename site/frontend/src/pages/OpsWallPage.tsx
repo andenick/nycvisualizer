@@ -6,13 +6,39 @@ import MapLegend, { Swatch } from "../components/MapLegend";
 import ConfidenceBadge from "../components/ConfidenceBadge";
 import { archiveWindow } from "../lib/confidence";
 
+// W6a defect 2 — the stamp used to render TIME-OF-DAY ONLY. A timestamp from
+// 2026-07-17 16:23 therefore displayed as "16:23:31" beside the word "live", and a
+// week-old alert set read as a current clock. Any timestamp that is not from today now
+// carries its DATE, so staleness is visible at a glance and cannot be misread as a clock.
 function fmtClock(epoch: number | null | undefined): string {
   if (!epoch) return "—";
-  return new Date(epoch * 1000).toLocaleTimeString([], {
+  const d = new Date(epoch * 1000);
+  const time = d.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return time;
+  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
+// Plain-language age. Mirrors the backend's _fmt_age so both sides read the same.
+function fmtAge(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "unknown age";
+  const min = seconds / 60;
+  if (min < 90) return `${Math.round(min)} min`;
+  const h = min / 60;
+  if (h < 36) return `${Math.round(h)} h`;
+  return `${(h / 24).toFixed(1)} days`;
+}
+
+function fmtAgeMin(minutes: number | null | undefined): string {
+  return fmtAge(minutes == null ? null : minutes * 60);
 }
 
 function fmtDev(sec: number | null): string {
@@ -26,13 +52,34 @@ function series(bins: WallTrailBin[], key: keyof WallTrailBin): (number | null)[
   return bins.map((b) => (b[key] as number | null) ?? null);
 }
 
-// A small honest "as of" chip used per panel.
-function Stamp({ label, epoch, stale }: { label: string; epoch: number | null | undefined; stale?: boolean }) {
+// A small honest "as of" chip used per panel. When `stale` is set the chip says so in
+// words — the label is replaced, not decorated, so "live" can never sit on stale data.
+function Stamp({
+  label,
+  epoch,
+  stale,
+  ageS,
+}: {
+  label: string;
+  epoch: number | null | undefined;
+  stale?: boolean;
+  ageS?: number | null;
+}) {
   return (
     <span className={"ops-stamp" + (stale ? " stale" : "")}>
       <span className="dot" />
-      {label} {fmtClock(epoch)}
+      {stale ? `STALE — ${fmtAge(ageS)} old` : label} {fmtClock(epoch)}
     </span>
+  );
+}
+
+// Caption shown under every trend chart, stating exactly what the series is and how old.
+function TrendCaption({ basis, label }: { basis?: string; label?: string }) {
+  if (basis === "none") return <div className="ops-trend-cap empty">no rollup available</div>;
+  return (
+    <div className={"ops-trend-cap" + (basis === "last_available_rollup" ? " stale" : "")}>
+      {label ?? "trailing 3 h"}
+    </div>
   );
 }
 
@@ -102,13 +149,27 @@ export default function OpsWallPage() {
   }
 
   const n = data.now;
-  const bins = data.trailing3h.bins;
+  const t3 = data.trailing3h;
+  const bins = t3.bins;
   const ratioSeries = series(bins, "service_ratio");
   const bunchSeries = series(bins, "active_bunching_pairs");
   const alertSeries = series(bins, "alerts_total");
-  const devLast = data.trailing3h.headway_dev_last;
-  const devSeries: (number | null)[] = data.trailing3h.headway_dev_series;
+  const devLast = t3.headway_dev_last;
+  const devSeries: (number | null)[] = t3.headway_dev_series;
   const devNow = devLast ? devLast.value : null;
+
+  // W6a defect 3 — the trend charts are rollups, the big numbers are live. Appending a
+  // live point to a series that ends hours ago would draw a line across an unmarked gap
+  // and imply continuity that does not exist. Only splice when the rollups really are
+  // the trailing 3 h; otherwise the chart stands alone under its own honest caption.
+  const trendBasis = t3.window_basis ?? (bins.length ? "trailing_3h" : "none");
+  const canSplice = trendBasis === "trailing_3h";
+  const alerts = n.alerts;
+  const alertsStale = alerts.stale === true;
+  // Upstream publishes no GTFS `effect` for any alert, so the high/med/low split would be
+  // our own default presented as MTA's judgement. Show it only when upstream classifies.
+  const severityKnown = alerts.severity_basis !== "unclassified";
+  const schedAgeMin = n.scheduled_cache_age_min ?? null;
 
   const ratio = n.service_ratio;
   const ratioPct = ratio != null ? Math.round(ratio * 100) : null;
@@ -120,8 +181,14 @@ export default function OpsWallPage() {
       <header className="ops-head">
         <div>
           <h1>Live Ops Wall</h1>
+          {/* W6a defect 3 — this used to read "every number traces to a live endpoint",
+              which was false: the trend charts are derived rollups, not live, and on this
+              server they can be many hours old. The subtitle now says what is actually
+              true and the per-panel stamps carry the rest. */}
           <p className="ops-sub">
-            NYC transit service, right now — every number traces to a live endpoint.
+            NYC transit service, right now. The big numbers are computed live from the
+            transit feeds; the trend charts underneath are derived rollups, each stamped
+            with its own age.
           </p>
         </div>
         <div className="ops-conn">
@@ -153,10 +220,20 @@ export default function OpsWallPage() {
               {ratioPct != null ? `${ratioPct}%` : "—"}
             </span>
           </div>
-          <OpsSparkline values={ratioSeries} color="#38bdf8" liveValue={ratio} />
+          <OpsSparkline
+            values={ratioSeries}
+            color="#38bdf8"
+            liveValue={canSplice ? ratio : undefined}
+          />
+          <TrendCaption basis={trendBasis} label={t3.window_label} />
           <div className="ops-tile-foot">
             <Stamp label="live" epoch={n.buses.as_of} stale={n.buses.stale} />
-            <span className="ops-src">{n.buses.source}</span>
+            <span className="ops-src">
+              {n.buses.source}
+              {schedAgeMin != null && (
+                <> · schedule cache {fmtAgeMin(schedAgeMin)} old</>
+              )}
+            </span>
           </div>
         </section>
 
@@ -172,7 +249,13 @@ export default function OpsWallPage() {
               {n.bunching.routes_bunching}/{n.bunching.routes_running} routes · {n.bunching.pairs} pairs
             </span>
           </div>
-          <OpsSparkline values={bunchSeries} color="#f472b6" liveValue={n.bunching.pairs} invert />
+          <OpsSparkline
+            values={bunchSeries}
+            color="#f472b6"
+            liveValue={canSplice ? n.bunching.pairs : undefined}
+            invert
+          />
+          <TrendCaption basis={trendBasis} label={t3.window_label} />
           <div className="ops-tile-foot">
             <Stamp label="live" epoch={n.buses.as_of} stale={n.buses.stale} />
             <span className="ops-src">positions vs sched headway</span>
@@ -185,18 +268,30 @@ export default function OpsWallPage() {
             Mean headway deviation{" "}
             <ConfidenceBadge claimKey="ops-derived" window={archiveWindow(data.archive.archive_depth_days)} compact />
           </div>
+          {/* W6a defect 3 — this sub-label said "trailing 60 min" unconditionally while
+              the value was a single rollup bin measured up to 14 h earlier (observed
+              lag_min = 850 on the live endpoint). It now states what the number IS and
+              how old it is, from the same lag the backend already reported. */}
           <div className="ops-big">
             {fmtDev(devNow)}
-            <span className="ops-big-sub">|observed − scheduled|, trailing 60 min</span>
+            <span className="ops-big-sub">
+              |observed − scheduled|
+              {devLast ? ` · one 5-min rollup bin, ${fmtAgeMin(devLast.lag_min)} old` : " · no rollup available"}
+            </span>
           </div>
           <OpsSparkline values={devSeries} color="#fbbf24" invert />
+          <div className={"ops-trend-cap" + (devLast && devLast.lag_min > 180 ? " stale" : "")}>
+            {devLast
+              ? `last ${devSeries.length} rollup bins, ending ${devLast.local_iso.replace("T", " ")}`
+              : "no rollup available"}
+          </div>
           <div className="ops-tile-foot">
-            <span className="ops-stamp">
+            <span className={"ops-stamp" + (devLast && devLast.lag_min > 180 ? " stale" : "")}>
               <span className="dot" style={{ background: "#94a3b8" }} />
-              rollup {devLast ? devLast.local_iso.slice(11) : "—"}
+              rollup {devLast ? devLast.local_iso.replace("T", " ") : "—"}
             </span>
             <span className="ops-src">
-              {devLast && devLast.lag_min > 15 ? `arrivals lag ~${devLast.lag_min}m` : "trailing 60 min"}
+              {devLast ? `arrivals lag ~${fmtAgeMin(devLast.lag_min)}` : "not derived yet"}
             </span>
           </div>
         </section>
@@ -205,17 +300,44 @@ export default function OpsWallPage() {
         <section className="ops-tile">
           <div className="ops-tile-label">Active service alerts</div>
           <div className="ops-big">
-            {n.alerts.total.toLocaleString()}
+            {alerts.total.toLocaleString()}
+            {/* W6a — MTA publishes no GTFS `effect` on either alert feed (measured:
+                424/424 UNKNOWN_EFFECT), so a "0 high · 0 med · N low" split would
+                present our own default as MTA's severity judgement. Show the split
+                only when upstream actually classifies. */}
             <span className="ops-big-sub">
-              <span className="ops-sev high">{n.alerts.high} high</span> ·{" "}
-              <span className="ops-sev medium">{n.alerts.medium} med</span> ·{" "}
-              <span className="ops-sev low">{n.alerts.low} low</span>
+              {severityKnown ? (
+                <>
+                  <span className="ops-sev high">{alerts.high} high</span> ·{" "}
+                  <span className="ops-sev medium">{alerts.medium} med</span> ·{" "}
+                  <span className="ops-sev low">{alerts.low} low</span>
+                </>
+              ) : (
+                <>severity not published by the feed</>
+              )}
             </span>
           </div>
-          <OpsSparkline values={alertSeries} color="#a78bfa" liveValue={n.alerts.total} invert />
+          <OpsSparkline
+            values={alertSeries}
+            color="#a78bfa"
+            liveValue={canSplice ? alerts.total : undefined}
+            invert
+          />
+          <TrendCaption basis={trendBasis} label={t3.window_label} />
           <div className="ops-tile-foot">
-            <Stamp label="live" epoch={n.alerts.as_of} />
-            <span className="ops-src">bus + subway feeds</span>
+            <Stamp
+              label={alerts.source === "archive" ? "archive" : "live"}
+              epoch={alerts.as_of}
+              stale={alertsStale}
+              ageS={alerts.age_s}
+            />
+            <span className="ops-src">
+              {alerts.feeds && Object.keys(alerts.feeds).length
+                ? Object.entries(alerts.feeds)
+                    .map(([f, v]) => `${f.replace("_alerts", "")} ${v.count}`)
+                    .join(" · ")
+                : "bus + subway feeds"}
+            </span>
           </div>
         </section>
       </div>
@@ -249,11 +371,19 @@ export default function OpsWallPage() {
         <section className="ops-panel ops-ticker-panel">
           <div className="ops-panel-head">
             <h2>Alert ticker</h2>
-            <Stamp label="live" epoch={n.alerts.as_of} />
+            <Stamp
+              label={alerts.source === "archive" ? "archive" : "live"}
+              epoch={alerts.as_of}
+              stale={alertsStale}
+              ageS={alerts.age_s}
+            />
+            <span className="ops-src">
+              showing {alerts.items.length} of {alerts.total.toLocaleString()}
+            </span>
           </div>
           <div className="ops-ticker">
-            {n.alerts.items.length === 0 && <div className="ops-ticker-empty">No active alerts.</div>}
-            {n.alerts.items.map((a) => (
+            {alerts.items.length === 0 && <div className="ops-ticker-empty">No active alerts.</div>}
+            {alerts.items.map((a) => (
               <div className={"ops-tick " + a.severity} key={a.id}>
                 <span className={"ops-tick-sev " + a.severity} />
                 <span className="ops-tick-routes">
@@ -296,14 +426,22 @@ export default function OpsWallPage() {
       <footer className="ops-foot">
         <p>{data.trailing3h.splice_note}</p>
         <p>
-          Sparklines show the last 3 h of the derive2 KPI rollup (5-min bins). The big
-          numbers are computed live in-process from{" "}
-          <code>/api/rt/vehicles</code>, <code>/api/rt/subway</code>, the alert feeds, and a
-          live recompute of the scheduled-service denominator for the current 5-min bin
-          {n.scheduled_bin_local_iso ? ` (${n.scheduled_bin_local_iso.slice(11)})` : ""}. The
-          bunching tile is a live positional proxy (bus pairs within 25% of expected spacing
-          and ≤500 m); the sparkline under it is the rigorous arrival-event metric from the
-          rollup — the two are not blended across the splice.
+          The big numbers are computed live, this request, from the MTA bus and subway
+          position feeds, the bus and subway alert feeds, and a recompute of the
+          scheduled-service denominator for the current 5-minute bin
+          {n.scheduled_bin_local_iso ? ` (${n.scheduled_bin_local_iso.slice(11)})` : ""}
+          {schedAgeMin != null
+            ? ` against a schedule cache built ${fmtAgeMin(schedAgeMin)} ago`
+            : ""}
+          . The sparklines are a different thing: 5-minute rollup bins computed from the
+          archive after the fact, captioned with the window they actually cover
+          {trendBasis === "last_available_rollup"
+            ? " — which on this server is NOT the last 3 hours, because derived rollups are published here once a day"
+            : ""}
+          . The bunching tile is a live positional proxy (bus pairs within 25% of expected
+          spacing and ≤500 m); the sparkline under it is the rigorous arrival-event metric
+          from the rollup — the two are never blended across the splice, and no live value
+          is appended to a stale series.
         </p>
         {data.archive.preliminary && (
           <p className="ops-prelim">

@@ -8,7 +8,11 @@ for the three live map surfaces (/bus, /live/subway, /sidewalks) it checks
                         sampling the Leaflet canvas tiles (catches the blank-basemap
                         class of bug the F0 regression was);
   * rules MATCH       — the shipped protomaps style actually matches features in the
-                        shipped tileset (delegated to `rule_canary.mjs`, see below);
+                        shipped tileset, INCLUDING the z15 address points the street-number
+                        labels ride on (delegated to `rule_canary.mjs`, see below);
+  * palette safe      — the borough bus palette (now the DEFAULT bus encoding) stays
+                        distinguishable under deuteranopia / protanopia / tritanopia
+                        (delegated to `cvd_check.py`);
   * data present      — vehicles > 0 (/api/rt/vehicles) and trains > 0 (/api/rt/subway),
                         plus the sidewalk coverage vector-tile asset is servable;
   * API 200s          — /api/healthz, /api/rt/vehicles, /api/rt/subway.
@@ -56,6 +60,7 @@ DEFAULT_BASE = "https://nycvisualizer.com"
 SITE_DIR = Path(__file__).resolve().parents[1]
 BASEMAP_TS = SITE_DIR / "frontend" / "src" / "lib" / "basemap.ts"
 RULE_CANARY = Path(__file__).resolve().parent / "rule_canary.mjs"
+CVD_CHECK = Path(__file__).resolve().parent / "cvd_check.py"
 
 
 def loaded_basemap_path() -> str:
@@ -207,6 +212,31 @@ def check_rules(base: str, res: Result) -> None:
     res.add(p.returncode == 0, "basemap rule-match canary (roads/labels match features)", detail)
 
 
+def check_cvd(res: Result) -> None:
+    """Colour-vision canary for the borough bus palette (W2, 2026-07-24).
+
+    Borough colouring is the DEFAULT bus encoding on /live/bus and /bus, so those seven
+    hex values ARE the primary way live vehicles are told apart. The palette that shipped
+    before W2 had Bronx and Brooklyn colliding under deuteranopia (dE00 9.61) and X/SIM
+    identical (dE00 0.00). No pixel or rule check can see that; this one can.
+
+    Source-only (it reads src/lib/boroughs.ts), so it does not need the live edge.
+    """
+    if not CVD_CHECK.exists():
+        res.add(False, "borough palette CVD canary", f"missing: {CVD_CHECK}")
+        return
+    try:
+        p = subprocess.run(
+            [sys.executable, str(CVD_CHECK), "--quiet"], capture_output=True, text=True, timeout=60
+        )
+    except Exception as e:  # noqa: BLE001
+        res.add(False, "borough palette CVD canary", f"{type(e).__name__}: {e}")
+        return
+    tail = (p.stdout or "").strip().splitlines()
+    detail = tail[-1] if tail else (p.stderr or "").strip()[:200]
+    res.add(p.returncode == 0, "borough palette distinguishable under CVD", detail)
+
+
 def check_paint(base: str, timeout: float, res: Result) -> None:
     try:
         from playwright.sync_api import sync_playwright
@@ -261,6 +291,7 @@ def main() -> int:
     t0 = time.time()
     check_api(base, res)
     check_rules(base, res)
+    check_cvd(res)
     check_paint(base, args.timeout, res)
     elapsed = time.time() - t0
 

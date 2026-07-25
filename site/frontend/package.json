@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@protomaps/basemaps": "5.7.2",
     "leaflet": "^1.9.4",
     "plotly.js-dist-min": "^3.7.0",
     "protomaps-leaflet": "5.1.0",

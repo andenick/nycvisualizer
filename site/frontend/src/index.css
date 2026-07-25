@@ -221,6 +221,21 @@
 .mlg-sw--line { height: 3px; width: 16px; border-radius: 2px; }
 .mlg-sw--ring { background: transparent; border-style: solid; border-width: 1.6px; border-radius: 50%; box-sizing: border-box; }
 .mlg-faded { opacity: 0.55; }
+/* W2: a swatch + its label travel together so a 7-item borough row wraps cleanly
+   instead of orphaning a colour chip at the end of a line. */
+.mlg-pair { display: inline-block; white-space: nowrap; margin-right: 0.3rem; }
+/* W2/W3: the honest caveat under a legend row (home-borough colouring, patchy OSM
+   house-number coverage). Deliberately quieter than the row it qualifies. */
+.mlg-note { display: inline-block; margin-top: 2px; opacity: 0.75; font-size: 0.68rem; line-height: 1.4; }
+/* W4: map-theme picker, lives inside the legend's Details fold. */
+.mapthemepick { display: block; }
+.mapthemepick label { display: inline-block; margin-right: 0.35rem; font-weight: 700; font-size: 0.72rem; }
+.mapthemepick select {
+  font: inherit; font-size: 0.74rem; padding: 0.2rem 0.3rem; border-radius: 6px;
+  border: 1px solid var(--ark-line, #2a313b); background: var(--ark-bg, #0e1116);
+  color: inherit; max-width: 12rem;
+}
+.mapthemepick .mlg-note { display: block; }
 .mlg-bullet {
   display: inline-flex; align-items: center; justify-content: center;
   width: 15px; height: 15px; border-radius: 50%;
@@ -641,6 +656,25 @@ i.obs-hw-obs.key { border-radius: 50%; }
 .ops-stamp { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
 .ops-stamp .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
 .ops-stamp.stale .dot { background: #fbbf24; }
+/* A stale stamp must READ stale, not just carry a differently-coloured 6px dot (W6a
+   defect 2 — a week-old timestamp previously rendered as an ordinary green clock). */
+.ops-stamp.stale { color: #fbbf24; font-weight: 600; }
+
+/* W6a defect 3 — every trend chart carries a caption naming the window it actually
+   covers. An uncaptioned sparkline under a confident tile label is how an empty or
+   hours-old series passed for "trailing 60 min". */
+.ops-trend-cap {
+  font-size: 0.62rem;
+  line-height: 1.25;
+  color: var(--ops-dim);
+  opacity: 0.85;
+  margin: 0.15rem 0 0.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ops-trend-cap.stale { color: #fbbf24; opacity: 1; }
+.ops-trend-cap.empty { font-style: italic; }
 
 /* ---- middle row: map + ticker ---- */
 .ops-mid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 0.8rem; margin-bottom: 0.8rem; }
@@ -1512,6 +1546,13 @@ i.obs-hw-obs.key { border-radius: 50%; }
   background: #fef3c7; color: #713f12; border: 1px solid #ecd9a0;
 }
 @media (prefers-color-scheme: dark) { .ws-warn { background: #3a2e0c; color: #fcd34d; border-color: #5c4a12; } }
+/* W2: the workstation's opt-in bus-colour mode row. */
+.ws-colormode { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ws-colormode-lbl {
+  font-weight: 800; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+.ws-colormode .imm-colortoggle { margin-top: 0; }
 .ws-search {
   width: 100%; padding: 0.4rem 0.45rem; border-radius: 8px; font: inherit; font-size: 0.82rem;
   border: 1px solid var(--ark-line, #2a313b); background: var(--ark-bg, #0e1116); color: inherit;

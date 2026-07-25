@@ -785,6 +785,9 @@ export interface WallResponse {
     scheduled_basis: string;
     scheduled_bin_local_iso: string | null;
     scheduled_cache_built_at: number | null;
+    /** Age of the GTFS-static cache backing the service-ratio DENOMINATOR (W6a). */
+    scheduled_cache_age_min?: number | null;
+    scheduled_cache_stale?: boolean;
     service_ratio: number | null;
     bunching: WallBunching;
     alerts: {
@@ -794,6 +797,20 @@ export interface WallResponse {
       total: number;
       as_of: number | null;
       items: WallAlertItem[];
+      /** W6a: "live" = fetched from the upstream GTFS-RT alert feeds this request;
+       *  "archive" = fell back to the raw JSONL archive; "none" = nothing available. */
+      source?: "live" | "archive" | "none";
+      /** True when the alert set is older than the staleness threshold. NEVER render a
+       *  stale set under a "live" label — this flag exists so the UI cannot. */
+      stale?: boolean;
+      age_s?: number | null;
+      /** "unclassified" = upstream published no GTFS `effect` for ANY alert, so the
+       *  high/med/low split is our default rather than MTA's judgement. */
+      severity_basis?: "gtfs_effect" | "unclassified";
+      unknown_effect?: number;
+      /** How many of `total` the capped ticker is actually showing. */
+      items_shown?: number;
+      feeds?: Record<string, { as_of: number | null; count: number }>;
     };
   };
   subway_strip: {
@@ -811,6 +828,19 @@ export interface WallResponse {
     splice_note: string;
     headway_dev_series: number[];
     headway_dev_last: { value: number; local_iso: string; lag_min: number } | null;
+    /** W6a — what the `bins` array ACTUALLY is:
+     *  "trailing_3h"           the real last 3 hours (host derives locally);
+     *  "last_available_rollup" the newest rollups that exist, which may be many hours
+     *                          old (the public box receives derived data once a day);
+     *  "none"                  no rollups at all — draw nothing, say so.
+     *  Never label the chart "trailing 3 h" unless window_basis says so. */
+    window_basis?: "trailing_3h" | "last_available_rollup" | "none";
+    window_first_local_iso?: string | null;
+    window_last_local_iso?: string | null;
+    window_lag_min?: number | null;
+    window_span_bins?: number;
+    /** Ready-made honest caption for the trend charts. */
+    window_label?: string;
   };
   archive: ObsArchive;
   as_of: Record<string, number | string | null>;

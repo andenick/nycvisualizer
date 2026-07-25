@@ -1,6 +1,11 @@
-# JaneNYCDerive — hourly realtime-derivation cycle (S2 derive2).
-# Registered as Windows Scheduled Task "JaneNYCDerive" (interactive user), hourly at :20
-# (offset from the poller flush windows so it reads settled archive hours).
+# JaneNYCDerive — realtime-derivation cycle every 30 min (S2 derive2).
+# Registered as Windows Scheduled Task "JaneNYCDerive" (interactive user). The 30-minute
+# cadence comes from TWO PT1H repeat triggers — one at :20 and one at :50 — not a single
+# 30-min trigger. Both are offset from the poller flush windows so each run reads settled
+# archive hours.
+# NOTE: this updates the LOCAL derived tree only. Publishing the derived output to a serving
+# host is a SEPARATE deployment step on its own (slower) cadence — do not quote this interval
+# as the freshness of anything a site visitor sees.
 # Env-parameterized: NYCV_PIPELINE_ROOT points at the NYCPlatform root so the Python code
 # carries no absolute path literals (public-repo hygiene). Mirrors changes/run_snapshot.ps1.
 

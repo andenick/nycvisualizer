@@ -19,7 +19,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, MAP_MAX_ZOOM, type BasemapInfo } from "../lib/basemap";
+import {
+  addBasemap,
+  bboxParam,
+  NYC_CENTER,
+  NYC_BOUNDS,
+  MAP_MAX_ZOOM,
+  STREET_NUMBER_MIN_ZOOM,
+  type BasemapInfo,
+} from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
 import {
@@ -38,9 +46,18 @@ import {
   type SubwayTrain,
 } from "../lib/api";
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
-import { BOROUGH_GROUP_ORDER } from "../lib/boroughs";
+import {
+  BOROUGH_GROUP_ORDER,
+  BOROUGH_LEGEND,
+  BOROUGH_LEGEND_NOTE,
+  GROUP_COLORS,
+  GROUP_COLOR_FALLBACK,
+  boroughLabel,
+  routeGroup,
+} from "../lib/boroughs";
 import { VehicleFlowLayer, type FlowSelection } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "../components/MapLegend";
+import MapThemePicker from "../components/MapThemePicker";
 import FlowControls, { type FollowInfo, type FocusInfo } from "../components/FlowControls";
 
 // Representative trunk bullets for the subway "official line colors" legend row.
@@ -48,31 +65,10 @@ const TRUNK_LINES = ["1", "4", "7", "A", "B", "G", "J", "L", "N", "S"];
 
 export type ImmersiveMode = "buses" | "subway";
 
-// Stable borough fallback palette (mirrors /bus — trivial constants, not the
-// renderer logic). Colorblind-aware, brand-neutral.
-const GROUP_COLORS: Record<string, string> = {
-  M: "#2563eb",
-  B: "#16a34a",
-  Q: "#d97706",
-  Bx: "#dc2626",
-  S: "#7c3aed",
-  X: "#0891b2",
-  SIM: "#0891b2",
-};
-function routeGroup(routeId: string): string {
-  const up = routeId.toUpperCase();
-  if (up.startsWith("BX")) return "Bx";
-  if (up.startsWith("SIM")) return "SIM";
-  if (up.startsWith("X")) return "X";
-  const c = up.charAt(0);
-  return "MBQS".includes(c) ? c : "M";
-}
-function boroughLabel(g: string): string {
-  return (
-    { M: "Manhattan", B: "Brooklyn", Q: "Queens", Bx: "Bronx", S: "Staten Island", SIM: "SI Express", X: "Express" }[g] ??
-    g
-  );
-}
+// (W2, 2026-07-24) GROUP_COLORS / routeGroup / boroughLabel used to be declared HERE,
+// verbatim-duplicated in WorkstationPage.tsx and near-duplicated in BusMap.tsx, while
+// lib/boroughs.ts already called itself the single source of truth for borough grouping.
+// They now live in lib/boroughs.ts — imported above. Do not re-declare them.
 
 // Subway line chips in official running order; express/shuttle variants collapse
 // onto their trunk chip via lineKey() so selecting "6" also keeps the "6X" express.
@@ -155,9 +151,12 @@ interface InitState {
   zoom: number | null;
   route: string;
   lines: Set<string>;
+  /** W2: bus colour encoding. DEFAULT IS "borough" — `?color=route` opts back into the
+   *  GTFS service-type colours (and is what a shared link carries once you switch). */
+  colorMode: "route" | "borough";
 }
 function parseUrlState(): InitState {
-  const out: InitState = { center: null, zoom: null, route: "", lines: new Set() };
+  const out: InitState = { center: null, zoom: null, route: "", lines: new Set(), colorMode: "borough" };
   try {
     const p = new URLSearchParams(window.location.search);
     const ll = p.get("ll");
@@ -170,6 +169,7 @@ function parseUrlState(): InitState {
     out.route = p.get("route") ?? "";
     const line = p.get("line");
     if (line) for (const k of line.split(",")) if (k) out.lines.add(k.toUpperCase());
+    if (p.get("color") === "route") out.colorMode = "route";
   } catch {
     /* non-browser env */
   }
@@ -190,7 +190,12 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
 
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [selected, setSelected] = useState<string>(mode === "buses" ? init.current.route : "");
-  const [colorMode, setColorMode] = useState<"route" | "borough">("route");
+  // W2 (2026-07-24) — BOROUGH IS THE DEFAULT. Across all 345 routes GTFS carries only
+  // **7 distinct `route_color` values** (the largest covers 77 routes): those are MTA
+  // SERVICE-TYPE colours — local / limited / SBS / express — not route identity. Borough
+  // mode is 6 distinct colours: a lateral move in colour count, a large gain in meaning.
+  // (`?color=route` still opts back in; the toggle below is unchanged.)
+  const [colorMode, setColorMode] = useState<"route" | "borough">(init.current.colorMode);
   const [lines, setLines] = useState<Set<string>>(mode === "subway" ? init.current.lines : new Set());
 
   const [asOf, setAsOf] = useState<number | null>(null);
@@ -242,10 +247,15 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
 
   const colorFor = (routeId: string | null): string => {
     if (!routeId) return "#6b7280";
-    if (colorModeRef.current === "borough") return GROUP_COLORS[routeGroup(routeId)] ?? "#2563eb";
+    if (colorModeRef.current === "borough") {
+      return GROUP_COLORS[routeGroup(routeId)] ?? GROUP_COLOR_FALLBACK;
+    }
     const c = routeColorByShort.get(routeId);
+    // NOTE (W2): measured over the full GTFS static universe, **0 of 345 routes** have a
+    // white/blank route_color, so this guard has never once fired in production. Kept
+    // because the feed could change, not because it is load-bearing.
     if (c && c.toLowerCase() !== "#ffffff") return c;
-    return GROUP_COLORS[routeGroup(routeId)] ?? "#2563eb";
+    return GROUP_COLORS[routeGroup(routeId)] ?? GROUP_COLOR_FALLBACK;
   };
   const colorForRef = useRef(colorFor);
   colorForRef.current = colorFor;
@@ -332,6 +342,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     p.set("z", String(m.getZoom()));
     if (mode === "buses" && selectedRef.current) p.set("route", selectedRef.current);
     if (mode === "subway" && linesRef.current.size) p.set("line", [...linesRef.current].join(","));
+    if (mode === "buses" && colorModeRef.current === "route") p.set("color", "route");
     window.history.replaceState(null, "", window.location.pathname + "?" + p.toString());
   });
 
@@ -776,20 +787,23 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                 </optgroup>
               ))}
             </select>
+            {/* W2: borough first — it is the default encoding. */}
             <div className="imm-colortoggle" role="group" aria-label="Color buses by">
-              <button
-                type="button"
-                className={colorMode === "route" ? "on" : ""}
-                onClick={() => setColorMode("route")}
-              >
-                Route color
-              </button>
               <button
                 type="button"
                 className={colorMode === "borough" ? "on" : ""}
                 onClick={() => setColorMode("borough")}
+                title="Colour each bus by its route's home borough"
               >
                 Borough
+              </button>
+              <button
+                type="button"
+                className={colorMode === "route" ? "on" : ""}
+                onClick={() => setColorMode("route")}
+                title="Colour each bus by its official GTFS route_color (MTA service type)"
+              >
+                Route color
               </button>
             </div>
           </>
@@ -925,12 +939,21 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                 </span>,
                 colorMode === "borough" ? (
                   <span>
-                    By borough: <Swatch color="#dc2626" />Bx <Swatch color="#16a34a" />Bklyn{" "}
-                    <Swatch color="#2563eb" />Man <Swatch color="#d97706" />Qns <Swatch color="#7c3aed" />
-                    SI <Swatch color="#0891b2" />Exp
+                    {BOROUGH_LEGEND.map((b) => (
+                      <span key={b.g} className="mlg-pair">
+                        <Swatch color={b.color} />
+                        {b.short}{" "}
+                      </span>
+                    ))}
+                    <br />
+                    <span className="mlg-note">{BOROUGH_LEGEND_NOTE}</span>
                   </span>
                 ) : (
-                  <span>Each bus takes its official route color (borough colors when unfiltered).</span>
+                  <span>
+                    Each bus takes its official GTFS route color — which encodes MTA{" "}
+                    <em>service type</em> (local / limited / SBS / express), not the route. There are
+                    only 7 distinct values across all 345 routes.
+                  </span>
                 ),
                 <span>
                   Reports arrive ~31&nbsp;s apart · between them movement is <em>modeled</em> from each
@@ -963,6 +986,15 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                 trailsToggle,
               ]
         }
+        details={[
+          <MapThemePicker id="immMapTheme" />,
+          <span>
+            Zoom past z{STREET_NUMBER_MIN_ZOOM} and OSM <strong>house numbers</strong> appear on
+            buildings. Coverage is volunteered and patchy — roughly 0.8&ndash;1.6 numbered points per
+            mapped building, denser in Manhattan and Brooklyn than in Queens or Staten Island, and the
+            tiles carry the number only, never the street name.
+          </span>,
+        ]}
         stamps={
           <>
             <div>

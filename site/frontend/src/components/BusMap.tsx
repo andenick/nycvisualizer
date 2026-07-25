@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, MAP_MAX_ZOOM, type BasemapInfo } from "../lib/basemap";
+import {
+  addBasemap,
+  bboxParam,
+  NYC_CENTER,
+  NYC_BOUNDS,
+  MAP_MAX_ZOOM,
+  STREET_NUMBER_MIN_ZOOM,
+  type BasemapInfo,
+} from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
 import {
@@ -25,7 +33,16 @@ import {
 import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
 import { VehicleFlowLayer, type FlowSelection } from "./VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "./MapLegend";
-import { BOROUGH_GROUP_ORDER } from "../lib/boroughs";
+import MapThemePicker from "./MapThemePicker";
+import {
+  BOROUGH_GROUP_ORDER,
+  BOROUGH_LEGEND,
+  BOROUGH_LEGEND_NOTE,
+  GROUP_COLORS,
+  GROUP_COLOR_FALLBACK,
+  boroughLabel,
+  routeGroup,
+} from "../lib/boroughs";
 import FlowControls, { type FollowInfo, type FocusInfo } from "./FlowControls";
 
 // Collapse express/shuttle subway variants onto their trunk (for focus-dim on a line).
@@ -43,26 +60,9 @@ function lineKey(route: string | null): string {
 // Representative trunk bullets for the "official line colors" legend row.
 const TRUNK_LINES = ["1", "4", "7", "A", "B", "G", "J", "L", "N", "S"];
 
-// Stable fallback palette for bus route "groups" (borough prefix) when a route has
-// no GTFS color. Colorblind-aware, brand-neutral.
-const GROUP_COLORS: Record<string, string> = {
-  M: "#2563eb", // Manhattan
-  B: "#16a34a", // Brooklyn
-  Q: "#d97706", // Queens
-  Bx: "#dc2626", // Bronx
-  S: "#7c3aed", // Staten Island
-  X: "#0891b2", // Express
-  SIM: "#0891b2",
-};
-
-function routeGroup(routeId: string): string {
-  const up = routeId.toUpperCase();
-  if (up.startsWith("BX")) return "Bx"; // Bronx (must precede the B check)
-  if (up.startsWith("SIM")) return "SIM"; // Staten Island express
-  if (up.startsWith("X")) return "X"; // Manhattan express
-  const c = up.charAt(0);
-  return "MBQS".includes(c) ? c : "M";
-}
+// (W2, 2026-07-24) GROUP_COLORS / routeGroup / boroughLabel were declared here AND in
+// ImmersiveMapPage.tsx AND in WorkstationPage.tsx. They now live in lib/boroughs.ts,
+// which already called itself the single source of truth for borough grouping.
 
 function fmtClock(epoch: number | null): string {
   if (!epoch) return "—";
@@ -101,6 +101,12 @@ export default function BusMap() {
   const [selected, setSelected] = useState<string>("");
   const [showBuses, setShowBuses] = useState(true);
   const [showSubway, setShowSubway] = useState(true);
+  // W2 (2026-07-24) — /bus had NO borough branch at all: it always used the GTFS
+  // route_color and reached GROUP_COLORS only through a `!== "#ffffff"` fallback that,
+  // measured over the full 345-route GTFS universe, NEVER FIRES (0 routes have a
+  // white/blank colour). So GROUP_COLORS was dead code on this surface while the legend
+  // claimed "Buses by borough". Borough is now a real, and the DEFAULT, encoding.
+  const [colorMode, setColorMode] = useState<"route" | "borough">("borough");
   const [asOf, setAsOf] = useState<number | null>(null);
   const [source, setSource] = useState<VehiclesResponse["source"]>("none");
   const [stale, setStale] = useState(false);
@@ -140,11 +146,19 @@ export default function BusMap() {
     return m;
   }, [routes]);
 
+  const colorModeRef = useRef(colorMode);
+  colorModeRef.current = colorMode;
+
   const colorFor = (routeId: string | null): string => {
-    if (!routeId) return "#6b7280";
+    if (!routeId) return GROUP_COLOR_FALLBACK;
+    if (colorModeRef.current === "borough") {
+      return GROUP_COLORS[routeGroup(routeId)] ?? GROUP_COLOR_FALLBACK;
+    }
     const c = routeColorByShort.get(routeId);
+    // 0 of 345 routes carry a white/blank route_color, so this guard has never fired in
+    // production. Kept for feed changes, not because it is load-bearing.
     if (c && c.toLowerCase() !== "#ffffff") return c;
-    return GROUP_COLORS[routeGroup(routeId)] ?? "#2563eb";
+    return GROUP_COLORS[routeGroup(routeId)] ?? GROUP_COLOR_FALLBACK;
   };
   const colorForRef = useRef(colorFor);
   colorForRef.current = colorFor;
@@ -481,6 +495,12 @@ export default function BusMap() {
     if (!want && has) m.removeLayer(layer);
   }, [showSubway]);
 
+  // ---- W2: re-color buses immediately on colorMode change ----
+  useEffect(() => {
+    getVehicles().then(render).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorMode]);
+
   // ---- route shape overlay + re-filter on selection change ----
   useEffect(() => {
     const sl = shapeLayer.current;
@@ -616,6 +636,30 @@ export default function BusMap() {
             </select>
           </div>
         )}
+        {showBuses && (
+          <div className="row">
+            {/* W2: borough first — it is the default encoding on this surface too. */}
+            <label id="busColorLbl">Color buses by</label>
+            <div className="imm-colortoggle" role="group" aria-labelledby="busColorLbl">
+              <button
+                type="button"
+                className={colorMode === "borough" ? "on" : ""}
+                onClick={() => setColorMode("borough")}
+                title="Colour each bus by its route's home borough"
+              >
+                Borough
+              </button>
+              <button
+                type="button"
+                className={colorMode === "route" ? "on" : ""}
+                onClick={() => setColorMode("route")}
+                title="Colour each bus by its official GTFS route_color (MTA service type)"
+              >
+                Route color
+              </button>
+            </div>
+          </div>
+        )}
         <div className="muted">
           {showBuses ? `${count.toLocaleString()} bus${count === 1 ? "" : "es"}` : ""}
           {showBuses && showSubway ? " · " : ""}
@@ -676,13 +720,26 @@ export default function BusMap() {
             <strong>Vehicles drawn true-to-scale</strong> — a bus&nbsp;≈&nbsp;12&nbsp;m, a
             train&nbsp;≈&nbsp;160&nbsp;m; zoom in.
           </span>,
-          showBuses && (
-            <span>
-              Buses by borough: <Swatch color="#dc2626" />Bx <Swatch color="#16a34a" />Bklyn{" "}
-              <Swatch color="#2563eb" />Man <Swatch color="#d97706" />Qns <Swatch color="#7c3aed" />SI{" "}
-              <Swatch color="#0891b2" />Exp
-            </span>
-          ),
+          showBuses &&
+            (colorMode === "borough" ? (
+              <span>
+                Buses by home borough:{" "}
+                {BOROUGH_LEGEND.map((b) => (
+                  <span key={b.g} className="mlg-pair">
+                    <Swatch color={b.color} />
+                    {b.short}{" "}
+                  </span>
+                ))}
+                <br />
+                <span className="mlg-note">{BOROUGH_LEGEND_NOTE}</span>
+              </span>
+            ) : (
+              <span>
+                Buses take their official GTFS route color — which encodes MTA{" "}
+                <em>service type</em> (local / limited / SBS / express), not the route: only 7
+                distinct values exist across all 345 routes.
+              </span>
+            )),
           showSubway && (
             <span>
               Subway — official line colors:{" "}
@@ -707,17 +764,22 @@ export default function BusMap() {
           </span>,
           trailsToggle,
         ]}
-        details={
-          showBuses && selected
-            ? [
-                <span>
-                  {selected} segment speed: <Swatch color="#c1272d" shape="line" />slow{" "}
-                  <Swatch color="#cfcfcf" shape="line" />on-pace <Swatch color="#1a6fb5" shape="line" />
-                  fast
-                </span>,
-              ]
-            : undefined
-        }
+        details={[
+          showBuses && selected ? (
+            <span>
+              {selected} segment speed: <Swatch color="#c1272d" shape="line" />slow{" "}
+              <Swatch color="#cfcfcf" shape="line" />on-pace <Swatch color="#1a6fb5" shape="line" />
+              fast
+            </span>
+          ) : null,
+          <MapThemePicker id="busMapTheme" />,
+          <span>
+            Zoom past z{STREET_NUMBER_MIN_ZOOM} and OSM <strong>house numbers</strong> appear on buildings.
+            Coverage is volunteered and patchy — roughly 0.8&ndash;1.6 numbered points per
+            mapped building, denser in Manhattan and Brooklyn than in Queens or Staten Island,
+            and the tiles carry the number only, never the street name.
+          </span>,
+        ]}
         stamps={
           <>
             {basemap && (
@@ -730,14 +792,6 @@ export default function BusMap() {
         }
       />
     </div>
-  );
-}
-
-function boroughLabel(g: string): string {
-  return (
-    { M: "Manhattan", B: "Brooklyn", Q: "Queens", Bx: "Bronx", S: "Staten Island", SIM: "SI Express", X: "Express" }[
-      g
-    ] ?? g
   );
 }
 

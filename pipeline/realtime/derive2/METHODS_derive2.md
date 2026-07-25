@@ -189,7 +189,15 @@ artifact — MTA publishes schedules, not observed headways.
 
 ## 8. Scheduling
 
-`JaneNYCDerive` — Windows Scheduled Task, hourly at **:20** (offset from poller flush
-windows), interactive user, `python`, wrapper `run_derive.ps1` (UTF-8 +
-logging, mirrors `changes/run_snapshot.ps1`). Runs `run_derive.py` (incremental) then
-`package_headways.py` (dataset roll).
+`JaneNYCDerive` — Windows Scheduled Task, **every 30 minutes** at **:20** and **:50** (offset
+from poller flush windows so it reads settled archive hours), interactive user, `python`,
+wrapper `run_derive.ps1` (UTF-8 + logging, mirrors `changes/run_snapshot.ps1`). Runs
+`run_derive.py` (incremental) then `package_headways.py` (dataset roll).
+
+The 30-minute cadence is implemented as **two `PT1H` repeat triggers**, not one 30-min trigger:
+one anchored at **:20** and a second at **:50**. Verify with
+`(Get-ScheduledTask -TaskName JaneNYCDerive).Triggers`.
+
+**Scope: this cadence updates the LOCAL derived tree only.** Publishing the derived output to a
+serving host is a separate deployment step on its own, slower cadence, so this interval is *not*
+the freshness of any public surface.

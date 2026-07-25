@@ -92,6 +92,20 @@ GTFSRT_VEHICLES_URL = "https://gtfsrt.prod.obanyc.com/vehiclePositions"
 GTFSRT_ALERTS_URL = "https://gtfsrt.prod.obanyc.com/alerts"
 SIRI_STOP_MONITORING_URL = "https://bustime.mta.info/api/siri/stop-monitoring.json"
 
+# Subway/regional GTFS-RT base (key-free). Mirrors subway.py's _RT_BASE and the poller's
+# SUBWAY_BASE; hoisted here so the alerts consumer does not re-declare it a fourth time.
+SUBWAY_RT_BASE = os.environ.get(
+    "NYCV_SUBWAY_RT_BASE", "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds"
+)
+# The all-agency subway/SIR alert feed the poller archives as `subway_alerts`.
+GTFSRT_SUBWAY_ALERTS_URL = f"{SUBWAY_RT_BASE}/camsys%2Fall-alerts"
+
+# Ops-wall alert freshness. Both upstream alert feeds are polled by the archiver every
+# 300 s, so a 60 s app cache is far inside any rate concern while keeping the wall live.
+ALERTS_LIVE_TTL_S = int(os.environ.get("NYCV_ALERTS_LIVE_TTL_S", "60"))
+# An alert set older than this is reported `stale: true` (surfaced in the UI, never hidden).
+ALERTS_STALE_AFTER_S = int(os.environ.get("NYCV_ALERTS_STALE_AFTER_S", "900"))
+
 # ---------------------------------------------------------------------------
 # OTP routing engine (isochrones).  The browser NEVER talks to OTP directly;
 # only this backend does, over the internal docker network.  In production
