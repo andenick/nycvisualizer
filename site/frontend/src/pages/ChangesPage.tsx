@@ -123,20 +123,6 @@ export default function ChangesPage() {
         <strong>2026-07-21</strong>; this history deepens over time.
       </p>
 
-      <div className="nyc-feedlinks">
-        <a href="/api/changes/feed.json" title="Machine feed (JSON), newest 200">JSON feed</a>
-        <a href="/api/changes/rss" title="RSS 2.0 feed of all changes">RSS</a>
-        {routeQ ? (
-          <a href={`/api/changes/rss?route=${encodeURIComponent(routeQ)}`} title={`Watch route ${routeQ} by RSS`}>
-            RSS · watch {routeQ.toUpperCase()}
-          </a>
-        ) : (
-          <span className="nyc-note" style={{ border: "none", padding: 0, margin: 0, fontSize: "0.76rem" }}>
-            type a route below for a per-route RSS watch feed
-          </span>
-        )}
-      </div>
-
       {data && (
         <p className="nyc-note" style={{ fontSize: "0.8rem" }}>
           {data.counts.detected} detected change{data.counts.detected === 1 ? "" : "s"} so far
@@ -232,6 +218,41 @@ export default function ChangesPage() {
           </button>
         </div>
       )}
+
+      {/* W5 (2026-07-24): "JSON feed" and "RSS" used to sit ABOVE THE FOLD, before the
+          reader had seen a single change. Machine feeds are plumbing; they belong under
+          the content they syndicate. Moved here, into a fold.
+          The RSS feeds stay clickable links (that is what a feed reader wants). The JSON
+          feed is shown as a PATH, not an <a href>, because DOWNLOAD_AND_FORMATS §1 / the
+          D13 no-JSON check treat a .json href as a data-download offering — and the open
+          decision on whether a syndication feed earns a carve-out (plan §3 N8) has not
+          been ratified. A machine reads it from the path either way; no capability is
+          lost, and the gate is not quietly broken while the decision is pending. */}
+      <details className="nyc-fold" style={{ marginTop: "1.2rem" }}>
+        <summary>Follow these changes automatically</summary>
+        <p className="nyc-note" style={{ marginTop: "0.4rem" }}>
+          Subscribe in any feed reader:{" "}
+          <a href="/api/changes/rss" title="RSS 2.0 feed of all changes">
+            all changes (RSS)
+          </a>
+          {routeQ ? (
+            <>
+              {" · "}
+              <a
+                href={`/api/changes/rss?route=${encodeURIComponent(routeQ)}`}
+                title={`Watch route ${routeQ} by RSS`}
+              >
+                just {routeQ.toUpperCase()} (RSS)
+              </a>
+            </>
+          ) : (
+            <> &mdash; type a route in the filter above for a route-only feed.</>
+          )}
+          <br />
+          For software: the newest 200 changes are also served as machine-readable data at{" "}
+          <code>/api/changes/feed.json</code>.
+        </p>
+      </details>
     </div>
   );
 }

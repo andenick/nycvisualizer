@@ -43,7 +43,14 @@ export default function ContextCallout({ c }: { c: KbCallout }) {
         {c.verbatim ? <>&ldquo;{c.text}&rdquo;</> : c.text}
       </blockquote>
       <div className="ctx-src">
-        {c.source}, {c.year} <span className="ctx-kb">— Jane KB · {c.doc}</span>
+        {/* W7: this shipped the INTERNAL corpus id ("Jane KB · DOC0311") to visitors.
+            The provenance is kept — the passage still names its source and year, and the
+            internal reference rides in a title attribute for our own traceability — but
+            the visible line no longer contains a code only we can resolve. */}
+        {c.source}, {c.year}{" "}
+        <span className="ctx-kb" title={"archive reference " + c.doc}>
+          — from our research archive
+        </span>
         {!c.verbatim && <span className="ctx-para"> (paraphrased)</span>}
       </div>
     </aside>

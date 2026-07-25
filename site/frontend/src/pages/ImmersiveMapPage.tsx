@@ -30,6 +30,7 @@ import {
 } from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
+import { perfVisible } from "../lib/devFlags";
 import {
   getVehicles,
   getRoutes,
@@ -870,17 +871,28 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
             <div className="imm-info-title">
               {mode === "buses" ? "Live Bus Ant Farm" : "Live Subway"}
             </div>
+            {/* W7 honesty #1 (2026-07-24) — THIS PANEL DESCRIBED A MODEL THE ENGINE
+                DOES NOT HAVE. It claimed movement was modelled from "per-segment speeds
+                we've logged since July". There are no per-segment speed profiles
+                anywhere in this codebase; that is unstarted backlog. What flow/core.ts
+                actually holds is ONE speed per vehicle — the speed that vehicle itself
+                last reported — advanced along its own route shape for up to STALE_S
+                (flow/constants.ts, 40 s) and then eased to a stop. The copy below is
+                that engine, described. */}
             <p className="imm-info-honesty">
               {mode === "buses"
-                ? "Every MTA bus, refreshed ~31s from the GTFS-RT feed via our server-side poller. Buses carry GPS; shapes are drawn at true scale. Between reports, each bus's movement is modeled from that route's recorded behavior (per-segment speeds we've logged since July), never fabricated. "
-                : "Trains report by station; between stations a train's position is an honest estimate interpolated along the track (shown faded). "}
-              Estimated between reports — no easing gimmicks.
+                ? "Every MTA bus, about 31 s from the MTA's realtime feed via our own recorder. Buses report their own GPS position and are drawn at true size. Between two reports a bus keeps going at the speed it last reported, along its own route shape, for about 40 s — after that it eases to a stop rather than guessing. Nothing is invented. "
+                : "Trains report which station they last reached, not where they are; between stations we place a train along the track by how much of the scheduled hop has elapsed, and draw it faded. "}
+              Estimated between reports &mdash; no easing gimmicks.
             </p>
             <div className="imm-info-stamp">
               Data as of {fmtClock(asOf)} · source {source}
               {stale ? " (stale)" : ""}
-              {perf ? ` · ${perf.ms.toFixed(1)} ms/frame @ ${perf.fps} fps${perf.tickJump ? " (tick-jump)" : ""}` : ""}
-              {perf?.predErrFt != null ? ` · ~${perf.predErrFt} ft median between-tick prediction error` : ""}
+              {/* W5 P2: frame time, fps and the between-tick prediction error are
+                  engineering telemetry, not visitor information. Gated behind ?perf /
+                  dev builds — the perf harness passes ?perf, so it still measures. */}
+              {perf && perfVisible() ? ` · ${perf.ms.toFixed(1)} ms/frame @ ${perf.fps} fps${perf.tickJump ? " (tick-jump)" : ""}` : ""}
+              {perf?.predErrFt != null && perfVisible() ? ` · ~${perf.predErrFt} ft median between-tick prediction error` : ""}
             </div>
             {basemap && <div className="imm-info-attr">{basemap.vintageNote} · {basemap.attribution}</div>}
             <div className="imm-info-anchors">
@@ -956,8 +968,9 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                   </span>
                 ),
                 <span>
-                  Reports arrive ~31&nbsp;s apart · between them movement is <em>modeled</em> from each
-                  route&rsquo;s recorded behavior.
+                  Reports arrive ~31&nbsp;s apart · between them a bus keeps moving at{" "}
+                  <em>the speed it last reported</em>, along its own route shape, for about
+                  40&nbsp;s &mdash; then it eases to a stop.
                 </span>,
                 <span>
                   State: <Swatch color="#3b82f6" />solid observed (GPS) ·{" "}
@@ -976,7 +989,8 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
                   ))}
                 </span>,
                 <span>
-                  Reports arrive ~31&nbsp;s apart · between them position is estimated along the track.
+                  Trains report the station they last reached · between stations we place them
+                  along the track by how much of the scheduled hop has elapsed.
                 </span>,
                 <span>
                   State: <Swatch color="#3b82f6" />solid observed ·{" "}

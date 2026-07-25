@@ -208,6 +208,17 @@ export default function RouteDossierPage() {
         {d?.meta.long_name && <div className="obs-dossier-sub">{d.meta.long_name} · {d.meta.borough}</div>}
       </div>
 
+      {/* W7 framing: the dossier had NO explanatory sentence at all — a visitor landed
+          straight on a Marey diagram, which is a specialist chart. One plain-language
+          paragraph up front, naming what each panel below answers. */}
+      <p className="nyc-note" style={{ marginTop: 0, maxWidth: "72ch" }}>
+        How this route actually ran, compared with how it was timetabled. The chart below
+        draws one line per bus trip: the steeper the line the faster the bus, and lines that
+        drift together are buses bunching. Underneath: how long the gaps between buses really
+        were at each stop, how many people board by hour, which stretches are slowest, and
+        how easy the stops are to walk to.
+      </p>
+
       {/* THE Marey view */}
       <ChartErrorBoundary label="Marey diagram">
         <MareyChart route={routeId} displayName={display} accent="#2563eb" />

@@ -50,6 +50,7 @@
    <ArcanumHeader/> and <ArcanumFooter/> inside <main id="ark-main">.
    ============================================================================= */
 import React from "react";
+import ArkTriad, { type Cdf } from "./ArkTriad";
 
 /* ---- types ---------------------------------------------------------------- */
 export interface NavItem {
@@ -73,6 +74,8 @@ export interface EcoSite {
   affiliated?: boolean;
   /** Detailed in-site sub-links rendered indented under the site in the switcher. */
   pages?: EcoPage[];
+  /** Code-&-Data-First block — the Research Triad's Data/Code/Outputs targets. */
+  cdf?: Cdf;
 }
 export interface Ecosystem {
   anchors?: {
@@ -152,15 +155,42 @@ export const ArcanumHeader: React.FC<ArcanumChromeProps> = (props) => {
   );
 };
 
-/* ---- footer (standalone: one quiet personal-site line + data credits) -----
+/* ---- footer (standalone: action bar + one quiet personal-site line + credits) -----
    De-federated (ANTFARM_V3 W2.5): no hub anchor, no "Arcanum Research" framing.
    A single "Built by Nick Anderson — nickanderson.us" line (the personal site is
-   where this project is listed) plus the data-source attributions. */
+   where this project is listed) plus the data-source attributions.
+
+   W5 (2026-07-24) — the ACTION FOOTER. The hero Research Triad moved off `/` to
+   `/data` under the CODE_DATA_FIRST_STANDARD §9 `tool-first` exception class. That
+   exception is conditional: "the compact triad remains in the action footer on every
+   page." This bar is that condition, discharged — one bar, on every chromed page,
+   carrying the compact triad plus About / Methodology.
+
+   The three badges were "Reproducible · Offline · Real data" — engineering virtues
+   that mean nothing to a city planner and, worse, "Offline" reads as *the site is
+   offline*. They are replaced by the three PROVENANCE facts a planner actually needs
+   to judge a number, each of which is true and stated elsewhere on the site: how
+   fresh the live feeds are (30 s), how fresh everything derived is (published once a
+   day at 04:30 ET — see the Ops Wall stamps), and that nothing is synthetic. */
 export const ArcanumFooter: React.FC<Pick<ArcanumChromeProps,
-  "ecosystem" | "dprUrl" | "dprLabel">> = ({ ecosystem, dprUrl, dprLabel = "Provenance" }) => {
+  "ecosystem" | "dprUrl" | "dprLabel" | "siteKey">> = ({ ecosystem, dprUrl, dprLabel = "Provenance", siteKey }) => {
     const author = ecosystem?.anchors?.author ?? AUTHOR;
+    const cdf = (ecosystem?.sites ?? []).find((s) => s.key === siteKey)?.cdf;
     return (
-      <footer className="ark-footer">
+      <footer className="ark-footer ark-action-footer" data-cdf-footer>
+        {cdf ? (
+          <div className="ark-action-bar">
+            <ArkTriad
+              cdf={cdf}
+              className="ark-triad-compact"
+              track={{ site: siteKey, endpoint: "/__track" }}
+            />
+            <span className="ark-action-tools">
+              <a className="ark-action-link" href="/methodology">How it&rsquo;s measured</a>
+              <a className="ark-action-link" href="/about">About this project</a>
+            </span>
+          </div>
+        ) : null}
         <div className="ark-footer-inner">
           <span>Built by Nick Anderson &mdash; <a href={author.url}>{author.name}</a></span>
           <span className="ark-sep" aria-hidden="true">&middot;</span>
@@ -169,9 +199,9 @@ export const ArcanumFooter: React.FC<Pick<ArcanumChromeProps,
           </span>
           <span className="ark-sep" aria-hidden="true">&middot;</span>
           <span className="ark-foot-badges">
-            <span className="ark-badge reproducible">Reproducible</span>
-            <span className="ark-badge offline">Offline</span>
-            <span className="ark-badge real-data">Real data</span>
+            <span className="ark-badge real-data">Live feeds refresh every 30 s</span>
+            <span className="ark-badge reproducible">Derived figures published daily, 04:30 ET</span>
+            <span className="ark-badge offline">Real data only &mdash; nothing simulated</span>
           </span>
           {dprUrl ? (
             <>
@@ -197,7 +227,12 @@ const ArcanumChrome: React.FC<ArcanumChromeProps> = (props) => {
       <main id="ark-main" className="ark-main">
         <div className="ark-wrap">{children}</div>
       </main>
-      <ArcanumFooter ecosystem={props.ecosystem} dprUrl={props.dprUrl} dprLabel={props.dprLabel} />
+      <ArcanumFooter
+        ecosystem={props.ecosystem}
+        dprUrl={props.dprUrl}
+        dprLabel={props.dprLabel}
+        siteKey={props.siteKey}
+      />
     </div>
   );
 };

@@ -12,6 +12,7 @@ import {
 } from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
+import { perfVisible } from "../lib/devFlags";
 import {
   getVehicles,
   getRoutes,
@@ -99,6 +100,7 @@ export default function BusMap() {
 
   const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [selected, setSelected] = useState<string>("");
+  const [routeQ, setRouteQ] = useState(""); // W7: free-text narrowing of the 345-route list
   const [showBuses, setShowBuses] = useState(true);
   const [showSubway, setShowSubway] = useState(true);
   // W2 (2026-07-24) — /bus had NO borough branch at all: it always used the GTFS
@@ -532,7 +534,12 @@ export default function BusMap() {
               )
                 .bindPopup(
                   `<strong>${seg.from_stop} → ${seg.to_stop}</strong><br/>` +
-                    `<strong>${seg.wt_speed_mph} mph</strong> · ${Math.round(seg.speed_pctile * 100)}th pct on ${selected}`,
+                    // W7 honesty #3: wt_speed_mph arrives as an unrounded API float
+                    // (e.g. 6.283333333333333 mph). Round to the precision a segment
+                    // speed can carry.
+                    `<strong>${seg.wt_speed_mph.toFixed(1)} mph</strong> · faster than ${Math.round(
+                      seg.speed_pctile * 100,
+                    )}% of ${selected}'s segments`,
                 )
                 .addTo(sl);
             }
@@ -560,15 +567,31 @@ export default function BusMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
+  // W7 controls: free-text narrowing over the 345-route list (route number OR long
+  // name), grouped by borough exactly as before. The currently-selected route is always
+  // kept in the list even if it no longer matches, so typing never silently drops the
+  // selection out of the control that is showing it.
+  const matched = useMemo(() => {
+    const q = routeQ.trim().toLowerCase();
+    if (!q) return routes;
+    return routes.filter(
+      (r) =>
+        r.route_id === selected ||
+        r.short_name.toLowerCase().includes(q) ||
+        r.long_name.toLowerCase().includes(q),
+    );
+  }, [routes, routeQ, selected]);
+  const matchCount = matched.length;
+
   const grouped = useMemo(() => {
     const by: Record<string, RouteInfo[]> = {};
-    for (const r of routes) {
+    for (const r of matched) {
       const g = routeGroup(r.route_id);
       (by[g] ??= []).push(r);
     }
     const order = BOROUGH_GROUP_ORDER;
     return Object.entries(by).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
-  }, [routes]);
+  }, [matched]);
 
   const asOfCls = err ? "error" : stale || (showSubway && subStale) ? "stale" : "";
   const stampParts: string[] = [];
@@ -619,11 +642,33 @@ export default function BusMap() {
             Subway
           </label>
         </div>
+        {/* W7 controls: this was a bare 345-item <select>. A native select has no search,
+            so finding the Bx41 meant scrolling a list a third of a thousand long — on a
+            phone, a full-screen wheel. A one-line filter narrows the list as you type
+            (route number OR name), the borough optgroups are kept, and the count in the
+            first option always tells you how many are currently listed. */}
         {showBuses && (
           <div className="row">
-            <label htmlFor="routeSel">Filter by bus route</label>
-            <select id="routeSel" value={selected} onChange={(e) => setSelected(e.target.value)}>
-              <option value="">All routes ({routes.length})</option>
+            <label htmlFor="routeQ">Find a bus route</label>
+            <input
+              id="routeQ"
+              type="search"
+              placeholder="Type a route or street — e.g. Bx41, Utica"
+              value={routeQ}
+              onChange={(e) => setRouteQ(e.target.value)}
+              autoComplete="off"
+            />
+            <select
+              id="routeSel"
+              aria-label="Bus route"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
+              <option value="">
+                {routeQ.trim()
+                  ? `All ${matchCount} matching route${matchCount === 1 ? "" : "s"}`
+                  : `All routes (${routes.length})`}
+              </option>
               {grouped.map(([g, rs]) => (
                 <optgroup key={g} label={boroughLabel(g)}>
                   {rs.map((r) => (
@@ -634,6 +679,9 @@ export default function BusMap() {
                 </optgroup>
               ))}
             </select>
+            {routeQ.trim() && matchCount === 0 && (
+              <div className="muted">No route matches “{routeQ.trim()}”.</div>
+            )}
           </div>
         )}
         {showBuses && (
@@ -665,7 +713,10 @@ export default function BusMap() {
           {showBuses && showSubway ? " · " : ""}
           {showSubway ? `${subCount.toLocaleString()} train${subCount === 1 ? "" : "s"}` : ""}
           {selected && showBuses ? ` · route ${selected}` : ""}
-          {perf ? ` · ${perf.ms.toFixed(1)} ms/frame${perf.tickJump ? " (tick-jump)" : ""}` : ""}
+          {/* W5 P2: the frame-time readout ("12.3 ms/frame (tick-jump)") was public.
+              It is engineering telemetry — a planner reads it as a fault report. Gated
+              behind ?perf / dev builds; the perf harness still gets it. */}
+          {perf && perfVisible() ? ` · ${perf.ms.toFixed(1)} ms/frame${perf.tickJump ? " (tick-jump)" : ""}` : ""}
         </div>
         {showSubway && <div className="muted">Zoom in to tap stations for live arrivals.</div>}
       </div>
@@ -748,9 +799,19 @@ export default function BusMap() {
               ))}
             </span>
           ),
+          /* W7 honesty #1 (2026-07-24): this said movement was "modeled from each
+              route's recorded behavior", and the immersive ⓘ panel went further and
+              named "per-segment speeds we've logged since July". NO SUCH MODEL EXISTS.
+              flow/core.ts carries ONE speed per vehicle — the speed that vehicle itself
+              last reported — and advances it along the route shape for up to STALE_S
+              (40 s), after which it eases to a stop rather than inventing motion.
+              Per-segment learned profiles are unstarted backlog. The copy now describes
+              the engine that is actually running. */
           <span>
-            Reports arrive ~31&nbsp;s apart · between them movement is <em>modeled</em> from each
-            route&rsquo;s recorded behavior{showSubway ? " (trains: interpolated along the track)" : ""}.
+            Reports arrive ~31&nbsp;s apart. Between them a bus keeps moving at{" "}
+            <em>the speed it last reported</em>, along its own route shape, for up to about
+            40&nbsp;s &mdash; then it eases to a stop rather than guessing
+            {showSubway ? "; trains are placed along the track between the stations they report" : ""}.
           </span>,
           <span>
             State: <Swatch color="#3b82f6" />solid observed ·{" "}

@@ -71,6 +71,37 @@ function HubBoundChart() {
   );
 }
 
+// W1/W5 (2026-07-24): this chart used to be the LANDING page's one Plotly figure, where
+// it sat between the spoke grid and the "what this is" prose and had nothing to do with
+// getting a visitor to a map. It is a real bus-ridership finding, so it moved here — to
+// the bus page — rather than being deleted. Its source line also shipped two raw Socrata
+// dataset IDs and the internal analysis codename `01_route_demand`; those are gone from
+// the visible line (the dataset IDs are in the /data catalog, where they belong).
+function OmnyChart() {
+  const o = charts.omny;
+  if (!o) return null;
+  return (
+    <ArkPlotly
+      title="OMNY has all but replaced MetroCard on NYC buses"
+      subtitle="Share of bus boardings by payment method, 2020–2026 (2026 is a partial year)"
+      data={[
+        { type: "bar", name: "OMNY", x: o.years, y: o.omny, marker: { color: "#2563eb" } },
+        { type: "bar", name: "MetroCard", x: o.years, y: o.metrocard, marker: { color: "#93c5fd" } },
+      ]}
+      layout={{ barmode: "stack", yaxis: { title: { text: "boardings" } } }}
+      csvRows={o.years.map((y: number, i: number) => ({
+        year: y,
+        omny_boardings: o.omny[i],
+        metrocard_boardings: o.metrocard[i],
+        omny_pct: o.omny_pct[i],
+      }))}
+      csvName="bus_omny_adoption.csv"
+      height={340}
+      source="Source: MTA Bus Hourly Ridership, retrieved 2026-07-16 (dataset IDs in the Data catalog). OMNY's share of bus boardings rose from 1.1% in 2020 to 98.6% in 2026 (to 7 July)."
+    />
+  );
+}
+
 // Alphabetical by borough name, Bronx first (shared with /bus + immersive + legends).
 const BOROUGH_ORDER = BOROUGH_NAME_ORDER;
 
@@ -78,21 +109,18 @@ function routeHref(routeId: string) {
   return `/observatory/${encodeURIComponent(routeId)}`;
 }
 
+// W7 honesty fix #2 (2026-07-24) — THE DEPTH GATE WAS BYPASSED ONE SECTION ABOVE ITSELF.
+// This chip used to print each route's bunching index to two decimals and colour it
+// green / amber / red, on ALL 345 chips — which is a ranking of every route in the city,
+// rendered directly above the league section that REFUSES to name a best or worst until
+// the archive reaches 14 observed days. A gate that the page walks around is not a gate.
+// The number is not deleted from the site: it is on the route's own dossier, beside its
+// observed-days count and its PRELIMINARY stamp, where it can be read with its caveat.
 function RouteChip({ r }: { r: ObsRoute }) {
-  const bi = r.stats?.bunching_index;
   return (
     <Link className="obs-chip" to={routeHref(r.route_id)} title={r.long_name || r.short_name}>
       <span className="obs-chip-name">{r.short_name}</span>
       {r.sbs && !r.short_name.toUpperCase().includes("SBS") && <span className="obs-chip-sbs">SBS</span>}
-      {bi != null && (
-        <em
-          className="obs-chip-bi"
-          title={`bunching index ${bi}`}
-          style={{ color: bi < 0.15 ? "#1a7f37" : bi < 0.3 ? "#b8860b" : "#dc2626" }}
-        >
-          {bi.toFixed(2)}
-        </em>
-      )}
     </Link>
   );
 }
@@ -171,10 +199,14 @@ export default function ObservatoryPage() {
         <h1 style={{ margin: "0.6rem 0" }}>Bus Observatory</h1>
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Live</span>
       </div>
+      {/* W7 framing: named four specialist chart types before saying what a visitor
+          gets. Same content, ordered as a person would ask for it. */}
       <p className="lede" style={{ maxWidth: "70ch" }}>
-        Pick a bus route to open its dossier: the Marey diagram of every trip (observed vs scheduled), the
-        per-stop headway strip, ridership by hour, slowest segments, stop-accessibility, and reliability &mdash;
-        all built from a 31-second GTFS-RT archive of every vehicle in the five boroughs.
+        Pick a bus route and see how it actually ran, not how it was timetabled: how long
+        the gaps between buses really were, where buses bunched up, which stretches are
+        slowest, how many people board by hour, and how easy its stops are to walk to. Every
+        figure comes from our own archive of where every bus in the city was, recorded every
+        31 seconds.
       </p>
 
       {routes && <ArchiveBadge archive={routes.archive} />}
@@ -187,6 +219,10 @@ export default function ObservatoryPage() {
           entries by mode (the born-digital slice; the scanned decades follow). */}
       <section className="nyc-section">
         <HubBoundChart />
+      </section>
+
+      <section className="nyc-section">
+        <OmnyChart />
       </section>
 
       {leagues && (() => {
@@ -210,7 +246,7 @@ export default function ObservatoryPage() {
                   rows={leagues.most_reliable.slice(0, 5).map((r) => ({
                     route_id: r.route_id,
                     short_name: r.short_name,
-                    label: r.bunching_index.toFixed(3),
+                    label: r.bunching_index.toFixed(2),
                   }))}
                 />
                 <LeagueCard
@@ -220,7 +256,7 @@ export default function ObservatoryPage() {
                   rows={leagues.least_reliable.slice(0, 5).map((r) => ({
                     route_id: r.route_id,
                     short_name: r.short_name,
-                    label: r.bunching_index.toFixed(3),
+                    label: r.bunching_index.toFixed(2),
                   }))}
                 />
               </>
@@ -296,7 +332,7 @@ export default function ObservatoryPage() {
           ]}
           cannot={[
             { text: "Name a single “most” or “least” reliable route with confidence.", closes: "→ 14 days of continuous archive (currently building) turns the distribution into a stable ranking." },
-            { text: "Distinguish a true door-open arrival from a shape-offset crossing.", closes: "→ the bus feed's current_status is 100% NULL; a stop-event feed would settle it." },
+            { text: "Tell the moment a bus actually opened its doors from the moment it passed the stop.", closes: "→ the MTA's bus feed carries a field for “at stop / approaching / in transit”, but it is empty on every single reading, so we can only see the bus cross the stop’s position. A feed that reports stop events would settle it." },
             { text: "Attribute a slow corridor to a specific cause (traffic vs dwell vs signal timing).", closes: "→ a matched segment-level travel-time decomposition." },
           ]}
         />

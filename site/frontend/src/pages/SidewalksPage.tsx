@@ -1,6 +1,6 @@
+import { Link } from "react-router-dom";
 import SidewalkMap from "../components/SidewalkMap";
 import MapsSubnav from "../components/MapsSubnav";
-import DownloadRow from "../components/DownloadRow";
 import ArkPlotly from "../components/ArkPlotly";
 import ConfidenceBadge from "../components/ConfidenceBadge";
 import { ContextCallouts } from "../components/ContextCallout";
@@ -18,13 +18,29 @@ export default function SidewalksPage() {
         <span className="nyc-pill live" style={{ padding: "0.2rem 0.6rem" }}>Built</span>
       </div>
 
+      {/* W7 framing: this opened with nine unexplained GIS terms in 60 words
+          ("DCP planimetric", "coverage class", "zoom-gated", "data vintage",
+          "simplified geometries"…). Rewritten to the /renters template — say what a
+          person can do here, in words a planner uses in a meeting. The technical
+          detail is not deleted, it moves into the fold below. */}
       <p className="nyc-note" style={{ marginTop: 0 }}>
-        Four real layers over the DCP planimetric sidewalk network: per-segment coverage class
-        (96,553 street segments), the Stop Accessibility Index for all 13,621 bus stops,
-        neighborhood coverage equity, and the ADA ramp-gap map. Segment and ramp layers are
-        zoom-gated; each layer's data vintage is stamped in the legend. Web geometries are
-        simplified for delivery &mdash; full resolution ships in the downloads below.
+        Where you can and can&rsquo;t walk in New York, street by street. Turn on any of four
+        layers: whether a street has a sidewalk on both sides, one side or neither
+        (96,553 streets); how easy each of the 13,621 bus stops is to walk to; how sidewalk
+        provision compares neighbourhood by neighbourhood; and which intersections have no
+        wheelchair ramp. Zoom in for the street and ramp detail.
       </p>
+      <details className="nyc-fold">
+        <summary>How the layers are built</summary>
+        <p className="nyc-note" style={{ marginTop: "0.4rem" }}>
+          The sidewalk shapes come from City Planning&rsquo;s 2022 aerial survey, matched to
+          the city street centreline. The street and ramp layers only draw once you zoom in
+          (there are too many to draw at once), and each layer&rsquo;s collection date is
+          stamped inside the map legend. The shapes drawn in your browser are simplified so
+          the map stays fast &mdash; the full-resolution files are in{" "}
+          <Link to="/data">Data</Link>.
+        </p>
+      </details>
 
       <SidewalkMap />
 
@@ -36,10 +52,19 @@ export default function SidewalksPage() {
           <li><strong>6,086 intersections</strong> (12.5%) lack any pedestrian ramp within 50 ft &mdash; and of ramps that exist, 25.9% fail the ADA 8.33% slope maximum. <ConfidenceBadge claimKey="sw-ramps" compact /></li>
           <li>A typical <strong>Staten Island</strong> bus stop ranks in the bottom third of the city on pedestrian access (median SAI 35 vs Manhattan 61); nearly three-quarters of stops citywide have no shelter. <ConfidenceBadge claimKey="sai-index" compact /></li>
         </ul>
+        {/* W7 jargon + precision: this shipped "2·Area/Perimeter proxy, validated vs
+            max-inscribed width at r = 0.47" — an unexplained formula and an
+            unexplained correlation coefficient — and quoted 0.1-ft precision (12.9 /
+            8.4 ft) on a measure that only correlates 0.47 with the real thing. Both
+            fixed: the caveat is stated in words, and the numbers are rounded to the
+            precision the method can carry. */}
         <p className="nyc-note" style={{ fontSize: "0.78rem" }}>
-          Sidewalk width (Manhattan widest ~12.9 ft, Staten Island narrowest ~8.4 ft) is a
-          2&middot;Area/Perimeter proxy, validated vs max-inscribed width at r&nbsp;=&nbsp;0.47 &mdash;
-          read it as a relative signal only. <ConfidenceBadge claimKey="sw-width" compact />
+          Sidewalk width is an <strong>estimate, not a measurement</strong>: we infer it
+          from the shape of each sidewalk polygon. Checked against a true width measurement
+          it agrees only loosely, so use it to compare places, never as a figure for a
+          specific sidewalk. On that basis Manhattan&rsquo;s sidewalks are the widest
+          (about 13&nbsp;ft) and Staten Island&rsquo;s the narrowest (about 8&nbsp;ft).{" "}
+          <ConfidenceBadge claimKey="sw-width" compact />
         </p>
         <p className="nyc-note">
           Full claims with caveats and pointers on the <a href="/methodology">Methodology</a> page.
@@ -89,26 +114,30 @@ export default function SidewalksPage() {
           scope="the sidewalk network &amp; stop access"
           dated="2026-07-23"
           can={[
-            { text: "The coverage class of all 96,553 pedestrian street segments — a near-complete administrative census: 85% both sides, 3% none, with the no-sidewalk segments concentrated in Staten Island and Queens." },
+            /* W7 honesty: the original said "**all** 96,553 … a **near-complete**
+                census" in one sentence — the two claims contradict each other. It is
+                the whole of the city's mapped pedestrian street network; "near-complete"
+                referred to the aerial survey behind it, which is a different thing. */
+            { text: "The sidewalk situation on every one of the 96,553 streets in the city's pedestrian street network: 85% have sidewalks on both sides, 3% have none, and the streets with none are concentrated in Staten Island and Queens. (The network itself is complete; what is approximate is the 2022 aerial survey the sidewalk shapes are traced from.)" },
             { text: "Where pedestrian ramps are missing (6,086 intersections lack any within 50 ft) and where existing ramps fail the ADA 8.33% slope maximum." },
             { text: "How bus-stop pedestrian access varies by borough (the Stop Accessibility Index); its borough gradient is weighting-robust." },
           ]}
           cannot={[
-            { text: "Absolute sidewalk width.", closes: "→ the medial-axis method (Harvey 2020) on the planimetric polygons replaces the 2·Area/Perimeter proxy (r = 0.47) — relative signal only until then." },
+            { text: "How wide a particular sidewalk actually is.", closes: "→ measuring the true width down the middle of each sidewalk polygon (the Harvey 2020 method) would replace today's shape-based estimate, which only agrees loosely with a real measurement. Until then, treat width as a comparison between places, not a figure for a place." },
             { text: "Whether crash counts near ranked segments reflect a true safety gap.", closes: "→ normalizing counts by pedestrian volume/exposure converts a count concentration into a genuine rate." },
             { text: "Daytime crowding per capita.", closes: "→ worker (daytime) population resolves what the nighttime per-frontage proxy understates in the CBD." },
           ]}
         />
       </section>
 
-      <section className="nyc-section">
-        <h2>Downloads</h2>
-        <p className="nyc-note">
-          Geospatial layers ship <strong>GeoJSON + GeoParquet</strong>; tables ship
-          <strong> CSV / XLSX / Parquet</strong> (Carson DNA D-4). Correct content-types on every file.
-        </p>
-        <DownloadRow groups={["Sidewalk", "SAI"]} />
-      </section>
+      {/* W5 (2026-07-24): a <h2>Downloads</h2> + DownloadRow used to sit HERE, on a
+          map page, along with the literal internal string "(Carson DNA D-4)". Both are
+          gone: the sidewalk and stop-access files are in the Data tab with every other
+          download, and this page is a map again. One quiet line points there. */}
+      <p className="nyc-smallprint">
+        The sidewalk and stop-access files &mdash; full resolution, GeoJSON, GeoParquet and
+        CSV &mdash; are in <Link to="/data">Data</Link>.
+      </p>
     </div>
   );
 }

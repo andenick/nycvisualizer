@@ -98,7 +98,7 @@ function DistributionView({ d }: { d: LeaguesResponse }) {
           <strong>distribution</strong> of reliability across the {d.criteria.qualifying_routes} qualifying
           routes, not winners and losers. The named leaderboard appears here automatically once the depth is
           reached. {median != null && <>Right now the median route sits at a bunching index of{" "}
-          <strong>{median.toFixed(3)}</strong> (lower = steadier gaps).</>}
+          <strong>{median.toFixed(2)}</strong> (lower = steadier gaps).</>}
         </p>
       </div>
 
@@ -144,10 +144,17 @@ function DistributionView({ d }: { d: LeaguesResponse }) {
             )
           }
         />
+        {/* W7 jargon: the column read "Headway CV", an abbreviation expanded nowhere on
+            the site. Renamed to "Gap consistency" and both measures are now defined in
+            plain words right under the table head, where a planner reads them. */}
         <div className="obs-subtle">
-          Every qualifying route with its bunching index and headway variability. Sort any column — but this is a
-          distribution, not a ranking: there is no place number, and observed-days is shown per route because a route
-          seen on fewer days carries less certainty.
+          Every qualifying route, with two measures. <strong>Bunching</strong> is the share of
+          gaps between buses that came in under half the scheduled gap &mdash; buses arriving
+          in a clump. <strong>Gap consistency</strong> is how much the gaps vary around their
+          own average (statistically, the coefficient of variation); higher means less even
+          service. Lower is better on both. Sort any column &mdash; but this is a
+          distribution, not a ranking: there is no place number, and the observed-days count
+          is shown per route because a route seen on fewer days carries less certainty.
         </div>
         <div className="dist-sort-hint">Click a column heading to sort.</div>
         <div className="nyc-table-wrap">
@@ -160,7 +167,7 @@ function DistributionView({ d }: { d: LeaguesResponse }) {
                   Bunching {arrow("bunching_index")}
                 </th>
                 <th className="sortable" style={{ textAlign: "right" }} onClick={() => onSort("headway_cv")}>
-                  Headway CV {arrow("headway_cv")}
+                  Gap consistency {arrow("headway_cv")}
                 </th>
                 <th className="sortable" style={{ textAlign: "right" }} onClick={() => onSort("observed_days")}>
                   Observed days {arrow("observed_days")}
@@ -177,8 +184,8 @@ function DistributionView({ d }: { d: LeaguesResponse }) {
                     )}
                   </td>
                   <td>{r.borough}</td>
-                  <td style={{ textAlign: "right" }}>{r.bunching_index.toFixed(3)}</td>
-                  <td style={{ textAlign: "right" }}>{r.headway_cv != null ? r.headway_cv.toFixed(3) : "—"}</td>
+                  <td style={{ textAlign: "right" }}>{r.bunching_index.toFixed(2)}</td>
+                  <td style={{ textAlign: "right" }}>{r.headway_cv != null ? r.headway_cv.toFixed(2) : "—"}</td>
                   <td style={{ textAlign: "right" }}>{r.observed_days}</td>
                 </tr>
               ))}
@@ -214,7 +221,7 @@ function ReliableBoard({ title, rows, subtitle, csv }: {
                 <td>{i + 1}</td>
                 <td><Link to={href(r.route_id)}>{r.short_name}</Link>{r.sbs && !r.short_name.toUpperCase().includes("SBS") && <span className="obs-chip-sbs" style={{ marginLeft: 6 }}>SBS</span>}</td>
                 <td>{r.borough}</td>
-                <td style={{ textAlign: "right" }}>{r.bunching_index.toFixed(3)}</td>
+                <td style={{ textAlign: "right" }}>{r.bunching_index.toFixed(2)}</td>
                 <td style={{ textAlign: "right" }}>{r.median_headway_min ?? "—"}</td>
                 <td style={{ textAlign: "right" }}>{r.observed_days}</td>
               </tr>

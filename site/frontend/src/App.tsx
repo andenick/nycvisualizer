@@ -1,8 +1,9 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ArcanumChrome from "./chrome/ReactChrome";
 import ecosystem from "./chrome/ecosystem.json";
 import Landing from "./pages/Landing";
+import { trackPageview } from "./lib/beacon";
 
 // Q4.2: per-spoke code-splitting. The heavy map/chart pages (Leaflet + protomaps +
 // the dossier stack) are each their own lazy chunk so the landing first paint no
@@ -28,33 +29,44 @@ const ImmersiveMapPage = lazy(() => import("./pages/ImmersiveMapPage"));
 const WorkstationPage = lazy(() => import("./pages/WorkstationPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-// Q4.1 IA rework: the flat 9-item bar becomes a spoke-first grouped nav. The shared
-// chrome NavItem is flat (no dropdowns), so grouping is expressed with two SECTION
-// LANDINGS — "Maps" (→ /maps, the three interactive maps) and "Observatory"
-// (→ /observatory, the route picker) — each of which carries an in-page sub-nav
-// strip (MapsSubnav / ObsSubnav). Ops Wall, Data, Methodology, and About stay
-// top-level. Code drops off the bar (reachable from the Data page) to keep the bar
-// to six items that wrap cleanly on mobile.
+// W1/W5 IA flip (2026-07-24): SIX nav items → FOUR. The bar is now the four things a
+// visitor comes here to open — `Maps · Observatory · Ops Wall · Data`.
+//   * `Methodology` folds UNDER Data (reachable from /data and from the landing's
+//     small-print line); /methodology and /code both light the "Data" item.
+//   * `About` moves to the footer.
+// Four items also fixes the ≤680px nav row, where `.ark-nav` wraps to a full-width
+// `order: 3` band and six items formed a dense second row.
 const NAV = [
   { label: "Maps", href: "/maps" },
   { label: "Observatory", href: "/observatory" },
   { label: "Ops Wall", href: "/ops" },
   { label: "Data", href: "/data" },
-  { label: "Methodology", href: "/methodology" },
-  { label: "About", href: "/about" },
 ];
 
 // Highlight the grouping parent in the chrome nav even on a sub-page: any /bus,
 // /sidewalks, /renters, /maps path lights "Maps"; any /observatory* path lights
-// "Observatory". Chrome compares the *returned* path to each nav href.
+// "Observatory"; /methodology + /code light "Data" (they live under it now).
+// Chrome compares the *returned* path to each nav href.
 function navActivePath(pathname: string): string {
   if (/^\/(maps|bus|sidewalks|renters)(\/|$)/.test(pathname)) return "/maps";
   if (/^\/observatory(\/|$)/.test(pathname)) return "/observatory";
+  if (/^\/(data|methodology|code)(\/|$)/.test(pathname)) return "/data";
   return pathname;
 }
 
 export default function App() {
   const location = useLocation();
+
+  // W8 telemetry: ONE pageview beacon per path, into the /__track sink that already
+  // exists, is already proxied, and is already excluded from the CF cache rule. The
+  // sink was error-only, so `/api/kpis` reported nycvisualizer `present: False` and
+  // "is anyone using this?" was structurally unanswerable. This is the whole change —
+  // no new endpoint, no new transport, no third-party analytics, DNT/GPC still
+  // respected by the shared beacon. Declared BEFORE the /live and /workstation early
+  // returns so it fires on every family (hooks must be unconditional).
+  useEffect(() => {
+    trackPageview(location.pathname);
+  }, [location.pathname]);
 
   // I1: the immersive ant-farm views (/live/*) are full-window — they render
   // OUTSIDE the standard chrome (no header/footer/max-width wrap). Their own
@@ -116,6 +128,11 @@ export default function App() {
           <Route path="/observatory/changes" element={<ChangesPage />} />
           <Route path="/observatory/:route" element={<RouteDossierPage />} />
           <Route path="/data" element={<DataPage />} />
+          {/* W1: the Research Triad's Outputs button pointed at /explore, which was
+              NEVER a route — one of three above-the-fold buttons landed on NotFound.
+              `ecosystem.json` now points Outputs at /maps; this redirect keeps any
+              already-shared /explore link working instead of 404-ing it. */}
+          <Route path="/explore" element={<Navigate to="/maps" replace />} />
           <Route path="/code" element={<CodePage />} />
           <Route path="/methodology" element={<MethodologyPage />} />
           <Route path="/about" element={<AboutPage />} />

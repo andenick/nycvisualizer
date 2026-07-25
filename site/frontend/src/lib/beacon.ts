@@ -66,6 +66,36 @@ export function trackMapError(detail: string, page?: string): void {
   post("map_error", detail, page);
 }
 
+// --- pageview (W8, 2026-07-24) ---------------------------------------------------------
+// `/__track` was ERROR-ONLY: 42 lines ever, every one from HeadlessChrome (our own
+// canary), so `/api/kpis` reported nycvisualizer `present: False`. This is the whole
+// fix — one {page, kind:"pageview", ref} emit into the beacon that already exists, is
+// already proxied, and is already excluded from the Cloudflare cache rule. No new
+// telemetry system, no third party, no cookie, no id: DNT/GPC is respected by `post`,
+// `ref` is the referrer's HOSTNAME only (never the full URL), and nothing identifies a
+// person or a session.
+//
+// Deduped per path per page-load, so an SPA re-render or a query-string edit cannot
+// beacon in a loop; a real navigation to a new path does emit.
+const seenPages = new Set<string>();
+
+export function trackPageview(page?: string): void {
+  try {
+    const path = page ?? (typeof location !== "undefined" ? location.pathname : "");
+    if (seenPages.has(path)) return;
+    seenPages.add(path);
+    let ref = "";
+    try {
+      ref = document.referrer ? new URL(document.referrer, location.href).hostname : "";
+    } catch {
+      ref = "";
+    }
+    post("pageview", "", path, { ref });
+  } catch {
+    /* telemetry must never break a page */
+  }
+}
+
 // --- bus_offline (Ant Farm v3 W1): a vehicle faded out after >3 missed ticks -----------
 // Cheap + deduped: individual offline events are COALESCED and flushed at most once per
 // window as a single {kind:"bus_offline", count} beacon, so a churny feed can't beacon in a

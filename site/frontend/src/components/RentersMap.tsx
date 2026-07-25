@@ -2,7 +2,7 @@
 //   * location marker(s) — A (and B in compare)
 //   * 45-min / weekday-8am transit isochrone from the profile (inline); 30- and
 //     60-min variants fetched on demand from /api/isochrone and cached
-//   * nearest bus stops as dots colored by Stop Access Index (viridis)
+//   * nearest bus stops as dots colored by the Stop Accessibility Index (SAI)
 //   * a point-level flood-exposure ring (toggle) — the profile ships flood FLAGS
 //     for the location, not a citywide flood polygon, so the map shows the point
 // Click anywhere (single-location mode) to profile that spot.
@@ -12,6 +12,7 @@ import "leaflet/dist/leaflet.css";
 import { addBasemap, NYC_CENTER, NYC_BOUNDS, type BasemapInfo } from "../lib/basemap";
 import { saiColor, wktToLatLngs } from "../lib/renters";
 import { getIsochrone, type RenterProfile, type RenterIsochrone } from "../lib/api";
+import MapLegend, { Swatch } from "./MapLegend";
 
 const A_COLOR = "#2563eb"; // side A (accent)
 const B_COLOR = "#9333ea"; // side B (violet) — categorical, not moral
@@ -255,7 +256,7 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
             .bindPopup(
               `<strong>${s.props.stop_name ?? "Bus stop"}</strong><br/>` +
                 `<span style="opacity:.75">${s.props.routes ?? ""} · ${s.props.borough ?? ""}</span><br/>` +
-                `<strong>SAI ${Math.round(sai)}</strong> / 100`,
+                `<strong>Stop Accessibility Index ${Math.round(sai)}</strong> / 100`,
             )
             .addTo(g);
         }
@@ -334,50 +335,60 @@ export default function RentersMap({ primary, secondary, compare, onPick }: Prop
         {compare && <div className="muted">45-min outline shown for both in compare</div>}
       </div>
 
-      <div className="nyc-legend" style={{ maxWidth: "min(76vw, 320px)" }}>
-        {compare ? (
-          <div>
-            <span className="swatch" style={{ background: A_COLOR }} /> Reachable (A){approxA ? " · approx" : ""}
-            <span className="swatch" style={{ background: B_COLOR, marginLeft: 8 }} /> Reachable (B)
-          </div>
-        ) : (
-          <div>
-            Reachable by transit (weekday 8am):
-            <div style={{ marginTop: 3 }}>
+      {/* W7 mobile (measured in the re-shoot): this used the NON-COLLAPSIBLE `.nyc-legend`
+          box, which permanently occupied the lower-right quadrant while `.nyc-map-controls`
+          held the upper-left — together well over the ⅓-of-viewport ceiling ARKMAP_STANDARD
+          §6 sets for map furniture, and on a 390px phone that left barely any map. It now
+          uses the SAME collapsible <MapLegend> chip every other map surface uses, so it is a
+          chip until asked. Content unchanged except the metric name (see below). */}
+      <MapLegend
+        items={[
+          compare ? (
+            <span>
+              <Swatch color={A_COLOR} />Reachable in 45 min from A{approxA ? " (approximate)" : ""}{" "}
+              <Swatch color={B_COLOR} />Reachable in 45 min from B
+            </span>
+          ) : (
+            <span>
+              How far you can get by transit, leaving 8am on a weekday:{" "}
               {[15, 30, 45, 60].map((m) => (
-                <span key={m} style={{ marginRight: 8, whiteSpace: "nowrap" }}>
-                  <span
-                    className="swatch"
-                    style={{ background: { 15: "#1e50c8", 30: "#4d82e6", 45: "#8fb4f0", 60: "#c9dcfa" }[m] }}
-                  />
-                  {m}m
+                <span key={m} className="mlg-pair">
+                  <Swatch color={{ 15: "#1e50c8", 30: "#4d82e6", 45: "#8fb4f0", 60: "#c9dcfa" }[m as 15]} />
+                  {m} min{" "}
                 </span>
               ))}
+            </span>
+          ),
+          // W7 naming: this said "SAI stops" with no expansion, while /sidewalks said
+          // "Stop Accessibility Index" and lib/renters said "Stop Access Index" — three
+          // names for one measure. One name, expanded on first use, everywhere.
+          <span>
+            Bus stops by <strong>Stop Accessibility Index (SAI)</strong> — how easy the stop
+            is to walk to: <Swatch color={saiColor(10)} />low <Swatch color={saiColor(50)} />
+            mid <Swatch color={saiColor(90)} />high
+          </span>,
+          showFlood && (
+            <span>
+              <Swatch color="#38bdf8" style={{ border: "2px dashed #0369a1" }} />
+              this location is in a mapped flood-exposure area
+            </span>
+          ),
+          isoNote ? <span style={{ color: "#b45309" }}>{isoNote}</span> : null,
+        ]}
+        stamps={
+          <>
+            <div>
+              Travel times are real network routing (walking + transit), weekday 8am; job
+              counts are federal jobs-by-workplace data.
             </div>
-          </div>
-        )}
-        <div style={{ marginTop: 4 }}>
-          SAI stops:
-          <span className="swatch" style={{ background: saiColor(10), marginLeft: 6 }} /> low
-          <span className="swatch" style={{ background: saiColor(50), marginLeft: 6 }} /> mid
-          <span className="swatch" style={{ background: saiColor(90), marginLeft: 6 }} /> high
-        </div>
-        {showFlood && (
-          <div style={{ marginTop: 4 }}>
-            <span className="swatch" style={{ background: "#38bdf8", border: "2px dashed #0369a1" }} /> mapped flood exposure
-          </div>
-        )}
-        {isoNote && <div className="attr" style={{ color: "#b45309" }}>{isoNote}</div>}
-        <div className="attr">
-          Isochrone: OpenTripPlanner (WALK+TRANSIT), weekday 8am · jobs LODES WAC
-          {basemap && (
-            <>
-              <br />
-              {basemap.vintageNote} · {basemap.attribution}
-            </>
-          )}
-        </div>
-      </div>
+            {basemap && (
+              <div>
+                {basemap.vintageNote} · {basemap.attribution}
+              </div>
+            )}
+          </>
+        }
+      />
     </div>
   );
 }

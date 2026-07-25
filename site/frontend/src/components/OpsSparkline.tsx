@@ -10,20 +10,59 @@ import { useEffect, useRef } from "react";
 // Splicing a live point onto a series that ends hours ago draws the eye across an
 // unmarked gap and implies a continuity that does not exist — see OpsWallPage's
 // `canSplice`. Every caller also renders a caption stating the window it actually got.
+// W7 defect 4 (2026-07-24): the four Ops Wall trend charts shipped with NO title, NO
+// legend and NO download — a WEBSITE_VISUALIZATION §1.1 / Universal Graph Contract
+// violation on the site's most "control-room" surface. They now take a `title` (used as
+// the chart's accessible name, since the visible title is the tile label directly above
+// it) and a `csv` accessor, and render the contract's top-right Download CSV control.
+// The chart stays a sparkline — it is deliberately small — but it is now a chart a
+// visitor can name, read out with a screen reader, and take away.
+function toCsv(rows: (string | number | null)[][]): string {
+  const esc = (v: string | number | null) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return rows.map((r) => r.map(esc).join(",")).join("\n");
+}
+
 export default function OpsSparkline({
   values,
   color,
   liveValue = null,
   height = 40,
   invert = false,
+  title,
+  csvName,
+  labels,
+  valueHeader = "value",
 }: {
   values: (number | null)[];
   color: string;
   liveValue?: number | null;
   height?: number;
   invert?: boolean; // when true, lower is better (headway dev / bunching) — no effect on draw, kept for intent
+  /** Accessible name for the chart — the visible title is the tile label above it. */
+  title?: string;
+  /** Enables the Download CSV control. Omit to render the bare sparkline. */
+  csvName?: string;
+  /** Optional per-point labels (bin timestamps); falls back to the point index. */
+  labels?: (string | null)[];
+  valueHeader?: string;
 }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
+
+  const download = () => {
+    const rows: (string | number | null)[][] = [["bin", valueHeader]];
+    values.forEach((v, i) => rows.push([labels?.[i] ?? i, v]));
+    if (liveValue != null) rows.push(["live", liveValue]);
+    const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = csvName ?? "ops_trend.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     const cv = ref.current;
@@ -115,5 +154,27 @@ export default function OpsSparkline({
     }
   }, [values, color, liveValue, height, invert]);
 
-  return <canvas className="ops-spark" ref={ref} style={{ width: "100%", height }} aria-hidden />;
+  const hasData = values.some((v) => v != null && Number.isFinite(v));
+  return (
+    <figure className="ops-spark-fig" aria-label={title}>
+      {csvName && hasData && (
+        <button
+          type="button"
+          className="ops-spark-dl"
+          onClick={download}
+          aria-label={`Download ${title ?? "this trend"} as CSV`}
+          title="Download CSV"
+        >
+          ↓ CSV
+        </button>
+      )}
+      <canvas
+        className="ops-spark"
+        ref={ref}
+        style={{ width: "100%", height }}
+        role="img"
+        aria-label={title ?? "trend"}
+      />
+    </figure>
+  );
 }

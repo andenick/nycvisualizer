@@ -37,6 +37,7 @@ import {
 } from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
 import { trackMapError } from "../lib/beacon";
+import { perfVisible } from "../lib/devFlags";
 import {
   getVehicles,
   getObsRoutes,
@@ -1046,25 +1047,32 @@ export default function WorkstationPage() {
         ) : (
           <div className="ws-table-wrap">
             <table className="ws-table ws-table-unified">
+              {/* W7 controls (2026-07-24): these headers were abbreviations — Hw · Sched ·
+                  Bunch · On-rt — whose ONLY explanation was a `title=` tooltip. A title
+                  attribute does not exist on a touch device: on a phone or tablet, which is
+                  where a planner in the field is, four of the seven columns were unlabelled
+                  numbers with no way to find out what they meant. The tooltips are kept
+                  (they still help a mouse user), the headers are now words, and the key
+                  below the table states every one of them ON SCREEN. */}
               <thead>
                 <tr>
                   <th className="ws-th-l" onClick={() => sortBy("label")}>
                     Route / line{sortCaret("label")}
                   </th>
-                  <th onClick={() => sortBy("live")} title="Active vehicles reporting now">
-                    Now{sortCaret("live")}
+                  <th onClick={() => sortBy("live")} title="Vehicles reporting right now">
+                    Running now{sortCaret("live")}
                   </th>
-                  <th onClick={() => sortBy("medHw")} title="Observed median headway today, min (buses only)">
-                    Hw{sortCaret("medHw")}
+                  <th onClick={() => sortBy("medHw")} title="Observed median gap between buses today, in minutes (buses only)">
+                    Gap now{sortCaret("medHw")}
                   </th>
-                  <th onClick={() => sortBy("schedHw")} title="Scheduled median headway, min (buses only)">
-                    Sched{sortCaret("schedHw")}
+                  <th onClick={() => sortBy("schedHw")} title="Scheduled median gap between buses, in minutes (buses only)">
+                    Gap planned{sortCaret("schedHw")}
                   </th>
-                  <th onClick={() => sortBy("bunch")} title="Bunching index — share of headways ≤ ¼ scheduled (buses only)">
-                    Bunch{sortCaret("bunch")}
+                  <th onClick={() => sortBy("bunch")} title="Share of gaps that came in under a quarter of the scheduled gap (buses only)">
+                    Bunching{sortCaret("bunch")}
                   </th>
-                  <th onClick={() => sortBy("adherence")} title="Share of GPS pings on-route — position quality (buses only)">
-                    On-rt{sortCaret("adherence")}
+                  <th onClick={() => sortBy("adherence")} title="Share of GPS readings that fell on the route — position quality, not punctuality (buses only)">
+                    On route{sortCaret("adherence")}
                   </th>
                   <th onClick={() => sortBy("alerts")} title="Active service alerts (subway lines only)">
                     Alerts{sortCaret("alerts")}
@@ -1084,7 +1092,13 @@ export default function WorkstationPage() {
                             {r.kind === "bus" ? "B" : "Ⓢ"}
                           </span>
                           <strong>{r.label}</strong>
-                          {r.prelim && <span className="ws-prelim" title="Preliminary — archive under 14-day depth">P</span>}
+                          {/* W7 controls: this was a bare "P" whose meaning lived only in a
+                              `title=` tooltip — invisible on touch. Now it reads. */}
+                          {r.prelim && (
+                            <span className="ws-prelim" title="Preliminary — fewer than 14 observed days of archive">
+                              prelim
+                            </span>
+                          )}
                         </td>
                         <td className="ws-num">{r.live}</td>
                         <td className="ws-num">{r.medHw != null ? r.medHw : "—"}</td>
@@ -1115,10 +1129,19 @@ export default function WorkstationPage() {
                 })}
               </tbody>
             </table>
+            {/* W7 controls: the on-screen key. Every column that was previously a
+                tooltip-only abbreviation is defined here, where a touch user can read it. */}
             <div className="ws-rail-caveat nyc-note">
-              “On-rt” = share of GPS pings within 100 ft of the route shape — a position-quality signal (GPS noise
-              floor; terminals excluded), not a schedule-adherence guarantee. Subway lines carry no observed
-              headway (positions are estimated between stations); their reliability signal is active alerts.
+              <strong>Running now</strong> — vehicles reporting this minute.{" "}
+              <strong>Gap now</strong> / <strong>Gap planned</strong> — the median gap between
+              buses today, observed and timetabled, in minutes. <strong>Bunching</strong> — the
+              share of those gaps that came in under a quarter of the planned gap; lower is
+              better. <strong>On route</strong> — the share of GPS readings that fell within
+              100&nbsp;ft of the route shape. That is a <em>position-quality</em> signal (how
+              trustworthy the tracking is, terminals excluded), <em>not</em> a measure of
+              running on time. <strong>prelim</strong> — fewer than 14 observed days behind the
+              figure. Subway lines have no observed gap (trains are only located between the
+              stations they report), so their reliability signal is active alerts.
             </div>
           </div>
         )}
@@ -1157,14 +1180,15 @@ export default function WorkstationPage() {
             <p className="imm-info-honesty">
               One monitoring board: select any mix of bus routes and subway lines and watch their live buses and
               track-worms at true scale — buses each in a distinct colourblind-safe colour, lines in their official
-              MTA colour — with the numbers a planner reaches for in the right rail. Reports arrive ~31 s apart from
-              the MTA feed; between them each bus is modeled from its route’s recorded behavior (glided along its
-              shape) and each train is estimated along the track, never fabricated.
+              MTA colour — with the numbers a planner reaches for in the right rail. Reports arrive about 31 s apart
+              from the MTA feed; between them each bus keeps moving at the speed it last reported, along its own
+              route shape, for about 40 s before easing to a stop, and each train is placed along the track by how
+              much of its scheduled hop has elapsed. Nothing is invented.
             </p>
             <div className="imm-info-stamp">
               Data as of {fmtClock(asOf)} · source {source}
               {stale ? " (stale)" : ""}
-              {perf ? ` · ${perf.ms.toFixed(1)} ms/frame @ ${perf.fps} fps` : ""}
+              {perf && perfVisible() ? ` · ${perf.ms.toFixed(1)} ms/frame @ ${perf.fps} fps` : ""}
             </div>
             {basemap && <div className="imm-info-attr">{basemap.vintageNote} · {basemap.attribution}</div>}
             <div className="imm-info-anchors">

@@ -56,10 +56,15 @@ export default function MapsPage() {
       <MapsSubnav />
       <section className="nyc-hero" style={{ paddingTop: "0.4rem" }}>
         <h1>Maps</h1>
+        {/* W7: this said "Three ways" while rendering SIX cards. Rather than change a
+            numeral to another numeral that the next card breaks again, the count is
+            gone — the sentence now names the three QUESTIONS the six maps answer,
+            which is what the visitor is choosing between. */}
         <p className="lede">
-          Three ways to see the city at the finest measurable grain: what's moving right now, whether
-          you can walk to it, and what it's like to live there. Every map is built entirely on
-          authentic NYC Open Data, MTA, DCP, and Census sources.
+          Six maps, three questions: what&rsquo;s moving right now, whether you can walk to
+          it, and what a place is like to live in. Pick the one that matches what you came
+          to find out &mdash; all of them are built on public data from the MTA, NYC Open
+          Data, City Planning and the Census.
         </p>
       </section>
 

@@ -434,7 +434,7 @@ export default function SidewalkMap() {
 
     const notes: string[] = [];
     if (o.ada && z < ADA_MIN_ZOOM) notes.push(`zoom to ${ADA_MIN_ZOOM}+ for ramp gaps`);
-    if (o.sai && o.coverage) notes.push("coverage dimmed while SAI is active (one-hot color)");
+    if (o.sai && o.coverage) notes.push("street colours dimmed so the stop scores stand out");
     setZoomNote(notes.length ? notes.join(" · ") : null);
 
     if (o.sai) void loadSai();
@@ -476,7 +476,7 @@ export default function SidewalkMap() {
 
       <div className="nyc-map-controls">
         {cb("coverage", "Sidewalk coverage (streets)")}
-        {cb("sai", "Stop Accessibility Index")}
+        {cb("sai", "Stop Accessibility Index (SAI)")}
         {cb("nta", "Neighborhood equity")}
         {cb("ada", "ADA ramp gaps")}
         {covHot && (
@@ -487,13 +487,23 @@ export default function SidewalkMap() {
             </div>
           </div>
         )}
+        {/* W7 controls: this asked a planner to choose between two metrics with NO
+            guidance — the two answer different questions and can point opposite ways
+            (the poorest fifth of blocks has the HIGHEST provision per frontage foot and
+            the LOWEST per person). Say which question each one answers, on screen, not
+            in a tooltip. */}
         {on.nta && (
           <div className="row" style={{ marginTop: "0.35rem" }}>
-            <label htmlFor="ntaMetric">Equity metric</label>
+            <label htmlFor="ntaMetric">Compare neighbourhoods by</label>
             <select id="ntaMetric" value={ntaMetric} onChange={(e) => setNtaMetric(e.target.value as "ratio" | "spc")}>
-              <option value="ratio">Sidewalk per frontage foot</option>
-              <option value="spc">Sidewalk sqft per resident</option>
+              <option value="ratio">How much sidewalk per foot of street</option>
+              <option value="spc">How much sidewalk per resident</option>
             </select>
+            <div className="muted" style={{ marginTop: "0.2rem", maxWidth: "26rem" }}>
+              {ntaMetric === "ratio"
+                ? "Is the street built with sidewalk? Answers how generously the street itself is laid out — use it to find places the street design shortchanged."
+                : "Is there enough sidewalk for the people here? Divides the same sidewalk by residents — use it to find crowding. Dense neighbourhoods score low even where the streets are well built."}
+            </div>
           </div>
         )}
         {loading && <div className="muted">{loading}</div>}
@@ -516,10 +526,11 @@ export default function SidewalkMap() {
           ),
           on.sai && (
             <span>
-              SAI: <Swatch color={saiColor(10)} />low <Swatch color={saiColor(50)} />mid{" "}
+              Stop Accessibility Index (SAI) — how easy a bus stop is to walk to:{" "}
+              <Swatch color={saiColor(10)} />low <Swatch color={saiColor(50)} />mid{" "}
               <Swatch color={saiColor(90)} />high
               {on.coverage && (
-                <span style={{ opacity: 0.7 }}> · coverage dimmed to neutral while SAI is active</span>
+                <span style={{ opacity: 0.7 }}> · street colours dimmed to grey so these stand out</span>
               )}
             </span>
           ),
@@ -539,8 +550,8 @@ export default function SidewalkMap() {
         ]}
         details={[
           <span>
-            Coverage centerlines are vector tiles ({covMeta?.tippecanoe ?? "tippecanoe"}). Full
-            resolution in the downloads below.
+            The street lines are drawn from map tiles built for the browser, so they are
+            simplified. Full-resolution files are in the Data tab.
           </span>,
         ]}
         stamps={

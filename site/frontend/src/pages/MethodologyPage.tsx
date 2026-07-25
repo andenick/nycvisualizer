@@ -4,6 +4,7 @@ import { useState } from "react";
 import ReconciliationNote from "../components/ReconciliationNote";
 import KnowDontKnow from "../components/KnowDontKnow";
 import { ContextCallouts } from "../components/ContextCallout";
+import BadgeTaxonomyLegend from "../components/BadgeTaxonomyLegend";
 import methodsSai from "../content/methods_sai.html?raw";
 import findingsSai from "../content/findings_sai.html?raw";
 import methodsSidewalk from "../content/methods_sidewalk.html?raw";
@@ -27,7 +28,10 @@ const TABS: Tab[] = [
   { key: "sai", label: "Stop Accessibility Index", methods: methodsSai, findings: findingsSai },
   { key: "sidewalk", label: "Sidewalk network", methods: methodsSidewalk, findings: findingsSidewalk },
   { key: "bus", label: "Bus service & ridership", methods: methodsBus, findings: findingsBus },
-  { key: "derive2", label: "Observed headways (derive2)", methods: methodsDerive2 },
+  // W7 jargon: the label shipped the INTERNAL pipeline codename "derive2" as a public
+  // tab. The key stays `derive2` (it addresses the internal content file); the label a
+  // visitor reads does not.
+  { key: "derive2", label: "Observed bus headways", methods: methodsDerive2 },
   { key: "access", label: "Access & isochrones", methods: methodsAccess, findings: findingsAccess },
   { key: "renters", label: "Renter's Map", methods: methodsRenters },
   { key: "changes", label: "Service changes", methods: methodsChanges },
@@ -37,7 +41,7 @@ export default function MethodologyPage() {
   const [tab, setTab] = useState("sai");
   const [view, setView] = useState<"findings" | "methods">("findings");
   const cur = TABS.find((t) => t.key === tab)!;
-  // Some tabs (derive2, renters, changes) are methods-only — no separate findings doc.
+  // Some tabs (observed headways, renters, changes) are methods-only — no findings doc.
   const hasFindings = Boolean(cur.findings);
   const effectiveView: "findings" | "methods" = hasFindings ? view : "methods";
 
@@ -71,6 +75,12 @@ export default function MethodologyPage() {
         distinct from a true door-open arrival, so bunching here is positional. Realtime map honesty:
         subway positions between stations are estimates and are labeled as such.
       </p>
+
+      {/* W5 (2026-07-24): the badge-taxonomy explainer used to sit on the LANDING page,
+          teaching a vocabulary to a visitor who had not yet seen a single badge. It is a
+          methodology explainer, so it lives on the methodology page — which the "Data" nav
+          item and the landing's small-print line both reach in one click. */}
+      <BadgeTaxonomyLegend />
 
       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", margin: "1rem 0 0.6rem" }}>
         {TABS.map((t) => (
@@ -130,7 +140,7 @@ export default function MethodologyPage() {
               label: "NYC DOT Mobility Report",
               value: "7.44 mph",
               detail: "average citywide bus speed, 2017",
-              source: "NYC DOT Citywide Mobility Report, 2018 — Jane KB DOC0326",
+              source: "NYC DOT Citywide Mobility Report, 2018",
             }}
             why="Manhattan is the slow end of the city, so a Manhattan-only 6.2 mph sitting just under DOT's 7.44 mph citywide average — which blends in faster outer-borough corridors — is exactly the relationship you would expect. Two independent measurements, taken years apart with different pipelines, agree in magnitude and in the Manhattan-slow gradient."
             closes="It confirms our segment-speed pipeline reproduces the official order of magnitude and the borough gradient. NYC DOT has tracked these speeds with MTA Bus Time data since 2012, so the comparison rests on a long official baseline."

@@ -52,6 +52,12 @@ function series(bins: WallTrailBin[], key: keyof WallTrailBin): (number | null)[
   return bins.map((b) => (b[key] as number | null) ?? null);
 }
 
+// W7 defect 4: per-point bin labels so each trend chart's CSV is readable, not a bare
+// column of numbers whose x-axis the reader has to guess.
+function binLabels(bins: WallTrailBin[]): (string | null)[] {
+  return bins.map((b) => b.t ?? null);
+}
+
 // A small honest "as of" chip used per panel. When `stale` is set the chip says so in
 // words — the label is replaced, not decorated, so "live" can never sit on stale data.
 function Stamp({
@@ -224,6 +230,10 @@ export default function OpsWallPage() {
             values={ratioSeries}
             color="#38bdf8"
             liveValue={canSplice ? ratio : undefined}
+            title="Buses in service vs schedule — trend"
+            labels={binLabels(bins)}
+            valueHeader="service_ratio"
+            csvName="ops_trend_service_ratio.csv"
           />
           <TrendCaption basis={trendBasis} label={t3.window_label} />
           <div className="ops-tile-foot">
@@ -254,6 +264,10 @@ export default function OpsWallPage() {
             color="#f472b6"
             liveValue={canSplice ? n.bunching.pairs : undefined}
             invert
+            title="Bunched bus pairs — trend"
+            labels={binLabels(bins)}
+            valueHeader="active_bunching_pairs"
+            csvName="ops_trend_bunching_pairs.csv"
           />
           <TrendCaption basis={trendBasis} label={t3.window_label} />
           <div className="ops-tile-foot">
@@ -279,7 +293,14 @@ export default function OpsWallPage() {
               {devLast ? ` · one 5-min rollup bin, ${fmtAgeMin(devLast.lag_min)} old` : " · no rollup available"}
             </span>
           </div>
-          <OpsSparkline values={devSeries} color="#fbbf24" invert />
+          <OpsSparkline
+            values={devSeries}
+            color="#fbbf24"
+            invert
+            title="Mean headway deviation — trend"
+            valueHeader="mean_abs_headway_dev_s"
+            csvName="ops_trend_headway_deviation.csv"
+          />
           <div className={"ops-trend-cap" + (devLast && devLast.lag_min > 180 ? " stale" : "")}>
             {devLast
               ? `last ${devSeries.length} rollup bins, ending ${devLast.local_iso.replace("T", " ")}`
@@ -322,6 +343,10 @@ export default function OpsWallPage() {
             color="#a78bfa"
             liveValue={canSplice ? alerts.total : undefined}
             invert
+            title="Active service alerts — trend"
+            labels={binLabels(bins)}
+            valueHeader="alerts_total"
+            csvName="ops_trend_alerts.csv"
           />
           <TrendCaption basis={trendBasis} label={t3.window_label} />
           <div className="ops-tile-foot">

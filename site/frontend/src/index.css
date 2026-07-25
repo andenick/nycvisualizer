@@ -31,6 +31,127 @@
 }
 .nyc-hero .nyc-hero-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
 
+/* ---------- W1: MAPS-FIRST LANDING ----------------------------------------------
+   The live ant farm as the hero. Everything below exists so the map is the first
+   thing on the page and the buttons under it are the first thing you can press. */
+.nyc-hero--map { padding: 1rem 0 1.2rem; }
+.nyc-hero-h1 {
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  line-height: 1.15;
+  margin: 0 0 0.7rem;
+}
+
+/* FULL BLEED, SAFELY. `margin-inline: calc(50% - 50vw)` is the standard breakout, but
+   100vw INCLUDES the classic scrollbar, so on any desktop without overlay scrollbars
+   the bare form overflows the page by the scrollbar width — a real horizontal-scroll
+   defect that a headless screenshot (which uses overlay scrollbars) never reveals.
+   LiveHero.tsx measures `innerWidth - documentElement.clientWidth` into --nyc-sbw on
+   mount and on resize; we subtract it here. Default 0px is correct for overlay
+   scrollbars and for the pre-hydration paint. */
+.nyc-livehero {
+  --nyc-sbw-half: calc(var(--nyc-sbw, 0px) / 2);
+  position: relative;
+  margin-left: calc(50% - 50vw + var(--nyc-sbw-half));
+  margin-right: calc(50% - 50vw + var(--nyc-sbw-half));
+  width: calc(100vw - var(--nyc-sbw, 0px));
+  max-width: calc(100vw - var(--nyc-sbw, 0px));
+}
+.nyc-livehero-map {
+  height: clamp(320px, 54vh, 560px);
+  width: 100%;
+  background: var(--ark-bg-soft);
+}
+.nyc-livehero-skeleton {
+  background:
+    repeating-linear-gradient(135deg,
+      var(--ark-bg-soft) 0 18px,
+      color-mix(in srgb, var(--ark-bg-soft) 92%, var(--ark-fg)) 18px 36px);
+}
+/* The caption sits UNDER the map, not over it — an overlay on a full-bleed map is the
+   fastest way to cover the thing the visitor came to look at (ARKMAP §6). */
+.nyc-livehero-caption {
+  max-width: var(--ark-maxw, 1100px);
+  margin: 0 auto;
+  padding: 0.55rem 1.25rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1.1rem;
+}
+.nyc-livehero-what { margin: 0; font-size: 0.92rem; opacity: 0.9; flex: 1 1 24ch; }
+.nyc-livehero-stamp {
+  margin: 0;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.nyc-livehero-stamp .dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #16a34a; margin-right: 0.4rem; vertical-align: middle;
+}
+.nyc-livehero-stamp.stale .dot { background: #d97706; }
+.nyc-livehero-key { margin: 0; font-size: 0.74rem; opacity: 0.8; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.nyc-livehero-sw { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+.nyc-livehero-sw i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* the four entry buttons directly under the hero map */
+.nyc-entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+}
+.nyc-entry {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--ark-accent);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--ark-fg);
+  background: transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.nyc-entry:first-child { background: var(--ark-accent); color: var(--ark-on-accent); }
+.nyc-entry:hover { background: var(--ark-accent); color: var(--ark-on-accent); }
+.nyc-entry-label { font-weight: 650; font-size: 0.95rem; }
+.nyc-entry-sub { font-size: 0.76rem; opacity: 0.8; }
+
+/* the three doors — plain-language ways in */
+.nyc-doors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.nyc-door {
+  display: block;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px;
+  background: var(--ark-surface, #fff);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.nyc-door:hover { border-color: var(--ark-accent); transform: translateY(-1px); }
+.nyc-door-icon { font-size: 1.5rem; line-height: 1; display: block; margin-bottom: 0.4rem; }
+.nyc-door h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+.nyc-door p { margin: 0; font-size: 0.92rem; opacity: 0.85; }
+
+/* the demoted small-print line: data · methodology · code · about */
+.nyc-smallprint { font-size: 0.8rem; opacity: 0.75; margin: 1rem 0 0; }
+
+/* a plain <details> fold for the plumbing a framing rewrite moved out of the lede */
+.nyc-fold { margin: 0.4rem 0 0.8rem; font-size: 0.88rem; }
+.nyc-fold > summary { cursor: pointer; opacity: 0.75; }
+.nyc-fold > summary:hover { opacity: 1; }
+
+@media (max-width: 680px) {
+  .nyc-livehero-map { height: clamp(260px, 44vh, 380px); }
+  .nyc-livehero-caption { padding: 0.5rem 1rem 0; }
+  .nyc-livehero-stamp { white-space: normal; }
+}
+
 .nyc-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -651,6 +772,18 @@ i.obs-hw-obs.key { border-radius: 50%; }
 .ops-ratio-fill { height: 100%; border-radius: 999px; transition: width 0.5s ease; }
 .ops-ratio-val { font-size: 0.85rem; font-weight: 700; min-width: 40px; text-align: right; }
 .ops-spark { display: block; }
+/* W7 defect 4: the four trend charts now carry a name and a Download CSV control
+   (Universal Graph Contract, top-right). The button is quiet until hover/focus so the
+   control-room density is unchanged. */
+.ops-spark-fig { position: relative; margin: 0; }
+.ops-spark-dl {
+  position: absolute; top: -2px; right: 0; z-index: 2;
+  background: transparent; border: 1px solid var(--ops-border); color: var(--ops-dim);
+  border-radius: 6px; padding: 0 0.32rem; font-size: 0.62rem; line-height: 1.5;
+  cursor: pointer; opacity: 0.45; transition: opacity 0.12s ease;
+}
+.ops-spark-fig:hover .ops-spark-dl, .ops-spark-dl:focus-visible { opacity: 1; }
+.ops-spark-dl:focus-visible { outline: 2px solid var(--ark-accent, #2563eb); outline-offset: 1px; }
 .ops-tile-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; font-size: 0.68rem; color: var(--ops-dim); }
 .ops-src { opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ops-stamp { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
@@ -1642,8 +1775,11 @@ i.obs-hw-obs.key { border-radius: 50%; }
 .ws-td-r a { color: var(--ark-accent, #2563eb); text-decoration: none; font-size: 0.74rem; }
 .ws-td-r a:hover { text-decoration: underline; }
 .ws-row-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+/* W7: was a bare "P" whose meaning lived only in a title attribute (invisible on
+   touch); it now reads "prelim", so it needs a little more room. */
 .ws-prelim {
-  font-size: 0.6rem; font-weight: 700; padding: 0 0.22rem; border-radius: 4px;
+  font-size: 0.58rem; font-weight: 700; padding: 0 0.28rem; border-radius: 4px;
+  letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap;
   background: #fef3c7; color: #713f12;
 }
 @media (prefers-color-scheme: dark) { .ws-prelim { background: #3a2e0c; color: #fcd34d; } }
@@ -1749,4 +1885,25 @@ i.obs-hw-obs.key { border-radius: 50%; }
     transform: none;
     max-width: min(340px, calc(100vw - 300px - 13rem));
   }
+}
+
+/* ---------- W5: the action footer (CODE_DATA_FIRST §9 tool-first condition) --------
+   The hero Research Triad moved off `/` to `/data`. That exception is conditional on
+   the COMPACT triad remaining in the action footer on every page — this is that bar.
+   `.ark-action-footer` / `.ark-action-bar` / `.ark-triad-compact` are already styled by
+   the vendored kit CSS; only the two text links beside the triad are ours. */
+.ark-action-link {
+  font-size: 0.85rem;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  color: var(--ark-fg);
+  opacity: 0.85;
+}
+.ark-action-link:hover { border-bottom-color: var(--ark-accent); opacity: 1; }
+/* The provenance badges are now short sentences, not one-word virtues, so they need to
+   wrap rather than force the footer wide. */
+.ark-foot-badges { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; }
+@media (max-width: 680px) {
+  .ark-action-footer .ark-action-bar { flex-direction: column; align-items: stretch; }
+  .ark-action-footer .ark-triad-compact { max-width: none; }
 }

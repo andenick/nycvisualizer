@@ -2,6 +2,172 @@
 
 All notable changes to nycvisualizer are recorded here.
 
+## 2026-07-25 — W1/W5/W7: maps first, data in the Data tab, planner-first language
+
+The information-architecture flip. Nothing was deleted; the front door was reordered for
+the audience the site now names as primary — the **non-technical city planner**
+(SITE_SPEC v1.5).
+
+### W1 — the home page leads with the live map
+
+- `/` is now the **live ant farm as a full-bleed hero**, then four entry buttons
+  (Open the full map · Subway · Planner Workstation · Ops Wall), then **three doors in plain
+  language** (Watch the city move / Look up a route / Explore a place), a two-sentence
+  "what this is", and a small-print line to data · methodology · code · about.
+- The hero is the **existing renderer, embedded** — `components/LiveHero.tsx` mounts the same
+  `VehicleFlowLayer` (→ `src/flow/` FlowEngine) that `/bus`, `/live/*` and `/workstation`
+  mount, on the same basemap, from the same `/api/rt/vehicles` snapshot + SSE stream, in the
+  same borough palette. No second engine, no screenshot.
+- **Weight discipline**, measured before and after on the live edge at 1440×900:
+  the hero is `React.lazy`'d, so the landing's entry JS got *smaller*
+  (198.5 KB → 184.2 KB decoded; 69.6 KB → 63.0 KB transferred) and first paint got *faster*
+  (FCP 616 ms → 392 ms; longest long-task 197 ms → 57 ms; DOMContentLoaded 245 ms → 293 ms).
+  Total page weight rose 102 KB → 972 KB transferred, essentially all of it the map itself:
+  the 288 KB basemap chunk (88 KB gzipped), ~708 KB of pmtiles range requests for the
+  citywide z11 view, and a 48 KB vehicle snapshot — all of which a visitor who opens any map
+  pays once and then has cached.
+  **Hero frame cost: 0.24 ms/frame at 60 fps with 777 buses on screen** (the flow engine's
+  own EMA, read via `?perf`). rAF interval median 16.7 ms / p95 16.7 ms — identical to the
+  no-hero baseline. No jank.
+- Three scroll/zoom traps avoided by construction: wheel-zoom is off, **drag is disabled on
+  touch** (a one-finger drag on a full-width hero would otherwise strand a phone visitor),
+  and an `IntersectionObserver` **removes the flow layer when the hero scrolls out of view**,
+  which unmounts the engine and cancels its rAF.
+- `prefers-reduced-motion: reduce` is honoured: the animated glide is not started at all; the
+  hero draws last-reported positions as plain markers and the stamp says so.
+- **Nav 6 items → 4**: `Maps · Observatory · Ops Wall · Data`. Methodology folds under Data
+  (`/methodology` and `/code` light the Data item); About moved to the footer.
+- 🔴 **Fixed a 404 that was one of three above-the-fold buttons.** The Research Triad's
+  "Explore the Outputs" pointed at **`/explore`, which was never a route** — it existed only
+  as `outputs.href` in `ecosystem.json` with no matching `path`, so it fell through to
+  NotFound. Outputs now points at `/maps`, and `/explore` redirects there so any already
+  shared link keeps working.
+
+### W5 — data and code moved to the Data tab
+
+Moved, not deleted. `/data` is one click from primary nav and now opens with the triad.
+
+- Landing `ArkTriad` → **`/data`**, directly under the title, above the fold.
+- The **second** `ArkTriad` on `/about` → deleted (one site, one hero triad).
+- `<h2>Downloads</h2>` + `DownloadRow` on the **map page** `/sidewalks` → `/data`; the literal
+  internal string **"(Carson DNA D-4)"** that was shipping to visitors → deleted (also on
+  `/data`, along with the workstream codes **"(S4 …)"** and **"(S7)"**).
+- "JSON feed" + "RSS" on `/observatory/changes` were **above the fold**, before the reader had
+  seen a single change → moved into a fold at the foot. RSS stays a link; the JSON feed is
+  shown as a **path, not an `<a href>`**, because the no-JSON rule / D13 check (f) treats a
+  `.json` href as a data offering and the carve-out for syndication feeds is still an open
+  decision. No capability is lost, and the gate is not quietly broken while it is pending.
+- The landing's Plotly chart (OMNY vs MetroCard) moved to **`/observatory`**, where a bus
+  ridership chart belongs. Its source line shipped two raw Socrata dataset IDs and the
+  internal analysis codename `01_route_demand`; the visible line now names the source in
+  words and points at the Data catalogue for the IDs.
+- The badge-taxonomy explainer moved from the landing page to **`/methodology`** — it taught a
+  vocabulary to a visitor who had not yet seen a badge.
+- Footer badges **"Reproducible · Offline · Real data"** → three provenance facts a planner
+  can act on: *Live feeds refresh every 30 s · Derived figures published daily, 04:30 ET ·
+  Real data only — nothing simulated*. ("Offline" read as *the site is offline*.)
+- Public frame-time telemetry (`12.3 ms/frame (tick-jump)`, fps, prediction error) on `/bus`,
+  `/live/*` and `/workstation` → **gated behind `?perf` / dev builds** (`lib/devFlags.ts`).
+  The perf harness passes `?perf`, so it still measures.
+- **Kept**: the per-chart Download CSV (`ArkPlotly`) — that is the Universal Graph Contract.
+
+#### Governance: the gate was amended, not bypassed
+
+Demoting the triad breaks **D13** (`CODE_DATA_FIRST_STANDARD.md` §1.1 mandates the triad above
+the fold on `/`). Per the user's ratification the standard was amended to **v1.1** with a new
+**`tool-first` exception class (§9.1)**: sites whose product *is* an interactive tool with a
+non-technical audience relocate the hero triad to a `/data` page one click from primary nav,
+keep the compact triad in the action footer on every page, and change nothing about
+`/llms.txt`, stable bundle URLs, data dictionaries or the no-JSON rule. `check_cdf.py` gained
+a `--tool-first` mode (implied by `cdf.tool_first: true` in the ecosystem entry) that
+retargets checks (a) and (b) to `/data` **at the same 40% above-fold threshold**, adds check
+**(h)** — `/` must link to `/data` — and prints the mode in its JSON and its human table so a
+tool-first PASS can never be mistaken for a default PASS. nycvisualizer is registered as the
+first member. Measured: **D13 PASS** in tool-first mode (triad on `/data`, offset_ratio
+0.063), and the same run **FAILs check (b) without the flag** (offset 0.810) — the amendment
+retargets the rule, it does not loosen it. The action footer carrying the compact triad is new
+on every chromed page; that is the condition of the exception, discharged.
+
+### W7 — planner usability
+
+**Framing** (the `/renters` paragraph is the template):
+- `/maps` said **"Three ways"** while rendering **six** cards → rewritten around the three
+  questions the six maps answer.
+- `/bus` opened with ~95 words of plumbing (GTFS-RT, poller, interpolation) → what you can do
+  first, the honesty second, the plumbing in a fold.
+- `/sidewalks` opened with nine unexplained GIS terms in 60 words → same treatment.
+- The **route dossier had no explanatory sentence at all** → one paragraph that says what the
+  Marey chart shows before showing it.
+
+**Jargon removed or explained**: `2·Area/Perimeter proxy, validated vs max-inscribed width at
+r = 0.47` · "the bus feed's `current_status` is 100% NULL" · the bare column header
+**"Headway CV"** (now "Gap consistency", with both it and "Bunching" defined under the table) ·
+the internal pipeline codename **"derive2"** as a public tab label · workstream codes
+**"(S4 …)" / "(S7)"** · **"one-hot color"** and **"tippecanoe"** in a public legend · internal
+corpus IDs **"Jane KB · DOC0311"** (source and year stay; the code moves to a `title`) · the
+confidence popover reading *"LODES WAC 2023 jobs; 1,196-cell H3 grid → 37,507 blocks"*.
+
+**Controls**:
+- The workstation rail's **Hw · Sched · Bunch · On-rt** headers had their meanings ONLY in
+  `title=` tooltips — which do not exist on touch, i.e. on the device a planner uses in the
+  field. The headers are now words, and an on-screen key defines every one of them. The bare
+  **"P"** badge now reads **"prelim"**.
+- `/bus`'s **345-item `<select>`** gained a free-text filter (route number or street name),
+  keeping the borough groups and never dropping the current selection.
+- `/sidewalks` asked a planner to choose between two equity metrics with no guidance; each
+  now states the question it answers (they can point opposite ways — the poorest fifth of
+  blocks has the *highest* provision per frontage foot and the *lowest* per person).
+- **One name for one metric**: "Stop Accessibility Index (SAI)" everywhere — it had been
+  "Stop Accessibility Index" / "Stop Access Index" / bare "SAI" across three surfaces.
+
+**Honesty**:
+1. 🔴 **The live copy described a model the engine does not have.** The ⓘ panel said movement
+   was modelled from *"per-segment speeds we've logged since July"*. There are no per-segment
+   speed profiles anywhere in this codebase — that is unstarted backlog. `flow/core.ts` holds
+   **one speed per vehicle, the speed that vehicle itself last reported**, advances it along
+   the route shape for up to `STALE_S` (40 s) and then eases to a stop. Rewritten to describe
+   the running engine on `/live/*`, `/bus` (legend and prose) and `/workstation`.
+2. 🔴 **The depth gate was bypassed one section above itself.** `/observatory` printed each
+   route's bunching index to two decimals, colour-coded green/amber/red, on **all 345 route
+   chips** — a ranking of every route in the city, rendered directly above the league section
+   that refuses to name a best or worst until 14 observed days. The chips no longer carry it;
+   the number is on each route's own dossier with its observed-days count and PRELIMINARY
+   stamp.
+3. **Precision inflation**: three decimals on a ~6-day archive (`/observatory`, `/leagues`) →
+   two; unrounded API floats in the segment-speed popup → one decimal; 0.1-ft precision on a
+   width *estimate* → whole feet; and `/sidewalks` no longer says "**all** 96,553 … a
+   **near-complete** census" in one sentence (the network is complete; the aerial survey the
+   shapes are traced from is what is approximate).
+4. **Charts bypassing the Universal Graph Contract**: the four Ops Wall `OpsSparkline` trends
+   had no title, no legend and no download. They now carry an accessible name and a top-right
+   **Download CSV** with per-bin labels.
+5. **Mobile, measured not inferred**: `/renters` used the **non-collapsible** `.nyc-legend`,
+   which permanently held the lower-right quadrant while the control panel held the
+   upper-left. It now uses the shared collapsible `MapLegend`. Measured on the live edge at
+   390×844: the legend is **89×25 px = 1%** of the map (it was an always-open panel up to
+   `min(76vw, 320px)` wide); legend + controls together **10%**, well under the
+   `ARKMAP_STANDARD §6` one-third ceiling.
+
+### W8 (the frontend half) — pageview telemetry
+
+`/__track` was **error-only**: 42 lines ever, every one from our own HeadlessChrome canary, so
+`/api/kpis` reported nycvisualizer `present: False` and "is anyone using this?" was
+structurally unanswerable. One `{page, kind:"pageview", ref}` emit was added to the beacon
+that already existed, was already proxied and was already excluded from the Cloudflare cache
+rule — no new endpoint, no new transport, no third party, no cookie or id, DNT/GPC still
+respected, and `ref` is the referrer **hostname only**. Verified landing on the box.
+
+### Verification
+
+`tsc --noEmit` clean · `vite build` clean · **vitest 65/65** · **rule_canary 15/15** ·
+**cvd_check 19/19** · **paint_canary 12/12 against the live edge** · **D13 PASS (tool-first)**.
+Visual: the C4 harness re-run unchanged against live gives **24 shots / 8 defect findings —
+exactly the documented W0/W2–W4 baseline, zero new defects**; a wider 72-shot run over the 12
+changed surfaces (1440 / 834 / 390 × light + dark, before and after on the live edge) shows
+**zero new real findings**. The four pre-existing horizontal-overflow surfaces (`/data` mobile,
+`/observatory` mobile, `/ops` mobile + tablet, `/sidewalks` at all three widths) are identical
+before and after and remain open.
+
 ## 2026-07-24 — W2/W3/W4: borough colouring by default, street numbers, map themes
 
 Three map-layer packages, all unlocked by the W0 upgrade to `protomaps-leaflet` 5.1.0

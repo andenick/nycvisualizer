@@ -33,7 +33,7 @@ export const METRIC_UI: Record<RenterScoreKey, MetricUI> = {
     title: "Stop access",
     goodWhenHigh: true,
     phrase: (p) => `Better stop accessibility than ${p}% of NYC`,
-    fmtValue: (v) => (v == null ? null : `best Stop Access Index ${v.toFixed(0)} / 100 nearby`),
+    fmtValue: (v) => (v == null ? null : `best nearby stop scores ${v.toFixed(0)} / 100 on the Stop Accessibility Index`),
   },
   jobs_45min: {
     title: "Jobs reachable",

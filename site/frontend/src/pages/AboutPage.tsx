@@ -1,12 +1,10 @@
-import ArkTriad from "../chrome/ArkTriad";
-import ecosystem from "../chrome/ecosystem.json";
+// W5 (2026-07-24): this page carried a SECOND full Research Triad (the landing page had
+// the first). Two hero triads on one small site is noise, and About is not where a
+// visitor goes to fetch a bundle. Deleted here — the triad now lives once on /data, plus
+// the compact one in the action footer that every page already carries.
 import { ContextCallouts } from "../components/ContextCallout";
 
 export default function AboutPage() {
-  const cdf = (ecosystem.sites as { key: string; cdf?: unknown }[]).find(
-    (s) => s.key === "nycvisualizer",
-  )?.cdf as Parameters<typeof ArkTriad>[0]["cdf"];
-
   return (
     <div>
       <h1 style={{ margin: "0.6rem 0" }}>About</h1>
@@ -27,7 +25,6 @@ export default function AboutPage() {
           publishes). Future NYC visualizations mount as new sections or spoke subdomains, admitted
           only if they fit the thesis at fine spatial grain.
         </p>
-        <ArkTriad cdf={cdf} track={{ site: "nycvisualizer", endpoint: "/__track" }} />
       </section>
 
       <section className="nyc-section">

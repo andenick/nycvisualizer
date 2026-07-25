@@ -25,7 +25,7 @@
       "csv",
       "parquet"
      ],
-     "note": "geospatial layers ship GeoJSON + GeoParquet (+ GeoPackage where convenient); tabular data ships CSV/XLSX/Parquet, never plain JSON (Carson DNA D-4)"
+     "note": "geospatial layers ship GeoJSON + GeoParquet (+ GeoPackage where convenient); tabular data ships CSV/XLSX/Parquet, never plain JSON"
     },
     "code": {
      "href": "https://github.com/andenick/nycvisualizer",
@@ -37,12 +37,14 @@
      "license": "MIT"
     },
     "outputs": {
-     "href": "/explore",
-     "label": "Explore"
+     "href": "/maps",
+     "label": "Maps, observatory & ops wall"
     },
     "site_repo": "https://github.com/andenick/nycvisualizer",
     "citation": "Anderson, N. (2026). NYC Visualizer - NYC transit service and pedestrian infrastructure at the finest measurable grain, live. https://nycvisualizer.com.",
-    "llms_txt": true
+    "llms_txt": true,
+    "tool_first": true,
+    "tool_first_data_page": "/data"
    },
    "title": "NYC Visualizer",
    "display": "nycvisualizer.com",
@@ -52,7 +54,37 @@
    "status": "live",
    "standalone": true,
    "hub_with_spokes": true,
-   "tagline": "Where can you go, and can you walk there? — NYC transit service and pedestrian infrastructure at the finest measurable grain, live. A standalone product; the home of all NYC work, hub-with-spokes."
+   "tagline": "Where can you go, and can you walk there? — NYC transit service and pedestrian infrastructure at the finest measurable grain, live. A standalone product; the home of all NYC work, hub-with-spokes.",
+   "pages": [
+    {
+     "label": "Data",
+     "path": "/data"
+    },
+    {
+     "label": "Maps",
+     "path": "/maps"
+    },
+    {
+     "label": "Observatory",
+     "path": "/observatory"
+    },
+    {
+     "label": "Ops Wall",
+     "path": "/ops"
+    },
+    {
+     "label": "Methodology",
+     "path": "/methodology"
+    },
+    {
+     "label": "Code",
+     "path": "/code"
+    },
+    {
+     "label": "About",
+     "path": "/about"
+    }
+   ]
   }
  ]
 }

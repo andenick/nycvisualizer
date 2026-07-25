@@ -182,7 +182,7 @@ export default function RenterScorecard({ profile, other, label, accent = "#2563
             <b>{t.bus_stops_within_400m}</b> bus stops within 400 m
           </div>
           <div>
-            best SAI <b>{t.best_sai_within_400m != null ? t.best_sai_within_400m.toFixed(0) : "—"}</b>/100
+            best Stop Accessibility Index <b>{t.best_sai_within_400m != null ? t.best_sai_within_400m.toFixed(0) : "—"}</b>/100
           </div>
           <div>
             <b>{t.scheduled_am_trips_within_400m}</b> AM peak trips
@@ -221,7 +221,7 @@ export default function RenterScorecard({ profile, other, label, accent = "#2563
                 key={i}
                 className="rent-chip"
                 title={
-                  `${s.stop_name ?? "stop"} — SAI ${s.sai ?? "—"}` +
+                  `${s.stop_name ?? "stop"} — Stop Accessibility Index ${s.sai ?? "—"}` +
                   (s.subscores
                     ? ` | safety ${s.subscores.safety ?? "—"}, comfort ${s.subscores.comfort ?? "—"}, ` +
                       `condition ${s.subscores.condition ?? "—"}, service ${s.subscores.service_intensity ?? "—"}`

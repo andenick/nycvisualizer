@@ -1,184 +1,125 @@
-import { useEffect, useState } from "react";
+// Landing (W1, 2026-07-24) — MAPS FIRST.
+//
+// What changed and why (the information-architecture flip):
+//   BEFORE: hero prose → ArkTriad (Download the Data / Code / Explore the Outputs)
+//           → 9 spoke cards → badge-taxonomy explainer → a Plotly chart → "What this is".
+//           No map anywhere above the fold, and the first thing a non-technical planner
+//           was offered was a data bundle and a git repo.
+//   AFTER:  the LIVE ANT FARM as a full-bleed hero (the real renderer, embedded — see
+//           components/LiveHero.tsx), four plain-language entry buttons, THREE DOORS in
+//           plain language, a two-sentence "what this is", and a small-print line to
+//           data · methodology · code.
+//
+// The Research Triad has NOT been deleted — it MOVED to /data (one click from the
+// primary nav) plus the compact triad in the action footer on every page, under the
+// `tool-first` exception class added to CODE_DATA_FIRST_STANDARD.md §9 and enforced by
+// `check_cdf.py --tool-first`. The OMNY payment chart moved to /observatory (where a
+// bus-ridership chart belongs); the badge-taxonomy explainer moved to /methodology.
+import { Suspense, lazy } from "react";
 import { Link } from "react-router-dom";
-import ArkTriad from "../chrome/ArkTriad";
-import ecosystem from "../chrome/ecosystem.json";
-import ArkPlotly from "../components/ArkPlotly";
-import BadgeTaxonomyLegend from "../components/BadgeTaxonomyLegend";
-import charts from "../content/chartdata.json";
-import { getChangesFeed } from "../lib/api";
 
-// Spoke cards mirror SPOKE_REGISTRY.json semantics (hub-with-spokes). Order and
-// wording are unified across all spokes; every count here is static-true or the
-// live-fetched Service-Changes total (never a placeholder). Status stays "built"
-// vs "live" per the registry (all six are functionally live pre-cutover on apex paths).
-const SPOKES = [
+// The ant farm is a DEFERRED chunk: Leaflet + protomaps + the flow engine must not sit
+// in the landing's critical path. The placeholder is the same height as the map, so
+// there is no layout shift when it arrives.
+const LiveHero = lazy(() => import("../components/LiveHero"));
+
+// The four entry buttons under the hero — the tools, named the way a visitor would.
+const ENTRIES: { to: string; label: string; sub: string }[] = [
+  { to: "/live/bus", label: "Open the full map", sub: "buses, full screen" },
+  { to: "/live/subway", label: "Subway", sub: "every train on the track" },
+  { to: "/workstation", label: "Planner Workstation", sub: "watch routes side by side" },
+  { to: "/ops", label: "Ops Wall", sub: "the city at a glance" },
+];
+
+// The three doors — one per thing a person actually comes here to do. No jargon, no
+// dataset names, no acronyms.
+const DOORS: { to: string; icon: string; title: string; blurb: string }[] = [
   {
-    key: "bus",
-    title: "Live Transit Map",
     to: "/bus",
-    status: "live" as const,
+    icon: "🚌",
+    title: "Watch the city move",
     blurb:
-      "Every MTA bus and subway train in the five boroughs, live. Filter bus routes, tap a station for its arrivals board — with an honest 'as of' clock on every tick and estimated train positions clearly marked.",
+      "See every bus and train in New York as it moves, filter to the routes you care about, and tap a station for the next arrivals. The clock always shows how old the data really is.",
   },
   {
-    key: "live-buses",
-    title: "Bus Ant Farm",
-    to: "/live/bus",
-    status: "live" as const,
-    blurb:
-      "Watch every MTA bus in the city move at once, full screen — a live 'ant farm' of true-scale vehicles gliding between reports. Filter to any route and the map fills the whole window.",
-  },
-  {
-    key: "live-subway",
-    title: "Subway Ant Farm",
-    to: "/live/subway",
-    status: "live" as const,
-    blurb:
-      "Every subway and SIR train as a worm crawling along the actual track, full screen — filter by line with official bullets, tap a station for arrivals, estimated positions honestly faded.",
-  },
-  {
-    key: "ws-unified",
-    title: "Planner Workstation",
-    to: "/workstation",
-    status: "live" as const,
-    blurb:
-      "A planner's monitoring board for the whole network: select any mix of bus routes and subway lines together and watch their live buses and track-worms at once — buses each in their own colourblind-safe colour, lines in their official bullets, stops and stations on the map. A right-hand rail puts the numbers a scheduler reaches for — buses running now, observed vs scheduled headway, a bunching index, on-route position quality; trains running now and active alerts per line — one row per selection, sortable, with a per-row detail drawer and a mixed-selection CSV. Shareable by URL.",
-  },
-  {
-    key: "observatory",
-    title: "Bus Observatory",
     to: "/observatory",
-    status: "live" as const,
+    icon: "📊",
+    title: "Look up a route",
     blurb:
-      "Pick any of 345 bus routes for its dossier: the signature Marey diagram of every trip (observed vs the GTFS schedule, bunching made visible, a live tail), a per-stop headway strip, ridership by hour, slowest segments, ACE, and stop accessibility — plus reliability leagues, with a preliminary stamp until the archive reaches 14-day depth.",
+      "Pick any of the 345 bus routes and see how it actually ran: how long the gaps between buses really were, where buses bunch up, which stretches are slowest, and how that compares with the timetable.",
   },
   {
-    key: "ops",
-    title: "Ops Wall",
-    to: "/ops",
-    status: "live" as const,
-    blurb:
-      "A control-room view of NYC transit right now: buses in service vs the schedule, the share of routes with active bunching, mean headway deviation, and live service alerts — with a bunching-hotspot map, an alert ticker, a subway line-status strip, and 3-hour sparklines. Auto-updates, dark by default, every number traceable to a live endpoint.",
-  },
-  {
-    key: "sidewalks",
-    title: "Sidewalk Explorer",
-    to: "/sidewalks",
-    status: "live" as const,
-    blurb:
-      "Sidewalk coverage for 96,553 street segments, neighborhood equity, ADA ramp gaps, and the Stop Accessibility Index for all 13,621 bus stops — down to the segment and block.",
-  },
-  {
-    key: "renters",
-    title: "Renter's Map",
     to: "/renters",
-    status: "live" as const,
+    icon: "🗺",
+    title: "Explore a place",
     blurb:
-      "Search any address — or tap the map — for a plain-language, fully-sourced profile of the place: jobs reachable by transit, how the block ranks citywide for noise, pedestrian safety, rodents, trees and sidewalks, its flood exposure, and the real buildings on it. Compare two places side by side. Describes places, not people — no demographics in any score.",
+      "Type an address — or tap the map — for a plain-language picture of a block: what you can reach by transit, how far it is to a usable bus stop, whether there are sidewalks and ramps, and how it ranks citywide. It describes places, not people.",
   },
 ];
 
 export default function Landing() {
-  const cdf = (ecosystem.sites as { key: string; cdf?: unknown }[]).find(
-    (s) => s.key === "nycvisualizer",
-  )?.cdf as Parameters<typeof ArkTriad>[0]["cdf"];
-
-  // Real count from the S8 service-change feed (honest; hides the card on failure).
-  const [changeCount, setChangeCount] = useState<number | null>(null);
-  useEffect(() => {
-    getChangesFeed()
-      .then((f) => setChangeCount(f.total_detected))
-      .catch(() => setChangeCount(null));
-  }, []);
-
   return (
     <div>
-      <section className="nyc-hero">
-        <h1>Where can you go, and can you walk there?</h1>
-        <p className="lede">
-          NYC transit service and pedestrian infrastructure at the finest measurable grain — live.
-          The home of all NYC work: a portfolio hub whose spokes span a live transit
-          map, a bus observatory, a control-room ops wall, a sidewalk explorer, and a renter's map —
-          built entirely on authentic NYC Open Data, MTA, DCP, and Census sources.
-        </p>
-        <ArkTriad cdf={cdf} track={{ site: "nycvisualizer", endpoint: "/__track" }} />
-      </section>
+      <section className="nyc-hero nyc-hero--map">
+        <h1 className="nyc-hero-h1">Where can you go, and can you walk there?</h1>
 
-      <section className="nyc-section">
-        <h2>Explore the map</h2>
-        <div className="nyc-cards">
-          {SPOKES.map((s) => (
-            <Link className="nyc-card" to={s.to} key={s.key}>
-              <h3>
-                {s.title}
-                <span className={"nyc-pill " + s.status}>
-                  {s.status === "live" ? "Live" : "In construction"}
-                </span>
-              </h3>
-              <p>{s.blurb}</p>
+        <Suspense
+          fallback={
+            <div className="nyc-livehero nyc-livehero--loading" aria-hidden="true">
+              <div className="nyc-livehero-map nyc-livehero-skeleton" />
+              <div className="nyc-livehero-caption">
+                <p className="nyc-livehero-what">Starting the live bus map…</p>
+              </div>
+            </div>
+          }
+        >
+          <LiveHero />
+        </Suspense>
+
+        <nav className="nyc-entries" aria-label="Open a map">
+          {ENTRIES.map((e) => (
+            <Link className="nyc-entry" to={e.to} key={e.to}>
+              <span className="nyc-entry-label">{e.label}</span>
+              <span className="nyc-entry-sub">{e.sub}</span>
             </Link>
           ))}
-          {changeCount !== null && (
-            <Link className="nyc-card" to="/observatory/changes" key="changes">
-              <h3>
-                Service Changes
-                <span className="nyc-pill live">Live</span>
-              </h3>
-              <p>
-                {changeCount} detected schedule change{changeCount === 1 ? "" : "s"} in NYC transit
-                &mdash; headway shifts, trip-count changes, and service-span edits, per route, with
-                planned-vs-persisted badges and per-route RSS. A content-hashed snapshot of every
-                MTA feed every 6 hours.
-              </p>
-            </Link>
-          )}
-        </div>
-        {/* Q4.1: "how to read our badges" — the confidence taxonomy legend intro,
-            so a first-time visitor learns the vocabulary the badges use sitewide. */}
-        <BadgeTaxonomyLegend />
+        </nav>
       </section>
 
-      <ArkPlotly
-        title="OMNY has all but replaced MetroCard on NYC buses"
-        subtitle="Share of bus boardings by payment method, 2020–2026 (2026 partial)"
-        data={[
-          {
-            type: "bar", name: "OMNY", x: charts.omny.years, y: charts.omny.omny,
-            marker: { color: "#2563eb" },
-          },
-          {
-            type: "bar", name: "MetroCard", x: charts.omny.years, y: charts.omny.metrocard,
-            marker: { color: "#93c5fd" },
-          },
-        ]}
-        layout={{ barmode: "stack", yaxis: { title: { text: "boardings" } } }}
-        csvRows={charts.omny.years.map((y: number, i: number) => ({
-          year: y,
-          omny_boardings: charts.omny.omny[i],
-          metrocard_boardings: charts.omny.metrocard[i],
-          omny_pct: charts.omny.omny_pct[i],
-        }))}
-        csvName="bus_omny_adoption.csv"
-        source="Source: MTA Bus Hourly Ridership (kv7t-n8in / gxb3-akrn), retrieved 2026-07-16; analysis 01_route_demand. OMNY share: 1.1% (2020) to 98.6% (2026 to Jul 7)."
-      />
-
       <section className="nyc-section">
+        <div className="nyc-doors">
+          {DOORS.map((d) => (
+            <Link className="nyc-door" to={d.to} key={d.to}>
+              <span className="nyc-door-icon" aria-hidden="true">
+                {d.icon}
+              </span>
+              <h2>{d.title}</h2>
+              <p>{d.blurb}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="nyc-section nyc-whatthisis">
         <h2>What this is</h2>
-        {/* Q0.5: cap this stray body prose at a 72ch measure for readability. */}
         <div className="ark-prose">
           <p>
-            nycvisualizer is a hub for hyper-granular NYC visualizations. It pairs a realtime layer
-            (a 31-second GTFS-RT poller archiving every bus, subway, ferry, and rail vehicle) with a
-            static geodatabase of sidewalks, curbs, ramps, the street network, census population, and
-            ridership. The signature question it is built to answer joins the two: for any bus stop,
-            can you actually walk there — is there a sidewalk, a ramp, a shelter, and is it in good
-            condition?
-          </p>
-          <p className="nyc-note">
-            Real data only. Views that are not yet built show an honestly-labeled roadmap, never
-            placeholder or synthetic data.
+            NYC Visualizer shows New York&rsquo;s buses, trains and sidewalks at the finest
+            grain the public record allows &mdash; live where the city publishes live data,
+            and measured street by street where it doesn&rsquo;t. It is built entirely on
+            open data from the MTA, NYC Open Data, City Planning and the Census: nothing
+            here is invented, and anything estimated says so on the page.
           </p>
         </div>
+        <p className="nyc-smallprint">
+          <Link to="/data">Data</Link>
+          <span aria-hidden="true"> · </span>
+          <Link to="/methodology">How it&rsquo;s measured</Link>
+          <span aria-hidden="true"> · </span>
+          <Link to="/code">Code</Link>
+          <span aria-hidden="true"> · </span>
+          <Link to="/about">About</Link>
+        </p>
       </section>
     </div>
   );

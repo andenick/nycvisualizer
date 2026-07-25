@@ -6,6 +6,8 @@ import { Link } from "react-router-dom";
 import catalog from "../content/data_catalog.json";
 import DownloadRow from "../components/DownloadRow";
 import ConfidenceBadge from "../components/ConfidenceBadge";
+import ArkTriad from "../chrome/ArkTriad";
+import ecosystem from "../chrome/ecosystem.json";
 
 interface CatRow {
   name: string; category: string; id: string; portal: string;
@@ -44,14 +46,34 @@ export default function DataPage() {
   const [cat, setCat] = useState<string>("all");
   const shown = cat === "all" ? rows : rows.filter((r) => r.category === cat);
 
+  // W5 (2026-07-24) — the Research Triad LIVES HERE NOW. It used to sit above the
+  // fold on `/`, where the first thing a non-technical planner was offered was a data
+  // bundle and a git repo. Under the CODE_DATA_FIRST_STANDARD §9 `tool-first`
+  // exception class it relocates to this page — one click from primary nav, directly
+  // under the title, still above the fold — and the compact triad stays in the action
+  // footer on every page. `check_cdf.py --tool-first` asserts exactly that.
+  const cdf = (ecosystem.sites as { key: string; cdf?: unknown }[]).find(
+    (s) => s.key === "nycvisualizer",
+  )?.cdf as Parameters<typeof ArkTriad>[0]["cdf"];
+
   return (
     <div>
-      <h1 style={{ margin: "0.6rem 0" }}>Data</h1>
+      <h1 style={{ margin: "0.6rem 0" }}>Data, methods &amp; code</h1>
       <p className="lede" style={{ maxWidth: "64ch" }}>
-        Every layer on this site traces to an authentic public source &mdash; NYC Open Data (two
-        Socrata portals), the MTA, NYC City Planning, and the U.S. Census. The catalog below is
-        generated from the platform's per-dataset provenance records ({rows.length} acquired datasets).
-        See the <Link to="/code">reproduce &amp; code</Link> page for how each figure is built.
+        Everything on this site is public data, and you can take all of it. The catalog
+        below lists every dataset behind the maps &mdash; where it came from, when it was
+        collected, and how big it is &mdash; and the buttons take you to the bundles and the
+        source code.
+      </p>
+
+      <ArkTriad cdf={cdf} track={{ site: "nycvisualizer", endpoint: "/__track" }} />
+
+      <p className="nyc-note" style={{ maxWidth: "70ch" }}>
+        Sources: NYC Open Data (both Socrata portals), the MTA, NYC City Planning and the
+        U.S. Census. The catalog is generated from the platform's own per-dataset provenance
+        records ({rows.length} acquired datasets). See{" "}
+        <Link to="/methodology">how it&rsquo;s measured</Link> for the method behind each
+        figure, and <Link to="/code">reproduce &amp; code</Link> for runnable examples.
       </p>
 
       <section className="nyc-section">
@@ -98,12 +120,16 @@ export default function DataPage() {
         </div>
 
         <h2>Analysis downloads</h2>
+        {/* W5/W7: the internal workstream codes "(S4 …)" and "(S7)" and the internal
+            standard reference "(Carson DNA D-4)" were shipping to visitors here. They
+            name nothing a visitor can look up. Removed; the format rule itself stays,
+            stated plainly. */}
         <p className="nyc-note">
-          Geospatial layers ship <strong>GeoJSON + GeoParquet</strong>; tabular data ships
-          <strong> CSV / XLSX / Parquet</strong>, never plain JSON (Carson DNA D-4). New in this
-          release: the 45-minute job-access <strong>isochrone grid</strong> and access-equity table
-          (S4 OpenTripPlanner routing), and the <strong>Renter&rsquo;s Map</strong> cell grid plus
-          per-BBL building aggregates (S7).
+          Map layers ship as <strong>GeoJSON + GeoParquet</strong>; tables ship as
+          <strong> CSV, XLSX or Parquet</strong>, never plain JSON. New in this release:
+          the 45-minute <strong>job-access grid</strong> and access-equity table (travel
+          times computed over the real street and transit network), and the{" "}
+          <strong>Renter&rsquo;s Map</strong> cell grid plus per-building aggregates.
         </p>
         <DownloadRow exclude={["Observed Headways"]} />
       </section>

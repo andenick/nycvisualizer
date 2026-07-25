@@ -96,7 +96,7 @@ export const CONFIDENCE: Record<string, ConfidenceEntry> = {
   "rent-jobs": {
     tier: "established",
     window: "OpenTripPlanner routing, weekday 08:00 (AM-peak snapshot)",
-    n: "LODES WAC 2023 jobs; 1,196-cell H3 grid → 37,507 blocks",
+    n: "2023 federal jobs-by-workplace data, resolved to every census block in the city (37,507)",
     upgrade:
       "Midday/evening departures + commuter rail (LIRR/MNR) and cross-border jobs would round out the all-day picture.",
     note: "AM-peak snapshot",
@@ -105,7 +105,7 @@ export const CONFIDENCE: Record<string, ConfidenceEntry> = {
   // ---------------------------------------------------------------- Ops Wall
   "ops-derived": {
     tier: "preliminary",
-    window: "derive2 KPI rollup over the live realtime archive",
+    window: "computed from our own live vehicle archive and published once a day",
     n: "trailing-window derived metrics (bunching / headway deviation)",
     upgrade:
       "≥14 days of continuous archive; the 2026-07-21 poller-suspension gap is excluded, not smoothed.",
@@ -141,7 +141,7 @@ export const CONFIDENCE: Record<string, ConfidenceEntry> = {
   "acc-income": {
     tier: "established",
     window: "OpenTripPlanner routing, weekday 08:00 (AM-peak snapshot)",
-    n: "population-weighted by income decile; 37,507 blocks",
+    n: "every census block in the city (37,507), weighted by population within income tenths",
     upgrade:
       "Off-peak departure windows and commuter-rail modes test whether the income gradient holds all day.",
     note: "AM-peak snapshot",
