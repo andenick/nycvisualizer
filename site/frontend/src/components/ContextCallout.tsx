@@ -36,7 +36,7 @@ export function calloutsFor(anchor: string): KbCallout[] {
 
 export default function ContextCallout({ c }: { c: KbCallout }) {
   return (
-    <aside className="ctx-callout" aria-label={`Historical context from the Jane Knowledge Base: ${c.source}, ${c.year}`}>
+    <aside className="ctx-callout" aria-label={`Historical context: ${c.source}, ${c.year}`}>
       <div className="ctx-kicker">From the archive</div>
       {c.lead && <div className="ctx-lead">{c.lead}</div>}
       <blockquote className="ctx-quote">

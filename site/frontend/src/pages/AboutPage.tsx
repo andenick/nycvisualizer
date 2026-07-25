@@ -32,7 +32,8 @@ export default function AboutPage() {
         <p style={{ maxWidth: "68ch" }}>
           The map we render live is the residue of a century of argument about who the city is for —
           Moses&rsquo;s highways and Jacobs&rsquo;s streets, and the subway that made a dense New York
-          possible in the first place. A few voices from the Jane Knowledge Base, beside the live data:
+          possible in the first place. A few voices from the historical record we keep beside the
+          live data:
         </p>
         <ContextCallouts anchor="about" />
       </section>

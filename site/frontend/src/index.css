@@ -35,10 +35,13 @@
    The live ant farm as the hero. Everything below exists so the map is the first
    thing on the page and the buttons under it are the first thing you can press. */
 .nyc-hero--map { padding: 1rem 0 1.2rem; }
-.nyc-hero-h1 {
-  font-size: clamp(1.35rem, 2.6vw, 2rem);
+/* Specificity note: `.nyc-hero h1` above sets clamp(1.8rem, 4vw, 2.8rem). A bare
+   `.nyc-hero-h1` class loses to it, so the maps-first title stayed 2.8rem and pushed the
+   map down the page — exactly what W1 exists to stop. Matched specificity on purpose. */
+.nyc-hero.nyc-hero--map h1.nyc-hero-h1 {
+  font-size: clamp(1.3rem, 2.4vw, 1.85rem);
   line-height: 1.15;
-  margin: 0 0 0.7rem;
+  margin: 0 0 0.6rem;
 }
 
 /* FULL BLEED, SAFELY. `margin-inline: calc(50% - 50vw)` is the standard breakout, but
