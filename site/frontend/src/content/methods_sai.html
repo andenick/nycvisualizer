@@ -1,6 +1,6 @@
 <h1>Stop Accessibility Index (SAI) — Methods</h1>
 <p><strong>Analysis:</strong> B5.2 item 4 (cross-flagship signature) + B5.3 municipal context
-<strong>Scripts:</strong> <code>Technical/NYCPlatform/analysis/sai/01–06_*.py</code> · <strong>Outputs:</strong> <code>Outputs/NYCPlatform/sai/</code>
+<strong>Scripts:</strong> <code>pipeline/analysis/sai/01–06_*.py</code> in the <a href="https://github.com/andenick/nycvisualizer">nycvisualizer repository</a> · <strong>Outputs:</strong> the SAI tables published on the Data page (<code>sai_scores.parquet</code>, <code>sai_borough_summary.parquet</code> and the context tables named below)
 <strong>Source DB:</strong> <code>jane_geo.duckdb</code> (DuckDB 1.4 + spatial) · <strong>Distance/area CRS:</strong> EPSG:2263 (NY State Plane Long Island, ftUS) throughout.
 <strong>Generated:</strong> 2026-07-17.</p>
 <p>The SAI scores <strong>every one of the 13,621 in-effect NYC local-bus stops</strong> on how walkable, safe, comfortable,
@@ -192,11 +192,11 @@ not continuously updated; a newly built ramp or removed shelter may lag. (d) Ram
   and the 50 worst individual segments.</li>
 </ul>
 <h2>Reproduce</h2>
-<pre><code>cd Technical/NYCPlatform/analysis/sai
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 01_walksheds.py      # ~50 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 02_stop_environment.py  # ~160 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 03_service.py        # ~5 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 04_sai.py            # ~12 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 05_context.py        # ~150 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 06_charts.py         # ~15 s
+<pre><code>cd pipeline/analysis/sai
+PYTHONIOENCODING=utf-8 python 01_walksheds.py         # 400 m walksheds per stop      ~50 s
+PYTHONIOENCODING=utf-8 python 02_stop_environment.py  # sidewalk/street environment  ~160 s
+PYTHONIOENCODING=utf-8 python 03_service.py           # scheduled service per stop     ~5 s
+PYTHONIOENCODING=utf-8 python 04_sai.py               # composite index + percentiles ~12 s
+PYTHONIOENCODING=utf-8 python 05_context.py           # ridership/crash/O-D context  ~150 s
+PYTHONIOENCODING=utf-8 python 06_charts.py            # headline charts               ~15 s
 </code></pre>

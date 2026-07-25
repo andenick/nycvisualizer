@@ -42,7 +42,7 @@ next to a highway does not deflate a neighbourhood's noise ranking.
 
 ## 1. Transit (supply within 400 m + nearest subway)
 
-Source: the **Stop Access Index (SAI)** stop table (`Outputs/NYCPlatform/sai/sai_scores.parquet`,
+Source: the **Stop Accessibility Index (SAI)** stop table (`sai_scores.parquet`, published on the Data page;
 13,621 MTA bus stops with lat/lon, routes, `trips_am`, and the composite `sai`). Binned to res-10, then
 rolled up over `nbr`:
 
@@ -91,7 +91,7 @@ penalised for being inspected. Sidewalk coverage is a **length share** of nearby
 ## Build (resumable, checkpointed stages)
 
 The build is split into foreground-safe stages, each writing a checkpoint parquet under
-`Outputs/NYCPlatform/renters/_stage/` so a killed run resumes without recomputation:
+a `_stage/` checkpoint directory beside the renters outputs, so a killed run resumes without recomputation:
 `cells` (→ cells/nbr) → `base` (populated + transit + subway + jobs) → `qol` (giant point layers) →
 `flood` → `assemble` (join + percentiles → `renters_grid.parquet`). Typical timings: cells 8 s,
 base 13 s, qol 3 s, flood 9 s, assemble <1 s. Final grid = **58,604 cells, 46,702 populated**.
@@ -108,7 +108,7 @@ fallback** the backend serves when live OTP is unreachable.
 
 ## 1b. Per-BBL building aggregates (join key = 10-digit NYC BBL string)
 
-Written to `Outputs/NYCPlatform/renters/`:
+Written alongside the other renters outputs (all published on the Data page):
 
 - **`hpd_open_violations_by_bbl.parquet`** — HPD violations with `violationstatus='Open'`, counted per BBL
   and split by class (`open_class_a/b/c/i`; A=non-hazardous, B=hazardous, C=immediately hazardous,

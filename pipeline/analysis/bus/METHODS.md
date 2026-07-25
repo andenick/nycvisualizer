@@ -1,17 +1,21 @@
 # Bus Service & Ridership — METHODS (Jane NYC-Platform, B5.2)
 
 All analyses are scripted and reproducible against `jane_geo.duckdb`
-(regenerable query layer over the parquet lake). Run order:
+(regenerable query layer over the parquet lake). The scripts live in
+`pipeline/analysis/bus/` in the [nycvisualizer repository](https://github.com/andenick/nycvisualizer);
+run them in this order:
 
 ```
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 01_route_demand.py
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 02_segment_speeds.py
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 03_service_supply.py
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 04_realtime_headways.py   # RERUNNABLE
+cd pipeline/analysis/bus
+PYTHONIOENCODING=utf-8 python 01_route_demand.py       # ridership + demand by route
+PYTHONIOENCODING=utf-8 python 02_segment_speeds.py     # DOT segment speeds panel
+PYTHONIOENCODING=utf-8 python 03_service_supply.py     # scheduled service supply
+PYTHONIOENCODING=utf-8 python 04_realtime_headways.py  # observed headways (RERUNNABLE)
 ```
 
-Outputs (Parquet + one-sheet XLSX per file, Druck-compliant) → `Outputs/NYCPlatform/bus/`;
-headline PNG charts → `Outputs/NYCPlatform/bus/charts/`.
+Each step writes one Parquet plus a matching one-sheet XLSX; the headline charts are
+written as PNGs alongside them. Every one of those tables is offered for download on the
+site's Data page.
 Shared helpers (connection, borough-from-route-prefix, writers) in `common.py`.
 
 ## Data sources (dataset IDs)
@@ -76,10 +80,10 @@ blocked-bus-lane/double-park delay rather than through-traffic. Read the ±0 mph
 
 NYC launched the United States' first cordon-based **congestion pricing** program (the CBD Tolling / Congestion Relief Zone, Manhattan **south of 60th St**) on **5 January 2025**. Our segment-speed panel straddles that date — the `kufs-yh3x` vintage (2025→) is the **post-congestion-pricing era** — so any 2025+ speed trend on these pages must be read against this policy backdrop, not as an isolated result.
 
-Two peer references, dated and cited (Jane KB):
+Two peer references, dated and cited:
 
-- **NBER w33584** — Cook, Kreidieh, Vasserman, Allcott et al., *The Short-Run Effects of Congestion Pricing in New York City* (March 2025, rev. Jan 2026; KB DOC0343): using a generalized synthetic-controls design, the policy *"increased speeds on CBD roads by 11%, with little-to-no effect on air quality, transactions at shops and restaurants, or overall foot traffic in the CBD,"* with spillover speed gains on roads leading into the CBD. Note the estimand: that **+11%** is CBD **road** speed for all vehicles, **not** a bus through-speed benchmark — it is context for our numbers, not a target to match.
-- **arXiv:2606.17530** — Li, Zhuang et al. (MIT), *Public transit gains and spatially uneven travel demand changes after NYC congestion pricing* (2026; KB DOC0407): post-policy bus and subway ridership rose significantly vs expected no-policy demand, and *"the effects are spatially heterogeneous: while reductions in overall travel demand are concentrated within the Congestion Relief Zone, transit gains extend beyond Manhattan's core"* — a caution against reading a single citywide speed/ridership average as the whole story.
+- **NBER w33584** — Cook, Kreidieh, Vasserman, Allcott et al., *The Short-Run Effects of Congestion Pricing in New York City* (March 2025, rev. Jan 2026): using a generalized synthetic-controls design, the policy *"increased speeds on CBD roads by 11%, with little-to-no effect on air quality, transactions at shops and restaurants, or overall foot traffic in the CBD,"* with spillover speed gains on roads leading into the CBD. Note the estimand: that **+11%** is CBD **road** speed for all vehicles, **not** a bus through-speed benchmark — it is context for our numbers, not a target to match.
+- **arXiv:2606.17530** — Li, Zhuang et al. (MIT), *Public transit gains and spatially uneven travel demand changes after NYC congestion pricing* (2026): post-policy bus and subway ridership rose significantly vs expected no-policy demand, and *"the effects are spatially heterogeneous: while reductions in overall travel demand are concentrated within the Congestion Relief Zone, transit gains extend beyond Manhattan's core"* — a caution against reading a single citywide speed/ridership average as the whole story.
 
 ## Realtime archive depth (04) — honest stamp
 

@@ -1,7 +1,7 @@
 # B5.1 Sidewalk Coverage Analysis — Methods
 
-**Suite:** `Technical/NYCPlatform/analysis/sidewalk/01..05_*.py` · **Outputs:** `Projects/Jane/Outputs/NYCPlatform/sidewalk/`
-**Engine:** DuckDB 1.4.0 + `spatial`, read-only against `Technical/NYCPlatform/db/jane_geo.duckdb`
+**Suite:** `pipeline/analysis/sidewalk/01..05_*.py` in the [nycvisualizer repository](https://github.com/andenick/nycvisualizer) · **Outputs:** the sidewalk coverage, width, equity, condition and accessibility tables published on the Data page
+**Engine:** DuckDB 1.4.0 + `spatial`, read-only against the project query layer `pipeline/db/jane_geo.duckdb`
 **CRS discipline:** every measurement (`ST_Area`, `ST_Length`, `ST_Perimeter`, buffers, distances) uses `geom_2263` — EPSG:2263, NY State Plane Long Island, **US survey feet**. No measurement is ever taken in 4326.
 
 ## Universe definition (all scripts)
@@ -63,12 +63,12 @@ Intersection nodes derived from the CSCL network itself: endpoints of merged ped
 ## Reproduction
 
 ```
-cd Technical/NYCPlatform/analysis/sidewalk
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 01_coverage_classes.py   # ~2 min
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 02_width_derivation.py   # ~35 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 03_block_equity.py       # ~30 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 04_condition.py          # ~1 min (needs 01 output)
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 05_accessibility.py      # ~2 min
+cd pipeline/analysis/sidewalk
+PYTHONIOENCODING=utf-8 python 01_coverage_classes.py   # per-segment coverage class      ~2 min
+PYTHONIOENCODING=utf-8 python 02_width_derivation.py   # sidewalk width estimate          ~35 s
+PYTHONIOENCODING=utf-8 python 03_block_equity.py       # block-level equity metrics       ~30 s
+PYTHONIOENCODING=utf-8 python 04_condition.py          # condition/complaints (needs 01)   ~1 min
+PYTHONIOENCODING=utf-8 python 05_accessibility.py      # ramps + ADA slope screen         ~2 min
 ```
 
 ## Sources

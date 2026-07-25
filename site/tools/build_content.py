@@ -6,16 +6,29 @@ renders literal markdown. Env-parameterized (no absolute workspace paths):
   ANALYSIS_ROOT  -- analysis scripts+docs (default <platform>/analysis)
   DATA_ROOT      -- data lake (default <platform>/data)
 Writes into <site>/frontend/src/content/.
+
+PUBLICATION-HYGIENE GATE (added 2026-07-25). Everything under src/content/ is shipped to
+public visitors -- the methodology tabs are pre-rendered from the pipeline's own working
+markdown, which is written for us. On 2026-07-25 that leaked a Windows interpreter path,
+absolute workspace output paths, an internal container hostname and internal
+research-archive document ids onto the live site. Every render is now checked against
+`hygiene.PATTERNS` BEFORE it is written, and the whole content directory is re-checked at
+the end; ANY hit aborts this build with a non-zero exit. Fix the SOURCE document --
+patching the generated HTML is silently undone by the next run of this script.
 """
 from __future__ import annotations
 
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import duckdb
 import markdown
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hygiene import assert_clean, assert_clean_text  # noqa: E402  (local tool, same dir)
 
 HERE = Path(__file__).resolve()
 SITE = HERE.parents[1]
@@ -29,9 +42,19 @@ CONTENT.mkdir(parents=True, exist_ok=True)
 MD = markdown.Markdown(extensions=["tables", "fenced_code", "sane_lists"])
 
 
+def write_checked(out_name: str, text: str) -> None:
+    """Gate a content file, THEN write it. A leak aborts the build (exit 2).
+
+    Checked before the write, deliberately: a failed build must not leave a leaking
+    artefact on disk where a later `vite build` could pick it up.
+    """
+    assert_clean_text(text, out_name)
+    (CONTENT / out_name).write_text(text, encoding="utf-8")
+
+
 def render_md(src: Path, out_name: str) -> None:
     html = MD.reset().convert(src.read_text(encoding="utf-8"))
-    (CONTENT / out_name).write_text(html, encoding="utf-8")
+    write_checked(out_name, html)
     print(f"  {out_name}: {len(html)/1e3:.0f} KB")
 
 
@@ -90,8 +113,28 @@ for prov in sorted(DATA.glob("raw/**/PROVENANCE.json")):
         "license": p.get("license", ""),
     })
 catalog.sort(key=lambda d: (d["category"], d["name"]))
-(CONTENT / "data_catalog.json").write_text(json.dumps(catalog, indent=0), encoding="utf-8")
+write_checked("data_catalog.json", json.dumps(catalog, indent=0))
 print(f"  data_catalog.json: {len(catalog)} datasets")
+
+# ---------------------------------------------------------------- KB context callouts
+# The "From the archive" marginalia (components/ContextCallout.tsx). Curated by hand in
+# kb_callouts.source.json, which carries an internal `doc` id per passage so we can trace
+# each quote back to the document it was verified against.
+#
+# That id is OURS, not the reader's: it resolves to nothing outside this workspace, and
+# CODE_DATA_FIRST_STANDARD s4.2 bars knowledge-base artefact references from reaching a
+# visitor. It used to ship -- first visibly beside the source line, then in a title=
+# attribute, and either way it was in the JS bundle. It is now STRIPPED here: the shipped
+# kb_callouts.json carries the passage, its real published source and its year (the
+# provenance a reader can actually use), and nothing a reader cannot resolve.
+CALLOUT_SRC = SITE / "content_src" / "kb_callouts.source.json"
+if CALLOUT_SRC.exists():
+    _raw = json.loads(CALLOUT_SRC.read_text(encoding="utf-8"))
+    _public = [{k: v for k, v in c.items() if k not in ("doc", "kb_doc")} for c in _raw]
+    write_checked("kb_callouts.json", json.dumps(_public, indent=1))
+    print(f"  kb_callouts.json: {len(_public)} callouts (internal doc ids stripped)")
+else:
+    print(f"  MISSING: {CALLOUT_SRC} — kb_callouts.json left as-is")
 
 # ---------------------------------------------------------------- chart data
 con = duckdb.connect()
@@ -147,16 +190,19 @@ if hb.exists():
         "modes": modes,
         "series": {m: [by.get((y, m), 0) for y in years] for m in modes},
         "total": [sum(by.get((y, m), 0) for m in modes) for y in years],
-        "source": "NYMTC Hub Bound Travel Report (KB DOC0346-DOC0374); 24-hour persons "
+        # No internal archive document ids here: the reader's provenance is the published
+        # NYMTC report series itself, which they can look up. An internal id is an index
+        # into our own archive and resolves to nothing for them.
+        "source": "NYMTC Hub Bound Travel Report; 24-hour persons "
                   "entering the Manhattan CBD (south of 60th St) by mode. 14 born-digital "
-                  "report years; 2010-11 & pre-2007 await GPU re-extraction, 2021-22 not "
-                  "surveyed (COVID). Ferry excludes the Staten Island Ferry.",
+                  "report years; 2010-11 & pre-2007 await re-extraction from scans, "
+                  "2021-22 not surveyed (COVID). Ferry excludes the Staten Island Ferry.",
     }
     print(f"  chartdata hub_bound: {len(years)} years")
 else:
     print(f"  MISSING: {hb} (run analysis/cordon/build_hub_bound_series.py)")
 
-(CONTENT / "chartdata.json").write_text(json.dumps(charts, indent=0), encoding="utf-8")
+write_checked("chartdata.json", json.dumps(charts, indent=0))
 print("  chartdata.json written")
 
 # ---------------------------------------------------------------- download extracts
@@ -234,3 +280,11 @@ if eqp.exists():
     print("  access-equity extract: access_equity.{csv,parquet,xlsx} staged")
 # S7 renters aggregates already live under OUT_ROOT/renters/ (build outputs) — no staging.
 print("  download extracts staged")
+
+# ---------------------------------------------------------------- hygiene gate (final)
+# Each artefact was gated as it was written; this final pass covers the WHOLE shipped
+# content directory, so a hand-added or hand-edited file (a curated JSON, a stale render
+# from an earlier build) cannot slip through unchecked either. Non-zero exit on any hit.
+print("\nPublication-hygiene gate over", CONTENT.as_posix())
+assert_clean([CONTENT])
+print("  PASS: no internal artefacts in shipped content.")

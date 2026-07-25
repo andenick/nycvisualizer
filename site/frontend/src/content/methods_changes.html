@@ -49,10 +49,10 @@ when" — routes, headways, stops, service spans, trip counts, routings.</p>
 <pre><code># env-parameterized root (no absolute paths baked into code)
 set NYCV_PIPELINE_ROOT=&lt;...&gt;/NYCPlatform      # optional; defaults to the dir above changes/
 
-C:/Python313/python.exe run_diffs.py          # snapshot all + diff new pairs  (the scheduled job)
-C:/Python313/python.exe snapshot.py --seed-only   # (re)seed baselines from disk, no network
-C:/Python313/python.exe run_diffs.py --no-fetch --all-pairs   # re-diff every consecutive pair
-C:/Python313/python.exe gtfs_diff.py --feed X --from-zip a.zip --to-zip b.zip \
+python run_diffs.py          # snapshot all + diff new pairs  (the scheduled job)
+python snapshot.py --seed-only   # (re)seed baselines from disk, no network
+python run_diffs.py --no-fetch --all-pairs   # re-diff every consecutive pair
+python gtfs_diff.py --feed X --from-zip a.zip --to-zip b.zip \
     --from-ts T0 --to-ts T1                   # ad-hoc diff of any two zips
 </code></pre>
 <h2>Feeds tracked</h2>
@@ -114,14 +114,14 @@ frequency changes are folded in as <strong>dated</strong> service. Consequences:
 <p>Delta record shape: <code>{feed, from_ts, to_ts, change_type, route_id, detail, magnitude}</code>.</p>
 <h2>Schedule</h2>
 <p>Windows Scheduled Task <strong><code>JaneNYCGtfsSnap</code></strong> runs <code>run_snapshot.ps1</code> <strong>every 6 hours</strong>
-(interactive user, <code>C:/Python313/python.exe</code>). It is a sibling of <code>JaneNYCPoller</code>. The
+(interactive user). It is a sibling of the realtime poller task. The
 wrapper sets <code>NYCV_PIPELINE_ROOT</code>, silences the benign urllib3 warning, and appends output
 to <code>changes/logs/gtfssnap-&lt;date&gt;.log</code>.</p>
 <pre><code>schtasks /Query /TN JaneNYCGtfsSnap /V /FO LIST     # status
 schtasks /Run   /TN JaneNYCGtfsSnap                 # run now
 </code></pre>
 <h2>Public-repo hygiene</h2>
-<p>No absolute <code>D:/Arcanum</code> literals in any code file — the root resolves from
+<p>No absolute workspace paths are baked into any code file — the root resolves from
 <code>NYCV_PIPELINE_ROOT</code> (else the dir above <code>changes/</code>), matching the poller/derive/build
 convention. Stored snapshot zips live under <code>gtfs_snapshots/</code> (gitignore per repo policy for
 <code>data/</code>-scale artifacts if published; the index + deltas + changelog are the shareable

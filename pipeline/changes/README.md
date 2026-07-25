@@ -97,7 +97,7 @@ Delta record shape: `{feed, from_ts, to_ts, change_type, route_id, detail, magni
 ## Schedule
 
 Windows Scheduled Task **`JaneNYCGtfsSnap`** runs `run_snapshot.ps1` **every 6 hours**
-(interactive user, `python`). It is a sibling of `JaneNYCPoller`. The
+(interactive user). It is a sibling of the realtime poller task. The
 wrapper sets `NYCV_PIPELINE_ROOT`, silences the benign urllib3 warning, and appends output
 to `changes/logs/gtfssnap-<date>.log`.
 
@@ -108,7 +108,7 @@ schtasks /Run   /TN JaneNYCGtfsSnap                 # run now
 
 ## Public-repo hygiene
 
-No absolute `workspace-root` literals in any code file — the root resolves from
+No absolute workspace paths are baked into any code file — the root resolves from
 `NYCV_PIPELINE_ROOT` (else the dir above `changes/`), matching the poller/derive/build
 convention. Stored snapshot zips live under `gtfs_snapshots/` (gitignore per repo policy for
 `data/`-scale artifacts if published; the index + deltas + changelog are the shareable

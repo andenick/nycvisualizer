@@ -1,7 +1,7 @@
 # Stop Accessibility Index (SAI) — Methods
 
 **Analysis:** B5.2 item 4 (cross-flagship signature) + B5.3 municipal context
-**Scripts:** `Technical/NYCPlatform/analysis/sai/01–06_*.py` · **Outputs:** `Outputs/NYCPlatform/sai/`
+**Scripts:** `pipeline/analysis/sai/01–06_*.py` in the [nycvisualizer repository](https://github.com/andenick/nycvisualizer) · **Outputs:** the SAI tables published on the Data page (`sai_scores.parquet`, `sai_borough_summary.parquet` and the context tables named below)
 **Source DB:** `jane_geo.duckdb` (DuckDB 1.4 + spatial) · **Distance/area CRS:** EPSG:2263 (NY State Plane Long Island, ftUS) throughout.
 **Generated:** 2026-07-17.
 
@@ -137,11 +137,11 @@ not continuously updated; a newly built ramp or removed shelter may lag. (d) Ram
 ## Reproduce
 
 ```
-cd Technical/NYCPlatform/analysis/sai
-PYTHONIOENCODING=utf-8 python 01_walksheds.py      # ~50 s
-PYTHONIOENCODING=utf-8 python 02_stop_environment.py  # ~160 s
-PYTHONIOENCODING=utf-8 python 03_service.py        # ~5 s
-PYTHONIOENCODING=utf-8 python 04_sai.py            # ~12 s
-PYTHONIOENCODING=utf-8 python 05_context.py        # ~150 s
-PYTHONIOENCODING=utf-8 python 06_charts.py         # ~15 s
+cd pipeline/analysis/sai
+PYTHONIOENCODING=utf-8 python 01_walksheds.py         # 400 m walksheds per stop      ~50 s
+PYTHONIOENCODING=utf-8 python 02_stop_environment.py  # sidewalk/street environment  ~160 s
+PYTHONIOENCODING=utf-8 python 03_service.py           # scheduled service per stop     ~5 s
+PYTHONIOENCODING=utf-8 python 04_sai.py               # composite index + percentiles ~12 s
+PYTHONIOENCODING=utf-8 python 05_context.py           # ridership/crash/O-D context  ~150 s
+PYTHONIOENCODING=utf-8 python 06_charts.py            # headline charts               ~15 s
 ```

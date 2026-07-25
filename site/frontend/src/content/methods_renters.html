@@ -33,7 +33,7 @@ water, rail yards and other unpopulated cells keep their raw values but get <cod
 next to a highway does not deflate a neighbourhood's noise ranking.</p>
 <hr />
 <h2>1. Transit (supply within 400 m + nearest subway)</h2>
-<p>Source: the <strong>Stop Access Index (SAI)</strong> stop table (<code>Outputs/NYCPlatform/sai/sai_scores.parquet</code>,
+<p>Source: the <strong>Stop Accessibility Index (SAI)</strong> stop table (<code>sai_scores.parquet</code>, published on the Data page;
 13,621 MTA bus stops with lat/lon, routes, <code>trips_am</code>, and the composite <code>sai</code>). Binned to res-10, then
 rolled up over <code>nbr</code>:</p>
 <table>
@@ -125,7 +125,7 @@ stormwater-moderate 753, stormwater-extreme 6,287, FEMA-SFHA 9,054.</p>
 </blockquote>
 <h2>Build (resumable, checkpointed stages)</h2>
 <p>The build is split into foreground-safe stages, each writing a checkpoint parquet under
-<code>Outputs/NYCPlatform/renters/_stage/</code> so a killed run resumes without recomputation:
+a <code>_stage/</code> checkpoint directory beside the renters outputs, so a killed run resumes without recomputation:
 <code>cells</code> (→ cells/nbr) → <code>base</code> (populated + transit + subway + jobs) → <code>qol</code> (giant point layers) →
 <code>flood</code> → <code>assemble</code> (join + percentiles → <code>renters_grid.parquet</code>). Typical timings: cells 8 s,
 base 13 s, qol 3 s, flood 9 s, assemble &lt;1 s. Final grid = <strong>58,604 cells, 46,702 populated</strong>.</p>
@@ -137,7 +137,7 @@ in 45 min departing weekday 8am) and <code>jobs_45min_pct</code> (share of all N
 fallback</strong> the backend serves when live OTP is unreachable.</p>
 <hr />
 <h2>1b. Per-BBL building aggregates (join key = 10-digit NYC BBL string)</h2>
-<p>Written to <code>Outputs/NYCPlatform/renters/</code>:</p>
+<p>Written alongside the other renters outputs (all published on the Data page):</p>
 <ul>
 <li><strong><code>hpd_open_violations_by_bbl.parquet</code></strong> — HPD violations with <code>violationstatus='Open'</code>, counted per BBL
   and split by class (<code>open_class_a/b/c/i</code>; A=non-hazardous, B=hazardous, C=immediately hazardous,

@@ -12,8 +12,8 @@ does **not** apply.
 |------|-------|
 | Engine | OpenTripPlanner (OTP) **2.5.0** (`otp-2.5.0-shaded.jar`, Java 21 / eclipse-temurin:21-jre) |
 | Why 2.5.0 (not 2.9/2.10) | The isochrone sandbox (`ext.traveltime`, feature `SandboxAPITravelTime`, endpoint `/otp/traveltime/isochrone`) is the mechanism we need. It was **removed in OTP 2.6.0**. 2.5.0 is the last release that ships it. The `opentripplanner/opentripplanner:latest` Docker image is a 2.10.0-SNAPSHOT dev build and has no isochrone endpoint. |
-| Host | Homelab box (HP EliteDesk 800 G5, 6-core i5-9500T, 30 GiB RAM), internal only |
-| Serving container | `nycvis-otp` on the `homelab_default` docker network, `--load --serve`, `-Xmx3g`, `restart: unless-stopped`. **No host port, no public hostname** — only our backend (same network) or an ssh-tunnel reaches it. |
+| Host | A small self-hosted server (6-core CPU, 30 GiB RAM). The routing engine is **internal only**. |
+| Serving container | A private Docker container (`--load --serve`, `-Xmx3g`, `restart: unless-stopped`) on the same private network as this site's backend. **No host port and no public hostname** — the routing engine is never exposed directly to the internet; only the site's `/api/isochrone` endpoint is public. |
 | Feature flag | `otp-config.json`: `{"otpFeatures":{"SandboxAPITravelTime":true}}` |
 
 ### Graph inputs
@@ -49,8 +49,9 @@ GET /api/isochrone?lat=<>&lon=<>&minutes=30|45|60&depart=weekday_8am|noon|evenin
 - Snaps the origin to an **H3 res-9 cell** (~0.1 km² ; edge ~174 m) so nearby requests
   share a cache entry; the query is issued from the snapped cell centroid.
 - Calls OTP `/otp/traveltime/isochrone` (`modes=WALK,TRANSIT`, `arriveBy=false`,
-  `cutoff=<minutes>m`) over the internal network (`OTP_URL`, default
-  `http://nycvis-otp:8080`); returns the GeoJSON `FeatureCollection` of polygons.
+  `cutoff=<minutes>m`) over the private network — the engine's base URL is supplied by
+  the `OTP_URL` environment variable — and returns the GeoJSON `FeatureCollection` of
+  polygons.
 - **Departure windows** anchor to the next weekday (default `2026-07-22`, a Wednesday,
   overridable via `ISOCHRONE_DEPART_DATE`) at `08:00 / 12:00 / 18:00` America/New_York (EDT, `-04:00`).
 - **Cache**: two-tier — in-process LRU (512 entries) over an on-disk JSON cache keyed on
@@ -65,7 +66,7 @@ The fallback path and the equity input.
 - **Origin grid**: every **H3 res-8 cell** (~0.7 km²; edge ~461 m) whose interior
   contains ≥1 NYC census-block centroid → **1,196 land cells**.
 - For each origin-cell centroid: one **45-min, weekday-08:00, WALK+TRANSIT** isochrone
-  from box OTP. The polygon is converted to its covered set of **H3 res-9 cells**
+  from the OTP engine. The polygon is converted to its covered set of **H3 res-9 cells**
   (`h3.geo_to_cells`), and **reachable jobs** = Σ LODES WAC `C000` over NYC census
   blocks whose res-9 cell is in that set.
 - The driver is **serial and resumable**: each cell is checkpointed

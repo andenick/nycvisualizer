@@ -45,3 +45,11 @@ Thumbs.db
 # Build tools fetched on demand (go-pmtiles for site/tools/build_basemap.sh, etc.) —
 # binaries are tools, not source artifacts.
 site/tools/bin/
+
+# ---- Internal content sources — never publish ----
+# site/content_src/ holds the hand-curated inputs to the pre-rendered site content,
+# including the internal research-archive document ids used to quote-verify each
+# "From the archive" passage. Those ids resolve only inside our own workspace
+# (CODE_DATA_FIRST_STANDARD s4.2), so the SOURCE stays here and only the stripped,
+# reader-resolvable kb_callouts.json is generated into site/frontend/src/content/.
+site/content_src/

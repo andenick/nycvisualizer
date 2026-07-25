@@ -74,9 +74,9 @@ npm run preview  # serve the production build
 
 The route-reliability + Marey-diagram surface. Reads derive2's hourly-refreshed outputs
 (`realtime/derived/{trajectories,observed_headways}`) + its GTFS static cache
-(`realtime/derive2/cache/`), the bus analysis outputs (`Outputs/NYCPlatform/bus/`), SAI
-(`Outputs/NYCPlatform/sai/`), live positions (the `/api/rt` layer), and two precomputed
-dossier aggregates (`Outputs/NYCPlatform/bus/obs/`, built by `analysis/bus/05_obs_precompute.py`
+(`realtime/derive2/cache/`), the bus analysis outputs (`$NYCV_OUTPUTS_ROOT/bus/`), SAI
+(`$NYCV_OUTPUTS_ROOT/sai/`), live positions (the `/api/rt` layer), and two precomputed
+dossier aggregates (`$NYCV_OUTPUTS_ROOT/bus/obs/`, built by `pipeline/analysis/bus/05_obs_precompute.py`
 on the `JaneNYCDerive` cadence — route-hourly ridership + ACE counts, to keep the dossier off
 the 5.4 GB jane_geo DB at request time). All roots are env-overridable (`NYCV_DERIVED_ROOT`,
 `NYCV_DERIVE2_CACHE`, `NYCV_OUTPUTS_ROOT`, `NYCV_BUS_OUTPUTS`, `NYCV_OBS_PRECOMPUTE`,

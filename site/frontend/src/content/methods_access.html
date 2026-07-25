@@ -23,11 +23,11 @@ does <strong>not</strong> apply.</p>
 </tr>
 <tr>
 <td>Host</td>
-<td>Homelab box (HP EliteDesk 800 G5, 6-core i5-9500T, 30 GiB RAM), internal only</td>
+<td>A small self-hosted server (6-core CPU, 30 GiB RAM). The routing engine is <strong>internal only</strong>.</td>
 </tr>
 <tr>
 <td>Serving container</td>
-<td><code>nycvis-otp</code> on the <code>homelab_default</code> docker network, <code>--load --serve</code>, <code>-Xmx3g</code>, <code>restart: unless-stopped</code>. <strong>No host port, no public hostname</strong> — only our backend (same network) or an ssh-tunnel reaches it.</td>
+<td>A private Docker container (<code>--load --serve</code>, <code>-Xmx3g</code>, <code>restart: unless-stopped</code>) on the same private network as this site's backend. <strong>No host port and no public hostname</strong> — the routing engine is never exposed directly to the internet; only the site's <code>/api/isochrone</code> endpoint is public.</td>
 </tr>
 <tr>
 <td>Feature flag</td>
@@ -63,8 +63,9 @@ final run.</p>
 <li>Snaps the origin to an <strong>H3 res-9 cell</strong> (~0.1 km² ; edge ~174 m) so nearby requests
   share a cache entry; the query is issued from the snapped cell centroid.</li>
 <li>Calls OTP <code>/otp/traveltime/isochrone</code> (<code>modes=WALK,TRANSIT</code>, <code>arriveBy=false</code>,
-  <code>cutoff=&lt;minutes&gt;m</code>) over the internal network (<code>OTP_URL</code>, default
-  <code>http://nycvis-otp:8080</code>); returns the GeoJSON <code>FeatureCollection</code> of polygons.</li>
+  <code>cutoff=&lt;minutes&gt;m</code>) over the private network — the engine's base URL is supplied by
+  the <code>OTP_URL</code> environment variable — and returns the GeoJSON <code>FeatureCollection</code> of
+  polygons.</li>
 <li><strong>Departure windows</strong> anchor to the next weekday (default <code>2026-07-22</code>, a Wednesday,
   overridable via <code>ISOCHRONE_DEPART_DATE</code>) at <code>08:00 / 12:00 / 18:00</code> America/New_York (EDT, <code>-04:00</code>).</li>
 <li><strong>Cache</strong>: two-tier — in-process LRU (512 entries) over an on-disk JSON cache keyed on
@@ -78,7 +79,7 @@ final run.</p>
 <li><strong>Origin grid</strong>: every <strong>H3 res-8 cell</strong> (~0.7 km²; edge ~461 m) whose interior
   contains ≥1 NYC census-block centroid → <strong>1,196 land cells</strong>.</li>
 <li>For each origin-cell centroid: one <strong>45-min, weekday-08:00, WALK+TRANSIT</strong> isochrone
-  from box OTP. The polygon is converted to its covered set of <strong>H3 res-9 cells</strong>
+  from the OTP engine. The polygon is converted to its covered set of <strong>H3 res-9 cells</strong>
   (<code>h3.geo_to_cells</code>), and <strong>reachable jobs</strong> = Σ LODES WAC <code>C000</code> over NYC census
   blocks whose res-9 cell is in that set.</li>
 <li>The driver is <strong>serial and resumable</strong>: each cell is checkpointed

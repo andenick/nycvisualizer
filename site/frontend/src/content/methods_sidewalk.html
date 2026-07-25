@@ -1,6 +1,6 @@
 <h1>B5.1 Sidewalk Coverage Analysis — Methods</h1>
-<p><strong>Suite:</strong> <code>Technical/NYCPlatform/analysis/sidewalk/01..05_*.py</code> · <strong>Outputs:</strong> <code>Projects/Jane/Outputs/NYCPlatform/sidewalk/</code>
-<strong>Engine:</strong> DuckDB 1.4.0 + <code>spatial</code>, read-only against <code>Technical/NYCPlatform/db/jane_geo.duckdb</code>
+<p><strong>Suite:</strong> <code>pipeline/analysis/sidewalk/01..05_*.py</code> in the <a href="https://github.com/andenick/nycvisualizer">nycvisualizer repository</a> · <strong>Outputs:</strong> the sidewalk coverage, width, equity, condition and accessibility tables published on the Data page
+<strong>Engine:</strong> DuckDB 1.4.0 + <code>spatial</code>, read-only against the project query layer <code>pipeline/db/jane_geo.duckdb</code>
 <strong>CRS discipline:</strong> every measurement (<code>ST_Area</code>, <code>ST_Length</code>, <code>ST_Perimeter</code>, buffers, distances) uses <code>geom_2263</code> — EPSG:2263, NY State Plane Long Island, <strong>US survey feet</strong>. No measurement is ever taken in 4326.</p>
 <h2>Universe definition (all scripts)</h2>
 <p>Street segments = CSCL (<code>geo_cscl</code>, DCP <code>inkn-q76z</code>) filtered to <code>RW_TYPE='1'</code> (ordinary roadway; excludes highways, bridges, tunnels, paths) <strong>and</strong> <code>NONPED IS NULL</code> (excludes <code>V</code> vehicle-only and <code>D</code> non-pedestrian-designated segments): <strong>96,553 segments</strong> citywide. Sidewalk geometry = planimetric sidewalk polygons (<code>geo_sidewalk_polys</code>, <code>52n9-sdep</code>; 50,865 merged MULTIPOLYGONs).</p>
@@ -44,12 +44,12 @@
 <p>Intersection nodes derived from the CSCL network itself: endpoints of merged pedestrian-roadway segments snapped to a 1-ft grid (CSCL is topologically noded); node <strong>degree ≥ 3</strong> ⇒ intersection (48,717); degree-2 midblock pseudo-nodes (8,323) and degree-1 dead ends (5,215) excluded. Ramp test: ≥ 1 DOT pedestrian ramp (<code>ufzp-rrqu</code>, 217,679 points) within <strong>50 ft</strong> of the node. ADA slope screen: <code>RAMP_RUNNING_SLOPE_TOTAL &gt; 8.33%</code> fails; values ≥ 100 are sentinels (999 observed) and excluded (212,194 measured).</p>
 <p><strong>Caveats:</strong> 50 ft catches typical corner ramps but slightly under-counts at very wide intersections; a "has ramp" intersection may still lack ramps on <em>all</em> corners (corner-level completeness would need corner geometry, e.g. <code>CornerID</code> clustering — upgrade path); dead-end/cul-de-sac pedestrian access is out of scope; ramp survey vintage per DOT collection cycles.</p>
 <h2>Reproduction</h2>
-<pre><code>cd Technical/NYCPlatform/analysis/sidewalk
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 01_coverage_classes.py   # ~2 min
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 02_width_derivation.py   # ~35 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 03_block_equity.py       # ~30 s
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 04_condition.py          # ~1 min (needs 01 output)
-PYTHONIOENCODING=utf-8 C:/Python313/python.exe 05_accessibility.py      # ~2 min
+<pre><code>cd pipeline/analysis/sidewalk
+PYTHONIOENCODING=utf-8 python 01_coverage_classes.py   # per-segment coverage class      ~2 min
+PYTHONIOENCODING=utf-8 python 02_width_derivation.py   # sidewalk width estimate          ~35 s
+PYTHONIOENCODING=utf-8 python 03_block_equity.py       # block-level equity metrics       ~30 s
+PYTHONIOENCODING=utf-8 python 04_condition.py          # condition/complaints (needs 01)   ~1 min
+PYTHONIOENCODING=utf-8 python 05_accessibility.py      # ramps + ADA slope screen         ~2 min
 </code></pre>
 <h2>Sources</h2>
 <ul>
