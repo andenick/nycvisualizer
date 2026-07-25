@@ -123,6 +123,36 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
 #
 # If you are tempted to forbid a string, ask the test these allowances pass: does removing
 # it protect anything, or does it only cost the reader an explanation?
+#
+# ---------------------------------------------------------------------------------------
+# TWO INTERNAL OPERATOR RUNBOOKS ARE *EXPECTED* TO FAIL THIS GATE  (reviewed 2026-07-25)
+# ---------------------------------------------------------------------------------------
+# Run over the INTERNAL working tree, this gate reports 18 hits it is RIGHT to report:
+#
+#     realtime/README.md   15 hits   (interpreter path, archive drive paths, dump dir)
+#     db/build_db.py        3 hits   (interpreter path, archive drive path)
+#
+# The literals are deliberately NOT restated here -- this file is published, and a gate
+# should not republish what it forbids. Run the gate on those two paths to see them.
+#
+# DO NOT "FIX" THEM. Both are operator runbooks that document the paths this deployment
+# ACTUALLY uses -- where the poller writes, which interpreter the scheduled tasks invoke,
+# where the crash dumps land. Replacing those literals with env-var placeholders would
+# make the ops documentation WRONG for the one operator it is written for, in exchange for
+# protecting nothing: neither file is published in this form.
+#
+# The contract is not "the internal file is clean". It is:
+#
+#     THE MIRRORED COPY MUST PASS.  Verify it, never assume it:
+#         python site/tools/hygiene.py repo/nycvisualizer/pipeline/realtime/README.md \
+#                                      repo/nycvisualizer/pipeline/db/build_db.py
+#     Verified 2026-07-25: PASS, 0 hits. The public copies use $NYCV_ARCHIVE_ROOT and a
+#     bare `python`, which is what an outside reproducer can actually run.
+#
+# The gate deliberately has NO path-based skip for these two. A skip would apply to the
+# PUBLIC paths too (pipeline/realtime/README.md, pipeline/db/build_db.py) and would let a
+# future unscrubbed mirror sync through undetected -- which is exactly the divergence that
+# produced the 2026-07-25 leak. A documented expected-failure beats a silent exemption.
 
 # Files worth reading when a directory is handed to the CLI.
 #
