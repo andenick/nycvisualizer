@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import (autostats, busshapes, changes, config, downloads, gtfs, isochrone, obs,
-               opswall, realtime, renters, runtime, siri, stops, subway)
+               opswall, realtime, renters, runtime, siri, stops, subway, subway_stats,
+               tripdelay)
 
 app = FastAPI(title="nycvisualizer API", version="0.1.0")
 
@@ -49,6 +50,14 @@ app.include_router(autostats.router)
 # Stop cards + along-route distance (W11): /api/stops/{card,along}. Fetch-on-click only —
 # never eagerly, and never O(stops).
 app.include_router(stops.router)
+
+# Subway derived statistics: /api/subwaystats/* — observed station-to-station gaps, dwell
+# and run times from the STOPPED_AT arrival derivation. Read-only over derive2's output.
+# It publishes NO subway schedule deviation and NO subway bunching: RT trip_id does not
+# join GTFS static (0 of 8,040 exact matches), so the derivation withholds those columns
+# and this router verifies they are still 100% null on every refresh rather than trusting
+# the claim.
+app.include_router(subway_stats.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -208,6 +217,18 @@ async def station_arrivals(station_id: str) -> JSONResponse:
 async def rt_alerts() -> JSONResponse:
     data = await asyncio.to_thread(realtime.get_alerts)
     return JSONResponse(data)
+
+
+@app.get("/api/rt/delay")
+async def rt_delay(top: int = 10) -> JSONResponse:
+    """MTA's OWN schedule deviation (GTFS-RT `TripUpdate.delay`), fleet-wide.
+
+    Distinct from this platform's reconstructed adherence — the payload carries
+    `basis: mta_tripupdate_delay` so the two can never be confused. Trips with no
+    published delay are counted, never defaulted to zero.
+    """
+    data = await asyncio.to_thread(tripdelay.summary, max(1, min(50, top)))
+    return JSONResponse(data, headers={"Cache-Control": _RT_CACHE_CONTROL})
 
 
 @app.get("/api/routes")

@@ -1,0 +1,268 @@
+/* Corridor surfaces — the Route Ladder and Corridor Stop Spacing.
+ *
+ * Scoped entirely to `.crd-*` and imported ONLY by CorridorPage.tsx, so nothing here can
+ * reach another page's markup. index.css is deliberately untouched.
+ *
+ * These are IN-FLOW page surfaces, not map overlays: there is no fixed positioning, no
+ * always-on chrome, and nothing here is added to a phone's already ~87%-consumed
+ * viewport. Everything reflows to a single column under 768px and every table scrolls
+ * inside its own container so the page body never scrolls sideways.
+ *
+ * Colour: rides the arcanum tokens (--ark-accent / --ark-surface / --ark-border), which
+ * already flip for light/dark, plus a small set of flag hues chosen to stay legible on
+ * both. Flags carry a TEXT label everywhere too — colour is never the only channel.
+ */
+
+/* ---------- page head + tabs ---------- */
+.crd-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.8rem;
+  margin: 0.3rem 0 0.2rem;
+}
+.crd-head h1 { margin: 0; font-size: clamp(1.35rem, 3vw, 2rem); }
+.crd-sub { font-size: 0.9rem; opacity: 0.75; }
+
+.crd-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.9rem 0 0.4rem;
+  border-bottom: 1px solid var(--ark-border, #d4d8dd);
+  padding-bottom: 0.4rem;
+}
+.crd-tab {
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 0.34rem 0.8rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 999px;
+  background: var(--ark-surface, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+.crd-tab:hover { border-color: var(--ark-accent, #2563eb); }
+.crd-tab[aria-selected="true"] {
+  background: var(--ark-accent, #2563eb);
+  border-color: var(--ark-accent, #2563eb);
+  color: var(--ark-on-accent, #fff);
+  font-weight: 600;
+}
+
+/* ---------- shared blocks ---------- */
+.crd-panel {
+  margin: 1.2rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 12px;
+  background: var(--ark-surface, #fff);
+}
+.crd-panel > h2, .crd-panel > h3 { margin-top: 0; }
+.crd-note {
+  font-size: 0.82rem;
+  opacity: 0.85;
+  border-left: 3px solid var(--ark-border, #d4d8dd);
+  padding-left: 0.75rem;
+  margin: 0.6rem 0;
+  max-width: 78ch;
+}
+.crd-cap {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  margin: 0.4rem 0 0.8rem;
+  max-width: 82ch;
+}
+.crd-dim { opacity: 0.6; }
+.crd-nc { font-size: 0.78rem; opacity: 0.7; font-style: italic; white-space: nowrap; }
+.crd-err {
+  border: 1px solid #b45309;
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  margin: 1rem 0;
+}
+.crd-details { margin: 0.6rem 0; font-size: 0.84rem; }
+.crd-details > summary { cursor: pointer; font-weight: 600; }
+.crd-details dl { margin: 0.5rem 0 0; }
+.crd-details dt { font-weight: 600; margin-top: 0.4rem; }
+.crd-details dd { margin: 0.1rem 0 0 0; opacity: 0.85; }
+
+/* the honest "as of" chip. Same markup as the Ops wall's Stamp; the stale colour is
+   darkened here because this page sits on a light surface, not the ops dark theme. */
+.crd-stamp.stale { color: #b45309; }
+@media (prefers-color-scheme: dark) {
+  .crd-stamp.stale { color: #fbbf24; }
+}
+
+.crd-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin: 0.8rem 0;
+}
+.crd-stat {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+}
+.crd-stat-v { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.crd-stat-l {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.65;
+  margin-top: 0.15rem;
+}
+.crd-stat-s { font-size: 0.7rem; opacity: 0.6; margin-top: 0.1rem; }
+
+.crd-dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0.6rem 0 0.2rem;
+}
+.crd-dl-label { font-size: 0.76rem; opacity: 0.7; }
+
+.crd-dirhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.7rem;
+  margin: 0 0 0.3rem;
+}
+.crd-dirhead h3 { margin: 0; font-size: 1.02rem; }
+.crd-dirmeta { font-size: 0.78rem; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* ---------- the ladder ---------- */
+.crd-ladder-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  font-size: 0.82rem;
+}
+.crd-count { font-variant-numeric: tabular-nums; }
+.crd-count strong { font-variant-numeric: tabular-nums; }
+
+table.crd-ladder-table { margin-top: 0.4rem; }
+table.crd-ladder-table td, table.crd-ladder-table th { vertical-align: top; }
+.crd-idx { width: 3ch; text-align: right; opacity: 0.5; font-size: 0.78rem; }
+.crd-stoprow.is-clickable { cursor: pointer; }
+.crd-stoprow.is-clickable:hover { background: var(--ark-accent-soft, #dbeafe); }
+.crd-stoprow.is-selected { background: var(--ark-accent-soft, #dbeafe); }
+.crd-stoprow.is-selected .crd-stopname { font-weight: 700; }
+.crd-stoprow:focus-visible { outline: 2px solid var(--ark-accent, #2563eb); outline-offset: -2px; }
+.crd-stopname { font-weight: 600; }
+.crd-stopid { font-size: 0.72rem; opacity: 0.6; margin-left: 0.4rem; font-variant-numeric: tabular-nums; }
+.crd-nextbus { font-size: 0.8rem; }
+
+.crd-vrow > td { border-bottom: none; padding-top: 0.15rem; padding-bottom: 0.15rem; }
+.crd-veh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  font-size: 0.79rem;
+  padding: 0.22rem 0.5rem;
+  margin-left: 1.2rem;
+  border-left: 3px solid var(--ark-accent, #2563eb);
+  background: color-mix(in srgb, var(--ark-accent, #2563eb) 7%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+.crd-vrow.is-bunched .crd-veh {
+  border-left-color: #d97706;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+}
+.crd-veh-id { font-weight: 700; font-variant-numeric: tabular-nums; }
+.crd-veh-dist { font-weight: 600; }
+.crd-chip {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  white-space: nowrap;
+}
+.crd-chip.bunched { border-color: #d97706; color: #b45309; font-weight: 700; }
+.crd-chip.late { border-color: #b91c1c; color: #b91c1c; }
+.crd-chip.early { border-color: #1d4ed8; color: #1d4ed8; }
+@media (prefers-color-scheme: dark) {
+  .crd-chip.bunched { color: #fbbf24; }
+  .crd-chip.late { color: #fca5a5; border-color: #fca5a5; }
+  .crd-chip.early { color: #93c5fd; border-color: #93c5fd; }
+}
+.crd-pairs { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.8rem; }
+.crd-pairs li { margin: 0.15rem 0; }
+
+/* ---------- spacing strip ---------- */
+.crd-strip-wrap { overflow-x: auto; max-width: 100%; padding-bottom: 0.2rem; }
+.crd-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 76px;
+  min-width: max-content;
+  border-bottom: 1px solid var(--ark-border, #d4d8dd);
+}
+.crd-bar {
+  width: 7px;
+  min-width: 7px;
+  background: #94a3b8;
+  border-radius: 2px 2px 0 0;
+}
+.crd-bar.flag-long { background: #f59e0b; }
+.crd-bar.flag-short { background: #3b82f6; }
+.crd-bar.flag-typical { background: #94a3b8; }
+.crd-bar.flag-not_flagged { background: #cbd5e1; }
+.crd-striplabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  opacity: 0.65;
+  margin-top: 0.2rem;
+  gap: 1rem;
+}
+.crd-flags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0; font-size: 0.75rem; }
+.crd-flagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+}
+.crd-sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.crd-sw.flag-long { background: #f59e0b; }
+.crd-sw.flag-short { background: #3b82f6; }
+.crd-sw.flag-typical { background: #94a3b8; }
+.crd-sw.flag-not_flagged { background: #cbd5e1; }
+td.crd-flagcell.flag-long { color: #b45309; font-weight: 600; }
+td.crd-flagcell.flag-short { color: #1d4ed8; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  td.crd-flagcell.flag-long { color: #fbbf24; }
+  td.crd-flagcell.flag-short { color: #93c5fd; }
+}
+.crd-sec { font-size: 0.74rem; opacity: 0.6; }
+
+/* ---------- selection bar (ladder ↔ map parity) ---------- */
+.crd-selbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.7rem;
+  font-size: 0.82rem;
+  border: 1px dashed var(--ark-border, #d4d8dd);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  margin: 0.8rem 0;
+}
+.crd-selbar .crd-sel-stops { opacity: 0.8; }
+
+/* ---------- mobile ---------- */
+@media (max-width: 768px) {
+  .crd-stats { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+  .crd-veh { margin-left: 0.5rem; gap: 0.25rem 0.4rem; }
+  .crd-panel { padding: 0.7rem 0.75rem; }
+  .crd-note, .crd-cap { max-width: none; }
+}

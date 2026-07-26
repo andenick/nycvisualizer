@@ -27,6 +27,10 @@ const RentersPage = lazy(() => import("./pages/RentersPage"));
 const MapsPage = lazy(() => import("./pages/MapsPage"));
 const ImmersiveMapPage = lazy(() => import("./pages/ImmersiveMapPage"));
 const WorkstationPage = lazy(() => import("./pages/WorkstationPage"));
+// W6b/W10 surfacing (2026-07-25): the route ladder + corridor stop spacing + slow
+// spots for ONE route, and the subway derived statistics that had no reader at all.
+const CorridorPage = lazy(() => import("./pages/CorridorPage"));
+const SubwayStatsPage = lazy(() => import("./pages/SubwayStatsPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // W1/W5 IA flip (2026-07-24): SIX nav items → FOUR. The bar is now the four things a
@@ -126,7 +130,12 @@ export default function App() {
           <Route path="/observatory" element={<ObservatoryPage />} />
           <Route path="/observatory/leagues" element={<LeaguesPage />} />
           <Route path="/observatory/changes" element={<ChangesPage />} />
+          {/* Static segments are declared BEFORE the catch-all `:route`. React Router
+              ranks static above dynamic regardless, but a route literally named
+              "subway" would otherwise be indistinguishable from this page. */}
+          <Route path="/observatory/subway" element={<SubwayStatsPage />} />
           <Route path="/observatory/:route" element={<RouteDossierPage />} />
+          <Route path="/observatory/:route/corridor" element={<CorridorPage />} />
           <Route path="/data" element={<DataPage />} />
           {/* W1: the Research Triad's Outputs button pointed at /explore, which was
               NEVER a route — one of three above-the-fold buttons landed on NotFound.

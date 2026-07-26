@@ -84,7 +84,30 @@ export interface Unit {
   appearT: number;
   missing: number;
   goneT?: number;
+  /**
+   * Wall-clock (performance.now) of the last ingest that actually CONTAINED this unit.
+   * Distinct from `missing`, which counts ingests that omitted it: a viewport-clipped
+   * payload omits a unit without being evidence that the unit is gone, so the sweep may
+   * only age it on `missing` when the payload could have contained it. `lastSeenT` is the
+   * backstop that keeps "we simply stopped hearing about this bus" bounded either way.
+   */
+  lastSeenT: number;
   data: Vehicle | SubwayTrain;
+}
+
+/**
+ * How much of the world an ingest could have described.
+ *
+ * The rt vehicle poll is viewport-clipped (`?bbox=`) while the SSE stream is deliberately
+ * citywide, and BOTH call the same ingest. Handing the engine an unlabelled partial
+ * payload makes absence indistinguishable from absence-of-service, which is exactly the
+ * bug that made buses vanish and reappear while panning.
+ */
+export interface IngestScope {
+  /** True when the payload was clipped to a viewport (the server's own `bbox_filtered`). */
+  partial: boolean;
+  /** The clip window, [minLon, minLat, maxLon, maxLat], when `partial`. */
+  bbox?: [number, number, number, number];
 }
 
 // ------------------------------------------------------------------ host seam

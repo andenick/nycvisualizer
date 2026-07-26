@@ -1,0 +1,200 @@
+/* Page-local styles for /observatory/subway (the subway derived-statistics surface).
+ *
+ * Deliberately scoped with a `sws-` prefix and imported ONLY by SubwayStatsPage, so
+ * nothing here can reach another surface. Structural classes that already exist in
+ * index.css are REUSED, never re-declared here:
+ *   .nyc-table-wrap / .nyc-table  in-flow page tables (the .ws-* family is for
+ *                                 panels floating over a map — not this page)
+ *   .nyc-dl-btn                   download buttons
+ *   .nyc-note / .nyc-section      in-flow prose + section rhythm
+ *
+ * Mobile: the site's chrome already occupies ~87% of a phone viewport, so this page
+ * adds NO fixed/sticky element of its own. Everything is in normal document flow, and
+ * every grid collapses to one column under 768px. Tables scroll inside their own
+ * .nyc-table-wrap so the page body never scrolls horizontally.
+ */
+
+/* ---------- header stamps ---------- */
+.sws-stamps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  font-size: 0.78rem;
+  margin: 0.3rem 0 0.6rem;
+}
+/* Mirrors the ops-wall Stamp: the label is REPLACED by "STALE — N old", never
+   decorated, so a fresh-sounding word can never sit on top of an old number. */
+.sws-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.sws-stamp .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+.sws-stamp.stale .dot { background: #f59e0b; }
+.sws-stamp.stale { color: #b45309; font-weight: 600; opacity: 1; }
+@media (prefers-color-scheme: dark) { .sws-stamp.stale { color: #fbbf24; } }
+:root[data-theme="dark"] .sws-stamp.stale { color: #fbbf24; }
+:root[data-theme="light"] .sws-stamp.stale { color: #b45309; }
+
+.sws-prelim {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: #fef3c7;
+  color: #92400e;
+}
+@media (prefers-color-scheme: dark) { .sws-prelim { background: #3a2e0c; color: #fcd34d; } }
+:root[data-theme="dark"] .sws-prelim { background: #3a2e0c; color: #fcd34d; }
+:root[data-theme="light"] .sws-prelim { background: #fef3c7; color: #92400e; }
+
+/* ---------- the withheld callout (the page's governing statement) ---------- */
+.sws-callout {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-left-width: 4px;
+  border-left-color: var(--ark-accent, #2563eb);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 1.2rem 0;
+  background: var(--ark-surface, transparent);
+}
+.sws-callout h2, .sws-callout h3 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+.sws-callout p { margin: 0.35rem 0; font-size: 0.9rem; }
+.sws-callout.alarm { border-left-color: #dc2626; }
+.sws-callout.alarm h2, .sws-callout.alarm h3 { color: #b91c1c; }
+@media (prefers-color-scheme: dark) { .sws-callout.alarm h2, .sws-callout.alarm h3 { color: #fca5a5; } }
+:root[data-theme="dark"] .sws-callout.alarm h2,
+:root[data-theme="dark"] .sws-callout.alarm h3 { color: #fca5a5; }
+
+/* ---------- line bullets (official MTA colours, line identity ONLY) ---------- */
+.sws-bullet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  line-height: 1;
+  font-variant-numeric: normal;
+}
+
+/* ---------- controls (route / direction / station pickers) ---------- */
+.sws-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.7rem 1rem;
+  margin: 0.6rem 0 0.2rem;
+}
+.sws-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.sws-field > span { font-size: 0.74rem; opacity: 0.72; }
+.sws-field select,
+.sws-field input {
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 6px;
+  background: var(--ark-surface, #fff);
+  color: inherit;
+  max-width: 100%;
+}
+
+/* ---------- download row ---------- */
+.sws-dl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+}
+.sws-dl > span { opacity: 0.7; }
+
+/* ---------- tables: cells that carry a server-stated reason ---------- */
+.sws-sup {
+  font-size: 0.8rem;
+  font-style: italic;
+  opacity: 0.78;
+}
+/* "not captured" — same vocabulary the stop tray uses, so an absent value never
+   reads as a zero anywhere on the site. */
+.sws-nc { font-size: 0.72rem; font-style: italic; opacity: 0.6; }
+.sws-cens { font-size: 0.72rem; opacity: 0.68; white-space: nowrap; }
+/* index.css sets `.nyc-table th, .nyc-table td { text-align: left }`, which is a more
+   specific selector than a bare `.sws-num` — a plain class here loses and every figure
+   sits left of its right-aligned header. Match the element in the selector so the
+   numbers line up under their headings. */
+.nyc-table td.sws-num,
+.nyc-table th.sws-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.nyc-table th.sws-rowhead { white-space: nowrap; }
+
+/* ---------- honesty grids ---------- */
+.sws-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.8rem;
+  margin: 0.8rem 0;
+}
+.sws-card {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  background: var(--ark-surface, transparent);
+}
+.sws-card h4 { margin: 0 0 0.3rem; font-size: 0.92rem; }
+.sws-card p { margin: 0.3rem 0; font-size: 0.83rem; opacity: 0.88; }
+.sws-status {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.08rem 0.4rem;
+  border-radius: 4px;
+  background: var(--ark-accent-soft, #dbeafe);
+  color: var(--ark-accent, #2563eb);
+  margin-bottom: 0.25rem;
+}
+.sws-cols {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+  opacity: 0.8;
+  word-break: break-word;
+}
+
+/* key/value honesty facts */
+.sws-kv {
+  display: grid;
+  grid-template-columns: minmax(11rem, auto) 1fr;
+  gap: 0.25rem 0.9rem;
+  font-size: 0.84rem;
+  margin: 0.5rem 0;
+}
+.sws-kv dt { opacity: 0.7; }
+.sws-kv dd { margin: 0; }
+
+/* ---------- one column on a phone ---------- */
+@media (max-width: 768px) {
+  .sws-grid { grid-template-columns: 1fr; }
+  .sws-kv { grid-template-columns: 1fr; gap: 0 0; }
+  .sws-kv dt { margin-top: 0.45rem; font-size: 0.76rem; }
+  .sws-controls { flex-direction: column; align-items: stretch; }
+  .sws-field select, .sws-field input { width: 100%; }
+  .sws-callout { padding: 0.7rem 0.8rem; }
+}

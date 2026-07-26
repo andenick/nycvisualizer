@@ -52,6 +52,8 @@ import {
   getStopsWalk,
   stopsExportUrl,
   streamVehicles,
+  ingestScope,
+  occupancyLineHtml,
   type AlongResponse,
   type StopCardResponse,
   streamSubway,
@@ -366,6 +368,11 @@ export default function WorkstationPage() {
   // live snapshots
   const latestVehicles = useRef<Vehicle[]>([]);
   const latestTrains = useRef<SubwayResponse["trains"]>([]);
+  // The WHOLE last payload, so a re-render on selection change keeps that payload's own
+  // clip metadata. Replaying a viewport-clipped payload as if it were citywide is exactly
+  // how off-screen buses used to get retired.
+  const latestVehiclesResp = useRef<VehiclesResponse | null>(null);
+  const latestTrainsResp = useRef<SubwayResponse | null>(null);
   const [liveBus, setLiveBus] = useState<Map<string, number>>(new Map());
   const [liveTrain, setLiveTrain] = useState<Map<string, number>>(new Map());
 
@@ -629,14 +636,17 @@ export default function WorkstationPage() {
     setStale(data.stale);
     setErr(null);
     latestVehicles.current = data.vehicles;
+    latestVehiclesResp.current = data;
     const fl = flow.current;
     if (!fl) return;
     const sel = new Set(selRoutesRef.current);
     const filtered = sel.size ? data.vehicles.filter((v) => v.route_id && sel.has(v.route_id)) : [];
-    fl.setBuses(filtered, "", colorForBusRef.current);
-    const counts = new Map<string, number>();
-    for (const v of filtered) if (v.route_id) counts.set(v.route_id, (counts.get(v.route_id) ?? 0) + 1);
-    setLiveBus(counts);
+    fl.setBuses(filtered, "", colorForBusRef.current, ingestScope(data));
+    // Counts come from the MAP, not from this payload. The poll is clipped to the
+    // viewport and the SSE frame is citywide, so counting the payload made the rail and
+    // the header swing between the two — and read 0 the moment you panned off the routes
+    // you had selected.
+    setLiveBus(fl.busCountsByRoute());
   };
 
   // ---- SUBWAY render ----
@@ -645,17 +655,13 @@ export default function WorkstationPage() {
     refreshAsOf();
     setErr(null);
     latestTrains.current = data.trains;
+    latestTrainsResp.current = data;
     const fl = flow.current;
     if (!fl) return;
     const sel = new Set(selLinesRef.current);
     const filtered = sel.size ? data.trains.filter((t) => sel.has(lineKey(t.route_id))) : [];
-    fl.setTrains(filtered);
-    const counts = new Map<string, number>();
-    for (const t of filtered) {
-      const k = lineKey(t.route_id);
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-    setLiveTrain(counts);
+    fl.setTrains(filtered, ingestScope(data));
+    setLiveTrain(fl.trainCountsByLine(lineKey));
   };
 
   // ---- BUS live feed ----
@@ -720,28 +726,30 @@ export default function WorkstationPage() {
   }, []);
 
   // ---- re-filter the live layers immediately when either selection changes ----
+  //
+  // Deselecting is a FILTER, not staleness: those vehicles must leave at once, and must
+  // not wait on the off-screen grace period that protects units during a pan. `retain()`
+  // does that directly. The re-render then replays the LAST PAYLOAD AS IT ARRIVED, clip
+  // metadata included — synthesising a payload without it would tell the engine a
+  // viewport-clipped snapshot described the whole city.
   useEffect(() => {
-    renderBuses({
-      as_of: busAsOf.current,
-      source: source as VehiclesResponse["source"],
-      count: 0,
-      stale,
-      vehicles: latestVehicles.current,
-    });
+    const fl = flow.current;
+    if (!fl) return;
+    const sel = new Set(selRoutes);
+    fl.retain("bus", (rid) => sel.has(rid));
+    const d = latestVehiclesResp.current;
+    if (d) renderBuses(d);
+    else setLiveBus(fl.busCountsByRoute());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selRoutes]);
   useEffect(() => {
     const fl = flow.current;
     if (!fl) return;
     const sel = new Set(selLines);
-    const filtered = sel.size ? latestTrains.current.filter((t) => sel.has(lineKey(t.route_id))) : [];
-    fl.setTrains(filtered);
-    const counts = new Map<string, number>();
-    for (const t of filtered) {
-      const k = lineKey(t.route_id);
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-    setLiveTrain(counts);
+    fl.retain("train", (rid) => sel.has(lineKey(rid)));
+    const d = latestTrainsResp.current;
+    if (d) renderTrains(d);
+    else setLiveTrain(fl.trainCountsByLine(lineKey));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selLines]);
 
@@ -1786,8 +1794,14 @@ export default function WorkstationPage() {
               100&nbsp;ft of the route shape. That is a <em>position-quality</em> signal (how
               trustworthy the tracking is, terminals excluded), <em>not</em> a measure of
               running on time. <strong>prelim</strong> — fewer than 14 observed days behind the
-              figure. Subway lines have no observed gap (trains are only located between the
-              stations they report), so their reliability signal is active alerts.
+              figure. <strong>Subway lines</strong> — this rail shows their active alerts and
+              live train count only. Observed station-to-station gaps for the subway now
+              exist and are published on their own page (Observatory → Subway); they are not
+              shown in this rail because the columns beside them — scheduled gap, bunching,
+              schedule deviation — cannot be computed for the subway at all. Realtime subway
+              trips do not join the published timetable, so there is no denominator to
+              measure a subway gap against, and a blank here is that fact rather than a
+              missing number.
             </div>
           </div>
         )}
@@ -2123,6 +2137,7 @@ function popupHtml(v: Vehicle): string {
     `<strong>Route ${v.route_id ?? "?"}</strong><br/>` +
     `Vehicle <code>${v.vehicle_id}</code><br/>` +
     `Next stop: ${v.stop_id ?? "—"}<br/>` +
+        occupancyLineHtml(v) +
     `Reported: ${t}` +
     `</div>`
   );

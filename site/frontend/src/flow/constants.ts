@@ -18,6 +18,13 @@ export const LABEL_ZOOM = 13; // subway line-bullet drawn at/above this zoom
 export const APPEAR_MS = 480;
 export const FADE_MS = 800;
 export const STALE_TICKS = 3; // keep a missing unit up to N ticks, then fade + remove
+// Wall-clock backstop for a unit nobody has mentioned in a while. `missing` counts ingests
+// that OMITTED a unit, and an ingest clipped to the viewport omits units without that being
+// evidence of anything — so a unit outside a partial payload's bbox is not aged on ticks.
+// This is what keeps it bounded regardless: after this long with no sighting from ANY
+// source (poll or the citywide SSE), the unit is retired. Deliberately longer than the 30 s
+// SSE cadence by a wide margin, so a couple of dropped frames never blink the map.
+export const UNSEEN_MAX_MS = 150000; // 2.5 min ≈ 5 missed citywide frames
 export const FRAME_BUDGET_MS = 12;
 export const DEG = Math.PI / 180;
 // Nominal report cadence (~30 s ticks). Each new report starts a dead-reckoning glide

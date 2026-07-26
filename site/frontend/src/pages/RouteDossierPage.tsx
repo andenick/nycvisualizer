@@ -196,6 +196,13 @@ export default function RouteDossierPage() {
         <Link className="obs-xchip" to={`/observatory/changes?route=${encodeURIComponent(display)}`}>
           Service changes for {display}
         </Link>
+        {/* 2026-07-25 — the entry point to this route's corridor view: the LADDER (its
+            ordered stops with the live buses interleaved, where bunching is visible with
+            no statistic to defend), its stop SPACING gap by gap, and its slow spots.
+            Those surfaces exist and are useless if nothing links to them. */}
+        <Link className="obs-xchip" to={`/observatory/${encodeURIComponent(routeId)}/corridor`}>
+          Corridor view: ladder, stop spacing, slow spots
+        </Link>
         <Link className="obs-xchip" to="/observatory">← All routes</Link>
       </div>
       <div className="obs-dossier-head">

@@ -14,7 +14,7 @@ import type { Vehicle, SubwayTrain } from "../lib/api";
 import type { RouteShapeCache } from "../lib/shapeCache";
 import { FlowEngine } from "../flow/core";
 import { LeafletFlowHost } from "../flow/hosts/leaflet";
-import type { ColorFor, FlowPopupHooks, FocusPred } from "../flow/types";
+import type { ColorFor, FlowPopupHooks, FocusPred, IngestScope } from "../flow/types";
 
 // Public types preserved at the original import path (consumers import { FlowSelection }).
 export type { FlowSelection, FocusPred, FlowPopupHooks } from "../flow/types";
@@ -83,11 +83,28 @@ export class VehicleFlowLayer extends L.Layer {
   getDisplayLatLng(id: string): [number, number] | null {
     return this._engine.getDisplayLatLng(id);
   }
-  setBuses(vehicles: Vehicle[], selected: string, colorFor: ColorFor): void {
-    this._engine.setBuses(vehicles, selected, colorFor);
+  /** `scope` marks a viewport-clipped payload so the engine does not read "off-screen"
+   *  as "no longer running". Build it with `ingestScope(payload)` from lib/api. */
+  setBuses(vehicles: Vehicle[], selected: string, colorFor: ColorFor,
+           scope?: IngestScope): void {
+    this._engine.setBuses(vehicles, selected, colorFor, scope);
   }
-  setTrains(trains: SubwayTrain[]): void {
-    this._engine.setTrains(trains);
+  setTrains(trains: SubwayTrain[], scope?: IngestScope): void {
+    this._engine.setTrains(trains, scope);
+  }
+  /** Immediately drop units the user deselected (a filter, not a staleness path). */
+  retain(kind: "bus" | "train", keep: (routeId: string) => boolean): void {
+    this._engine.retain(kind, keep);
+  }
+  /** Vehicles actually on the map right now — the honest counter source. */
+  liveCounts(): { buses: number; trains: number } {
+    return this._engine.liveCounts();
+  }
+  busCountsByRoute(): Map<string, number> {
+    return this._engine.busCountsByRoute();
+  }
+  trainCountsByLine(lineKeyOf: (routeId: string) => string): Map<string, number> {
+    return this._engine.trainCountsByLine(lineKeyOf);
   }
   getStats() {
     return this._engine.getStats();

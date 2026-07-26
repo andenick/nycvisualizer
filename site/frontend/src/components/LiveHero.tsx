@@ -29,7 +29,14 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { addBasemap, bboxParam, NYC_CENTER, NYC_BOUNDS, MAP_MAX_ZOOM } from "../lib/basemap";
 import { trackMapError } from "../lib/beacon";
-import { getVehicles, streamVehicles, type Vehicle, type VehiclesResponse } from "../lib/api";
+import {
+  getVehicles,
+  ingestScope,
+  occupancyLineHtml,
+  streamVehicles,
+  type Vehicle,
+  type VehiclesResponse,
+} from "../lib/api";
 import { VehicleFlowLayer } from "./VehicleFlowLayer";
 import {
   BOROUGH_LEGEND,
@@ -67,6 +74,7 @@ function popupHtml(v: Vehicle): string {
     `<div style="min-width:150px">` +
     `<strong>Route ${v.route_id ?? "?"}</strong><br/>` +
     `Vehicle <code>${v.vehicle_id}</code><br/>` +
+        occupancyLineHtml(v) +
     `Reported: ${t}` +
     `</div>`
   );
@@ -179,7 +187,10 @@ export default function LiveHero() {
       setAsOf(d.as_of);
       setStale(d.stale);
       setErr(null);
-      setCount(d.vehicles.length);
+      // The hero polls its own viewport, so this payload is clipped; the citywide SSE
+      // frame is not. Count what is drawn, not what arrived, or the number flickers
+      // between the two on every source switch.
+      setCount(still.current ? d.vehicles.length : (flow.current?.liveCounts().buses ?? d.vehicles.length));
       if (still.current) {
         const g = staticLayer.current;
         if (!g) return;
@@ -197,7 +208,8 @@ export default function LiveHero() {
         }
         return;
       }
-      flow.current?.setBuses(d.vehicles, "", colorForRef.current);
+      flow.current?.setBuses(d.vehicles, "", colorForRef.current, ingestScope(d));
+      setCount(flow.current?.liveCounts().buses ?? d.vehicles.length);
     };
     const pull = () =>
       getVehicles(map.current ? bboxParam(map.current) : undefined)

@@ -39,6 +39,8 @@ import {
   getStationArrivals,
   streamVehicles,
   streamSubway,
+  ingestScope,
+  occupancyLineHtml,
   type Vehicle,
   type RouteInfo,
   type VehiclesResponse,
@@ -436,8 +438,11 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     const fl = flow.current;
     if (!fl) return;
     const sel = selectedRef.current;
-    fl.setBuses(data.vehicles, sel, colorForRef.current);
-    setCount(sel ? data.vehicles.filter((v) => v.route_id === sel).length : data.vehicles.length);
+    fl.setBuses(data.vehicles, sel, colorForRef.current, ingestScope(data));
+    // The count is what is ON THE MAP, not the length of this payload. The poll is
+    // viewport-clipped and the SSE frame is citywide, so a payload-length counter swings
+    // between the two and reads 0 whenever the viewport holds none of the selected routes.
+    setCount(fl.liveCounts().buses);
   };
 
   // ---- SUBWAY render (line-filtered client-side) ----
@@ -449,8 +454,8 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
     if (!fl) return;
     const sel = linesRef.current;
     const trains = sel.size ? data.trains.filter((t) => sel.has(lineKey(t.route_id))) : data.trains;
-    fl.setTrains(trains);
-    setCount(trains.length);
+    fl.setTrains(trains, ingestScope(data));
+    setCount(fl.liveCounts().trains);
   };
 
   // ---- BUS live feed (F5: bbox-slimmed polls + fetch-on-moveend) ----
@@ -1029,6 +1034,7 @@ function popupHtml(v: Vehicle): string {
     `Vehicle <code>${v.vehicle_id}</code><br/>` +
     `Next stop: ${v.stop_id ?? "—"}<br/>` +
     `Bearing: ${v.bearing != null ? Math.round(v.bearing) + "°" : "—"}<br/>` +
+        occupancyLineHtml(v) +
     `Reported: ${t}` +
     `</div>`
   );

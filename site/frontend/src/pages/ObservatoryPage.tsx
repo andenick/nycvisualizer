@@ -12,6 +12,9 @@ import {
   type LeaguesResponse,
 } from "../lib/api";
 import ArchiveBadge from "../components/ArchiveBadge";
+import ArchiveCompletenessBanner from "../components/ArchiveCompletenessBanner";
+import BoroughRollups from "../components/BoroughRollups";
+import TimeOfDayProfile from "../components/TimeOfDayProfile";
 import ArkPlotly from "../components/ArkPlotly";
 import ConfidenceBadge from "../components/ConfidenceBadge";
 import { ContextCallouts } from "../components/ContextCallout";
@@ -212,6 +215,13 @@ export default function ObservatoryPage() {
       {routes && <ArchiveBadge archive={routes.archive} />}
       {err && <div className="nyc-note">Route list temporarily unavailable.</div>}
 
+      {/* The archive-completeness banner frames every figure below it: how many archive
+          day-folders exist, how many EQUIVALENT COMPLETE DAYS of bus data they actually
+          contain, and — named rather than quietly omitted — the day-of-week,
+          week-over-week and seasonal comparisons this platform refuses to compute.
+          Compact by default; the day x hour grid and the full reasons are one click away. */}
+      <ArchiveCompletenessBanner />
+
       {/* KB context: the Hub-Bound cordon series our live counts extend */}
       <ContextCallouts anchor="observatory-landing" />
 
@@ -229,7 +239,13 @@ export default function ObservatoryPage() {
         // Q2.3: the ranked route cards are gated on archive depth. Below 14 days
         // we don't name winners/losers on the landing either — we point to the
         // distribution. The Slowest-corridors card (MTA data) shows in both modes.
-        const unlocked = leagues.rankings_unlocked || leagues.archive.archive_depth_days >= 14;
+        // W13 honesty fix: this used to read
+        //   `leagues.rankings_unlocked || leagues.archive.archive_depth_days >= 14`.
+        // The OR could only ever do one thing — unlock a ranking the SERVER had declined
+        // to unlock — which is the same shape of defect as the route-chip ranking below:
+        // a gate the page can walk around is not a gate. The backend owns the criteria
+        // (obs.py sets rankings_unlocked); the page now simply obeys it.
+        const unlocked = leagues.rankings_unlocked;
         return (
         <section className="nyc-section">
           <h2 style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -290,6 +306,20 @@ export default function ObservatoryPage() {
         </section>
         );
       })()}
+
+      {/* W13: two derived surfaces that existed on the backend since 2026-07-25 with no
+          consumer at all. Borough rollups first (the same seven home-borough colours the
+          maps use, so the table and the map are one encoding), then the time-of-day
+          profile — the strongest evidence base here, and deliberately WITHOUT any
+          day-of-week or week-over-week view: one observation per weekday means a weekday
+          effect is confounded 1:1 with the date. */}
+      <section className="nyc-section">
+        <BoroughRollups />
+      </section>
+
+      <section className="nyc-section">
+        <TimeOfDayProfile />
+      </section>
 
       <section className="nyc-section">
         <div className="obs-picker-head">

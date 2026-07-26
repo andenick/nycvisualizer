@@ -23,6 +23,8 @@ import {
   getStationArrivals,
   streamVehicles,
   streamSubway,
+  ingestScope,
+  occupancyLineHtml,
   type Vehicle,
   type RouteInfo,
   type VehiclesResponse,
@@ -277,13 +279,11 @@ export default function BusMap() {
     const fl = flow.current;
     if (!fl) return;
     const sel = selectedRef.current;
-    fl.setBuses(data.vehicles, sel, colorFor);
-    const shown = showBusesRef.current
-      ? sel
-        ? data.vehicles.filter((v) => v.route_id === sel).length
-        : data.vehicles.length
-      : 0;
-    setCount(shown);
+    fl.setBuses(data.vehicles, sel, colorFor, ingestScope(data));
+    // What is on the map, not what was in this payload: the poll is clipped to the
+    // viewport and the SSE frame is citywide, so a payload-length counter alternates
+    // between them and reads 0 whenever the viewport holds none of the selection.
+    setCount(showBusesRef.current ? fl.liveCounts().buses : 0);
   };
 
   // ---- render one SUBWAY snapshot -> feed the animated flow layer ----
@@ -293,8 +293,8 @@ export default function BusMap() {
     setSubSource(data.source);
     const fl = flow.current;
     if (!fl) return;
-    fl.setTrains(data.trains);
-    setSubCount(showSubwayRef.current ? data.trains.length : 0);
+    fl.setTrains(data.trains, ingestScope(data));
+    setSubCount(showSubwayRef.current ? fl.liveCounts().trains : 0);
   };
 
   // ---- live BUS feed: SSE + poll safety net (F5: bbox-slimmed polls) ----
@@ -861,6 +861,7 @@ function popupHtml(v: Vehicle): string {
     `Vehicle <code>${v.vehicle_id}</code><br/>` +
     `Next stop: ${v.stop_id ?? "—"}<br/>` +
     `Bearing: ${v.bearing != null ? Math.round(v.bearing) + "°" : "—"}<br/>` +
+        occupancyLineHtml(v) +
     `Reported: ${t}` +
     `</div>`
   );

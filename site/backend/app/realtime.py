@@ -29,6 +29,10 @@ except Exception:  # pragma: no cover - extensions simply stay None
         def mercury_alert(_a):
             return {"alert_type": None, "created_at": None, "updated_at": None,
                     "display_before_active": None, "human_readable_active_period": None}
+
+        @staticmethod
+        def oba_vehicle(_v):
+            return {"passenger_count": None, "passenger_capacity": None}
     gtfs_ext = _NoExt()  # type: ignore
 
 
@@ -182,27 +186,59 @@ def _vehicles_from_live() -> dict[str, Any] | None:
         feed = gtfs_realtime_pb2.FeedMessage()
         feed.ParseFromString(r.content)
         as_of = int(feed.header.timestamp) if feed.header.timestamp else int(now)
+        header_ts = int(feed.header.timestamp) if feed.header.timestamp else None
         vehicles = []
+        n_apc = 0
+        n_occ = 0
         for ent in feed.entity:
             if not ent.HasField("vehicle"):
                 continue
             v = ent.vehicle
             if not v.position.latitude:
                 continue
-            vehicles.append(
-                {
-                    "vehicle_id": v.vehicle.id or ent.id,
-                    "route_id": v.trip.route_id or None,
-                    "trip_id": v.trip.trip_id or None,
-                    "lat": v.position.latitude,
-                    "lon": v.position.longitude,
-                    "bearing": v.position.bearing if v.position.HasField("bearing") else None,
-                    "timestamp": int(v.timestamp) if v.timestamp else as_of,
-                    "stop_id": v.stop_id or None,
-                    "direction_id": v.trip.direction_id if v.trip.HasField("direction_id") else None,
-                }
-            )
-        data = {"as_of": as_of, "source": "live", "count": len(vehicles), "stale": False, "vehicles": vehicles}
+            rec = {
+                "vehicle_id": v.vehicle.id or ent.id,
+                "route_id": v.trip.route_id or None,
+                "trip_id": v.trip.trip_id or None,
+                "lat": v.position.latitude,
+                "lon": v.position.longitude,
+                "bearing": v.position.bearing if v.position.HasField("bearing") else None,
+                "timestamp": int(v.timestamp) if v.timestamp else as_of,
+                "stop_id": v.stop_id or None,
+                "direction_id": v.trip.direction_id if v.trip.HasField("direction_id") else None,
+            }
+            # A1/B6 — crowding on the LIVE path too. This branch previously dropped both
+            # fields, so on any deployment served from the live fallback (the public box
+            # has no raw archive) occupancy was captured upstream and then discarded here.
+            # NULL means "this bus has no automatic passenger counter", NEVER "empty bus":
+            # the value 0 does not occur.
+            if v.HasField("occupancy_status"):
+                rec["occupancy_status"] = int(v.occupancy_status)
+                n_occ += 1
+            try:
+                oba = gtfs_ext.oba_vehicle(v)
+            except Exception:
+                oba = {}
+            if oba.get("passenger_count") is not None:
+                rec["passenger_count"] = int(oba["passenger_count"])
+                n_apc += 1
+            if oba.get("passenger_capacity") is not None:
+                rec["passenger_capacity"] = int(oba["passenger_capacity"])
+            vehicles.append(rec)
+        n = len(vehicles) or 1
+        data = {"as_of": as_of, "source": "live", "count": len(vehicles), "stale": False,
+                "vehicles": vehicles,
+                # A6 — MTA's own publication clock, so feed staleness can be told apart
+                # from our lag. On the live path there is no poll step, so they coincide.
+                "freshness": {"as_of_poll_ts": as_of, "mta_header_ts": header_ts,
+                              "poller_lag_s": 0 if header_ts else None,
+                              "feed_age_s": (int(time.time() - header_ts) if header_ts else None),
+                              "basis": "header_ts" if header_ts else "poll_ts_only"},
+                "crowding": {"apc_vehicles": n_apc,
+                             "apc_pct": round(100.0 * n_apc / n, 1),
+                             "occupancy_vehicles": n_occ,
+                             "note": "NULL = no automatic passenger counter on that bus, "
+                                     "not an empty bus. Value 0 never occurs."}}
         _live_cache["ts"] = now
         _live_cache["data"] = data
         return data

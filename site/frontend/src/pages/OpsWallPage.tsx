@@ -332,6 +332,22 @@ export default function OpsWallPage() {
                   <span className="ops-sev high">{alerts.high} high</span> ·{" "}
                   <span className="ops-sev medium">{alerts.medium} med</span> ·{" "}
                   <span className="ops-sev low">{alerts.low} low</span>
+                  {/* The three tiers come from MTA's Mercury `alert_type`, which the BUS
+                      alert feed does not carry — so they do not sum to the headline.
+                      Naming the remainder is the difference between a partial split and
+                      a wrong one. */}
+                  {alerts.unclassified ? (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span
+                        className="ops-sev unclassified"
+                        title="These alerts carry no MTA alert_type, so they are counted but not tiered — not 'low'."
+                      >
+                        {alerts.unclassified} untyped
+                      </span>
+                    </>
+                  ) : null}
                 </>
               ) : (
                 <>severity not published by the feed</>

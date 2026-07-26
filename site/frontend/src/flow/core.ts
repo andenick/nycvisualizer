@@ -27,6 +27,7 @@ import {
   SNAP_TAU_MS,
   STALE_S,
   STALE_TICKS,
+  UNSEEN_MAX_MS,
   TRAIL_CAP,
   TRAIL_SAMPLE_MS,
   TRAIN_LEN_M,
@@ -40,7 +41,7 @@ import { buildSegCum, pointAtDist } from "./shapes";
 import { DegradeLadder } from "./ladder";
 import { HitStore, selOf } from "./hittest";
 import { drawBus, drawSpeck, drawStationTrain, drawTrail, drawTrainWorm } from "./draw";
-import type { ColorFor, DrawFrame, FlowHost, FlowPopupHooks, FlowSelection, FocusPred, LatLng, Unit } from "./types";
+import type { ColorFor, DrawFrame, FlowHost, FlowPopupHooks, FlowSelection, FocusPred, IngestScope, LatLng, Unit } from "./types";
 
 // ---- motion-model helpers (tween/decay-to-stop) — exported for tests ------------------
 
@@ -285,8 +286,16 @@ export class FlowEngine {
     return this._anchorReport(tsSec, now, offset).t;
   }
 
-  /** Ingest a bus snapshot. [VehicleFlowLayer.ts L347-450] */
-  setBuses(vehicles: Vehicle[], selected: string, colorFor: ColorFor): void {
+  /**
+   * Ingest a bus snapshot. [VehicleFlowLayer.ts L347-450]
+   *
+   * `scope` describes how much of the world this payload could have covered. Pass it for
+   * the viewport-clipped poll (`?bbox=`); omit it (or pass `{partial:false}`) for the
+   * citywide SSE frame. Without it the engine cannot tell "this bus stopped reporting"
+   * from "this bus is off-screen", and off-screen buses get retired mid-pan.
+   */
+  setBuses(vehicles: Vehicle[], selected: string, colorFor: ColorFor,
+           scope?: IngestScope): void {
     const now = performance.now();
     // Per-vehicle anchoring: align this batch's clock off the newest report, then anchor each
     // unit to ITS OWN timestamp (staggered) — not the shared poll instant.
@@ -328,6 +337,7 @@ export class FlowEngine {
           label: v.route_id ?? "",
           appearT: now,
           missing: 0,
+          lastSeenT: now,
           data: v,
         };
         this._units.set(id, u);
@@ -337,6 +347,7 @@ export class FlowEngine {
         u.lenM = sbs ? BUS_LEN_SBS_M : BUS_LEN_M;
         u.missing = 0;
         u.goneT = undefined;
+        u.lastSeenT = now;
         u.data = v;
       }
 
@@ -417,12 +428,34 @@ export class FlowEngine {
         u.docked = false;
       }
     }
-    this._sweep(seen, "bus", now);
+    this._sweep(seen, "bus", now, scope);
     this._dirty = true;
   }
 
-  /** Ingest a subway snapshot. [VehicleFlowLayer.ts L452-543] */
-  setTrains(trains: SubwayTrain[]): void {
+  /**
+   * Immediately retire units the USER deselected.
+   *
+   * This is a FILTER, not a staleness path: a deselected route should leave at once, and
+   * must never wait on the `lastSeenT` backstop that protects off-screen units during a
+   * pan. Pages call this when the selection changes; it is the counterpart that keeps the
+   * partial-payload sweep from holding on to things nobody asked for.
+   */
+  retain(kind: "bus" | "train", keep: (routeId: string) => boolean): void {
+    for (const [id, u] of this._units) {
+      if (u.kind !== kind) continue;
+      const rid = (u.data as { route_id?: string | null } | undefined)?.route_id ?? "";
+      if (!keep(rid)) this._units.delete(id);
+    }
+    this._dirty = true;
+  }
+
+  /**
+   * Ingest a subway snapshot. [VehicleFlowLayer.ts L452-543]
+   *
+   * `scope` carries the same meaning as on `setBuses` — the subway poll is bbox-clipped
+   * and its SSE stream is not.
+   */
+  setTrains(trains: SubwayTrain[], scope?: IngestScope): void {
     const now = performance.now();
     // Per-train report-time anchoring (same principle as buses): align this batch's clock off
     // the newest train report, then anchor each worm/glide to its own timestamp — staggered,
@@ -461,6 +494,7 @@ export class FlowEngine {
           label: subwayLabel(t.route_id),
           appearT: now,
           missing: 0,
+          lastSeenT: now,
           data: t,
         };
         this._units.set(id, u);
@@ -471,6 +505,7 @@ export class FlowEngine {
         u.segBasis = segBasis;
         u.missing = 0;
         u.goneT = undefined;
+        u.lastSeenT = now;
         u.data = t;
         // seg trains own prevT/curT via the fraction glide (below); only non-seg
         // (station / point-estimate) trains retarget by lat/lon here.
@@ -510,8 +545,52 @@ export class FlowEngine {
         u.segKey = "";
       }
     }
-    this._sweep(seen, "train", now);
+    this._sweep(seen, "train", now, scope);
     this._dirty = true;
+  }
+
+  /**
+   * How many vehicles of each kind are actually ON THE MAP right now.
+   *
+   * This — not the length of the last payload — is the honest answer to "how many buses
+   * am I looking at". The last payload alternates between the citywide SSE frame and the
+   * viewport-clipped poll, so a counter driven by it swings between the two and reads 0
+   * whenever the viewport happens to hold none of the selected routes. Units already
+   * fading out (`goneT`) are excluded: they are leaving, not running.
+   */
+  liveCounts(): { buses: number; trains: number } {
+    let buses = 0;
+    let trains = 0;
+    for (const u of this._units.values()) {
+      if (u.goneT !== undefined) continue;
+      if (u.kind === "bus") buses++;
+      else trains++;
+    }
+    return { buses, trains };
+  }
+
+  /** Live bus units per route_id — the per-route "live" column, from the map itself. */
+  busCountsByRoute(): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const u of this._units.values()) {
+      if (u.kind !== "bus" || u.goneT !== undefined) continue;
+      const rid = (u.data as Vehicle | undefined)?.route_id;
+      if (rid) out.set(rid, (out.get(rid) ?? 0) + 1);
+    }
+    return out;
+  }
+
+  /** Live train units per line key, using the caller's own line-key function. */
+  trainCountsByLine(lineKeyOf: (routeId: string) => string): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const u of this._units.values()) {
+      if (u.kind !== "train" || u.goneT !== undefined) continue;
+      const rid = (u.data as SubwayTrain | undefined)?.route_id;
+      if (!rid) continue;
+      const k = lineKeyOf(rid);
+      out.set(k, (out.get(k) ?? 0) + 1);
+    }
+    return out;
   }
 
   getStats() {
@@ -539,10 +618,49 @@ export class FlowEngine {
   }
 
   // ---- internals ----  [VehicleFlowLayer.ts L566-578]
-  private _sweep(seen: Set<string>, kind: "bus" | "train", now: number): void {
+  /**
+   * Retire units the latest ingest did not mention.
+   *
+   * ⚠️ The rule that matters: **absence from a payload is only evidence of absence from
+   * service when the payload could have contained the unit.** The rt vehicle poll is
+   * clipped to the viewport (`?bbox=`) while the SSE stream is citywide, and both call
+   * the same ingest. Before `scope` existed, panning fed the engine three clipped
+   * payloads in a row, `missing` reached STALE_TICKS, and every bus outside the new
+   * viewport was faded and deleted — then re-created from nothing by the next citywide
+   * frame 30 s later. That is the vanish-and-reappear the user reported. Lengthening
+   * STALE_TICKS would only have delayed it.
+   *
+   * So: a unit outside a partial payload's bbox is skipped — neither aged nor refreshed —
+   * and the wall-clock `lastSeenT` backstop bounds it instead.
+   */
+  private _sweep(seen: Set<string>, kind: "bus" | "train", now: number,
+                 scope?: IngestScope): void {
+    const bb = scope?.partial ? scope.bbox : undefined;
     for (const [id, u] of this._units) {
       if (u.kind !== kind) continue;
       if (seen.has(id)) continue;
+      if (bb) {
+        // ⚠️ MUST be the DISPLAYED anchor, not `u.curLat/curLon`. A shape-following bus
+        // never writes back to curLat/curLon — it rides `offPoly` + `soDisp` — so those
+        // fields still hold the position where the unit was FIRST SEEN, sometimes a whole
+        // route away. Testing the wrong point put roughly half the fleet on the wrong side
+        // of the window and swept it anyway: measured live, the first cut of this fix took
+        // 261 -> 138 -> 23 down to 223 -> 118 -> 26 instead of holding flat.
+        const [dLat, dLon] = this._dispAnchor(u, now);
+        const inside = dLon >= bb[0] && dLon <= bb[2] && dLat >= bb[1] && dLat <= bb[3];
+        if (!inside) {
+          // Out of the clip window: this payload says nothing about it. Bounded by the
+          // backstop only.
+          if (now - u.lastSeenT > UNSEEN_MAX_MS) {
+            if (u.goneT === undefined) {
+              u.goneT = now;
+              if (kind === "bus") trackBusOffline(1);
+            }
+            if (now - u.goneT > FADE_MS) this._units.delete(id);
+          }
+          continue;
+        }
+      }
       u.missing++;
       if (u.missing >= STALE_TICKS && u.goneT === undefined) {
         u.goneT = now; // start the fade-out

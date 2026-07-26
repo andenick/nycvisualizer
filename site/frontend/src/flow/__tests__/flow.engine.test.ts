@@ -413,3 +413,144 @@ describe("per-vehicle report-time anchoring (kills the synchronized poll pulse)"
     expect(off).toBeLessThan(1010);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PARTIAL-PAYLOAD INGEST — the pan glitch.
+//
+// The rt vehicle poll is clipped to the viewport (`?bbox=`); the SSE stream is
+// deliberately citywide. Both call the SAME ingest. Before `scope` existed, three
+// clipped payloads in a row drove `missing` past STALE_TICKS and every bus outside the
+// new viewport was faded and DELETED — then re-created from nothing by the next citywide
+// frame 30 s later. Measured on the live site 2026-07-25 at 57 Bronx routes: the engine
+// went 261 → 261 → 261 → 138 → 23 units over four clipped ingests, then back to 261 in
+// one step when the SSE frame landed.
+//
+// The rule these tests lock: ABSENCE FROM A PAYLOAD IS ONLY EVIDENCE OF ABSENCE FROM
+// SERVICE WHEN THE PAYLOAD COULD HAVE CONTAINED THE UNIT.
+// ---------------------------------------------------------------------------
+describe("partial (bbox-clipped) ingest must not retire off-screen units", () => {
+  // Everything sits near lon −73.98; this window deliberately excludes it.
+  const AWAY: [number, number, number, number] = [-74.2, 40.5, -74.1, 40.6];
+
+  it("keeps units alive across MANY clipped payloads that could not have contained them", () => {
+    engine.setBuses([mkBus("a", 40.75, -73.98), mkBus("b", 40.751, -73.981)], "", color);
+    expect(engine.liveCounts().buses).toBe(2);
+
+    // Ten clipped ingests — more than three times STALE_TICKS.
+    for (let i = 0; i < 10; i++) {
+      clock += 1000;
+      engine.setBuses([], "", color, { partial: true, bbox: AWAY });
+    }
+    expect(engine.liveCounts().buses).toBe(2);
+  });
+
+  it("still retires a unit the clip window DID cover — absence there is real evidence", () => {
+    engine.setBuses([mkBus("a", 40.75, -73.98)], "", color);
+    // A window that contains the bus, arriving without it: that is a genuine disappearance.
+    const OVER: [number, number, number, number] = [-74.0, 40.7, -73.9, 40.8];
+    for (let i = 0; i < 4; i++) {
+      clock += 1000;
+      engine.setBuses([], "", color, { partial: true, bbox: OVER });
+    }
+    clock += 2000;
+    engine.setBuses([], "", color, { partial: true, bbox: OVER });
+    expect(engine.liveCounts().buses).toBe(0);
+  });
+
+  it("an UNSCOPED (citywide) payload still sweeps normally after STALE_TICKS", () => {
+    engine.setBuses([mkBus("a", 40.75, -73.98)], "", color);
+    for (let i = 0; i < 3; i++) {
+      clock += 1000;
+      engine.setBuses([], "", color);
+    }
+    clock += 2000;
+    engine.setBuses([], "", color);
+    expect(engine.liveCounts().buses).toBe(0);
+  });
+
+  it("the wall-clock backstop bounds an off-screen unit nobody ever mentions again", () => {
+    engine.setBuses([mkBus("a", 40.75, -73.98)], "", color);
+    // Far beyond UNSEEN_MAX_MS (150 s) with only clipped payloads that exclude it.
+    for (let i = 0; i < 6; i++) {
+      clock += 40_000;
+      engine.setBuses([], "", color, { partial: true, bbox: AWAY });
+    }
+    clock += 2000;
+    engine.setBuses([], "", color, { partial: true, bbox: AWAY });
+    expect(engine.liveCounts().buses).toBe(0);
+  });
+
+  it("liveCounts() is stable across alternating clipped and citywide payloads", () => {
+    const all = [mkBus("a", 40.75, -73.98), mkBus("b", 40.751, -73.981), mkBus("c", 40.752, -73.982)];
+    engine.setBuses(all, "", color);
+    const seen: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      clock += 1000;
+      // clipped payload that legitimately contains NONE of them
+      engine.setBuses([], "", color, { partial: true, bbox: AWAY });
+      seen.push(engine.liveCounts().buses);
+      clock += 1000;
+      engine.setBuses(all, "", color); // citywide frame
+      seen.push(engine.liveCounts().buses);
+    }
+    // The number a user reads must not oscillate. Before the fix this alternated
+    // between the citywide count and 0.
+    expect(new Set(seen)).toEqual(new Set([3]));
+  });
+
+  it("retain() drops a deselected route AT ONCE, without waiting on any grace period", () => {
+    engine.setBuses(
+      [mkBus("a", 40.75, -73.98, { route_id: "M15" }), mkBus("b", 40.751, -73.981, { route_id: "BX12" })],
+      "",
+      color,
+    );
+    expect(engine.liveCounts().buses).toBe(2);
+    engine.retain("bus", (rid) => rid === "M15");
+    expect(engine.liveCounts().buses).toBe(1);
+    expect(engine.busCountsByRoute().get("M15")).toBe(1);
+    expect(engine.busCountsByRoute().has("BX12")).toBe(false);
+  });
+
+  it("busCountsByRoute() reports what is on the map, per route", () => {
+    engine.setBuses(
+      [
+        mkBus("a", 40.75, -73.98, { route_id: "M15" }),
+        mkBus("b", 40.751, -73.981, { route_id: "M15" }),
+        mkBus("c", 40.752, -73.982, { route_id: "BX12" }),
+      ],
+      "",
+      color,
+    );
+    const counts = engine.busCountsByRoute();
+    expect(counts.get("M15")).toBe(2);
+    expect(counts.get("BX12")).toBe(1);
+  });
+
+  it("uses the DISPLAYED anchor, so a shape-following bus is judged where it is drawn", () => {
+    // A shape-following unit never writes back to curLat/curLon — it rides offPoly/soDisp.
+    // Judging the clip window on curLat/curLon therefore tests the position the bus was
+    // FIRST SEEN at, which is exactly how the first cut of this fix still swept about half
+    // the fleet on the live site (261 -> 138 -> 23 became 223 -> 118 -> 26, not flat).
+    //
+    // Here lat/lon and route_offset_ft are deliberately inconsistent: the report says
+    // lon -74.0, the offset places it at the far end of the shape (lon -73.99). The
+    // engine DRAWS it at the offset.
+    const cache = shapeCacheWith("S1", "M15");
+    engine.setShapeSource(cache);
+    engine.setBuses(
+      [mkBus("a", 40.75, -74.0, { shape_id: "S1", route_offset_ft: SHAPE_LEN_FT, speed_est_fps: 0 })],
+      "",
+      color,
+    );
+    const drawn = engine.getDisplayLatLng("b:a")!;
+    expect(drawn[1]).toBeCloseTo(-73.99, 4);   // drawn at the offset, not at curLon
+
+    // A window over curLat/curLon (-74.0) but NOT over where it is drawn (-73.99).
+    const OVER_CURLATLON: [number, number, number, number] = [-74.001, 40.74, -73.997, 40.76];
+    for (let i = 0; i < 5; i++) {
+      clock += 1000;
+      engine.setBuses([], "", color, { partial: true, bbox: OVER_CURLATLON });
+    }
+    expect(engine.liveCounts().buses).toBe(1);
+  });
+});

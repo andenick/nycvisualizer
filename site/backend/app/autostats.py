@@ -40,6 +40,8 @@ from __future__ import annotations
 
 import bisect
 import calendar as _cal
+import csv
+import io
 import json
 import os
 import time
@@ -49,9 +51,10 @@ from typing import Any
 
 import duckdb
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
-from . import busshapes, config, gtfs, realtime
+from . import busshapes, config, gtfs, realtime, tripdelay
+from . import stops as stops_mod  # reuse its lru-cached GTFS stop coordinates
 from .obs import _archive_meta  # single owner of the archive-honesty contract
 
 router = APIRouter(prefix="/api/autostats", tags=["autostats"])
@@ -396,13 +399,27 @@ _NOT_SUPPORTED = [
         "unblocks_at": ">= 2 seasons",
     },
     {
-        "metric": "subway headway / bunching",
-        "status": "NOT BUILT HERE",
+        "metric": "subway headway",
+        "status": "MOVED — see /api/subwaystats",
         "reason": (
-            "No subway statistic is derived in this module. Nothing subway-shaped is "
-            "stubbed, estimated or copied from the bus side."
+            "No subway statistic is derived in THIS module, and nothing subway-shaped is "
+            "stubbed, estimated or copied from the bus side. Observed subway station "
+            "gaps now exist as their own derivation (gaps between STOPPED_AT arrival "
+            "events, which need no schedule) and are served from /api/subwaystats."
         ),
-        "unblocks_at": "a genuine subway derivation landing in derive2",
+        "unblocks_at": "already unblocked — /api/subwaystats/profile, /routes, /station",
+    },
+    {
+        "metric": "subway bunching / subway schedule deviation",
+        "status": "NOT BUILT",
+        "reason": (
+            "Realtime subway trip_id does not join the GTFS static schedule (0 of 8,040 "
+            "exact matches; a suffix join reaches only ~74% of trips), so there is no "
+            "denominator to measure a subway gap against. The derivation writes those "
+            "columns NULL on 100% of cells and /api/subwaystats re-verifies that on every "
+            "refresh rather than trusting it."
+        ),
+        "unblocks_at": "a defensible realtime-to-static subway trip join",
     },
 ]
 
@@ -1071,6 +1088,13 @@ def _dominant_shape(con, route_id: str, direction: int) -> str | None:
 
 
 def _shape_stops(con, shape_id: str) -> list[dict[str, Any]]:
+    """Ordered stops along a shape, WITH coordinates.
+
+    lat/lon are joined here rather than left to the client: a stop in a ladder row is the
+    same entity as a stop dot on the map, so clicking it must open the same card and enter
+    the same measurement — which needs a position. Doing the join server-side keeps that
+    O(1) per view instead of making the browser hold a stop table to look them up in.
+    """
     rows = con.execute(
         f"""SELECT so.stop_id, coalesce(s.stop_name, so.stop_id), so.stop_offset_ft, so.stop_seq
             FROM read_parquet('{_cache_file("stop_offsets")}') so
@@ -1078,8 +1102,23 @@ def _shape_stops(con, shape_id: str) -> list[dict[str, Any]]:
             WHERE so.shape_id = ? ORDER BY so.stop_offset_ft""",
         [shape_id],
     ).fetchall()
-    return [{"stop_id": r[0], "name": r[1], "offset_ft": round(float(r[2]), 1), "stop_seq": r[3]}
-            for r in rows]
+    # derive2's stops cache carries NAMES ONLY; coordinates come from the GTFS feeds'
+    # stops.txt, already read and lru-cached once by the stop-card module. Reuse it rather
+    # than parsing six CSVs a second time.
+    coords = stops_mod._stop_coords()
+    out = []
+    for r in rows:
+        ll = coords.get(r[0])
+        lat = ll[0] if ll else None
+        lon = ll[1] if ll else None
+        out.append({"stop_id": r[0], "name": r[1], "offset_ft": round(float(r[2]), 1),
+                    "stop_seq": r[3],
+                    # 6 decimals: the surveyed precision the stop table actually carries
+                    # (~0.3-0.4 ft). Not rounded further — this is the one place on the
+                    # platform where the geometry is genuinely that good.
+                    "lat": round(lat, 6) if lat is not None else None,
+                    "lon": round(lon, 6) if lon is not None else None})
+    return out
 
 
 def _slowspots_payload(route_id: str) -> dict[str, Any]:
@@ -1279,11 +1318,55 @@ def _presentable(distance_ft: float, stops_away: int) -> str:
     return f"{distance_ft / 5280.0:.1f} miles away"
 
 
+# GTFS-RT OccupancyStatus, in the words a rider would use. NULL is NOT a value in this
+# map: a bus with no automatic passenger counter is `not_captured`, never "empty".
+_OCCUPANCY_LABEL = {
+    0: "empty",
+    1: "many seats free",
+    2: "a few seats free",
+    3: "standing room only",
+    4: "crowded — standing only",
+    5: "full",
+    6: "not taking passengers",
+    7: "no data reported",
+    8: "not boardable",
+}
+_OCCUPANCY_NOT_CAPTURED = (
+    "this bus has no automatic passenger counter — about half the fleet does not report "
+    "one. Absent is NOT an empty bus; the value 'empty' does not occur in this feed."
+)
+
+
+def _occupancy_block(v: dict[str, Any]) -> dict[str, Any]:
+    occ = v.get("occupancy_status")
+    pax = v.get("passenger_count")
+    cap = v.get("passenger_capacity")
+    if occ is None and pax is None:
+        return {"captured": False, "not_captured": _OCCUPANCY_NOT_CAPTURED,
+                "status": None, "status_label": None,
+                "passenger_count": None, "passenger_capacity": None,
+                "load_pct": None}
+    return {
+        "captured": True,
+        "status": occ,
+        "status_label": _OCCUPANCY_LABEL.get(occ) if occ is not None else None,
+        "passenger_count": pax,
+        "passenger_capacity": cap,
+        "load_pct": (round(100.0 * pax / cap) if (pax is not None and cap) else None),
+        "basis": ("APC head-count (OneBusAway vehicle extension) with the agency's "
+                  "5-bucket occupancy_status alongside it" if pax is not None
+                  else "occupancy_status only — the agency's 5-bucket rounding; this bus "
+                       "publishes no head-count"),
+    }
+
+
 def _ladder_dir(route_id: str, direction: int, stops: list[dict[str, Any]],
                 shape_id: str, shape_len_ft: float,
-                vehicles: list[dict[str, Any]], as_of: int | None) -> dict[str, Any]:
+                vehicles: list[dict[str, Any]], as_of: int | None,
+                delays: dict[str, int] | None = None) -> dict[str, Any]:
     offsets = [s["offset_ft"] for s in stops]
     now = int(time.time())
+    delays = delays or {}
 
     def _stops_between(a_off: float, b_off: float) -> int:
         """Stops strictly between two offsets (a < b)."""
@@ -1329,6 +1412,19 @@ def _ladder_dir(route_id: str, direction: int, stops: list[dict[str, Any]],
             "speed_basis": v.get("speed_basis"),
             "eta_next_stop_min_est": (round(d_next / spd / 60.0, 1)
                                       if (d_next is not None and spd) else None),
+            # A1/B6 — crowding, where the bus reports it and explicitly `not captured`
+            # where it does not.
+            "occupancy": _occupancy_block(v),
+            # B1 — MTA's OWN schedule deviation for this trip. Not our reconstruction:
+            # `mta_delay_basis` names it on every row so the two can never be confused.
+            "mta_delay_s": delays.get(str(v.get("trip_id") or "")),
+            "mta_delay_min": (round(delays[str(v.get("trip_id"))] / 60.0, 1)
+                              if str(v.get("trip_id") or "") in delays else None),
+            "mta_delay_basis": (tripdelay.BASIS
+                                if str(v.get("trip_id") or "") in delays else None),
+            "mta_delay_absent_reason": (None if str(v.get("trip_id") or "") in delays
+                                        else "no published TripUpdate.delay for this trip "
+                                             "right now — shown as absent, never as 0"),
         })
     placed.sort(key=lambda p: p["route_offset_ft"])
 
@@ -1372,12 +1468,20 @@ def _ladder_dir(route_id: str, direction: int, stops: list[dict[str, Any]],
                 "eta_min_est": round(dist / spd / 60.0, 1) if spd else None,
                 "eta_basis": p.get("speed_basis"),
             }
+        prev_gap = (s["offset_ft"] - stops[si - 1]["offset_ft"]) if si > 0 else None
         stop_rows.append({
             "index": si,
             "stop_id": s["stop_id"],
             "stop_name": s["name"],
             "stop_seq": s["stop_seq"],
             "offset_ft": s["offset_ft"],
+            # A ladder row IS a map stop. Carrying its position means clicking it opens
+            # the same card and enters the same measurement as clicking the dot.
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
+            # Spacing from the previous stop, so the ladder reads as a corridor and not
+            # just a list. Same projection as /api/autostats/spacing — one arithmetic.
+            "spacing_from_prev_ft": (_round10(prev_gap) if prev_gap is not None else None),
             "vehicles_after_this_stop": [p["vehicle_id"] for p in placed
                                          if p["after_stop_index"] == si],
             "next_vehicle": nxt,
@@ -1414,6 +1518,14 @@ def _ladder_payload(route_id: str, direction: int | None) -> dict[str, Any]:
     as_of = veh.get("as_of")
     on_route = [v for v in (veh.get("vehicles") or []) if v.get("route_id") == route_id]
 
+    # B1 — MTA's own per-trip schedule deviation, joined by trip_id. Fetched once per
+    # ladder build (its own 45 s cache upstream), never per vehicle.
+    try:
+        td = tripdelay.get_trip_delays()
+    except Exception:
+        td = {"by_trip": {}, "source": "none", "as_of": None, "stale": True}
+    by_trip = td.get("by_trip") or {}
+
     con = _con()
     try:
         out_dirs = []
@@ -1423,9 +1535,39 @@ def _ladder_payload(route_id: str, direction: int | None) -> dict[str, Any]:
             stops = _shape_stops(con, shape_id)
             mine = [v for v in on_route if v.get("shape_id") == shape_id]
             out_dirs.append(_ladder_dir(route_id, d, stops, shape_id,
-                                        float(entry.get("shape_len_ft") or 0.0), mine, as_of))
+                                        float(entry.get("shape_len_ft") or 0.0), mine, as_of,
+                                        by_trip))
     finally:
         con.close()
+
+    # Route-level rollups of the two newly-surfaced fields, computed here so the client
+    # renders a number it was handed rather than reducing an array it had to hold.
+    _all_v = [v for dd in out_dirs for v in dd["vehicles"]]
+    _occ = [v["occupancy"] for v in _all_v if v["occupancy"]["captured"]]
+    _pax = [o["passenger_count"] for o in _occ if o["passenger_count"] is not None]
+    _dly = [v["mta_delay_s"] for v in _all_v if v["mta_delay_s"] is not None]
+    _dly_sorted = sorted(_dly)
+    crowding = {
+        "vehicles_on_ladder": len(_all_v),
+        "vehicles_reporting_occupancy": len(_occ),
+        "vehicles_reporting_headcount": len(_pax),
+        "coverage_pct": (round(100.0 * len(_occ) / len(_all_v), 1) if _all_v else None),
+        "median_passengers": (sorted(_pax)[len(_pax) // 2] if _pax else None),
+        "not_captured_note": _OCCUPANCY_NOT_CAPTURED,
+    }
+    mta_delay = {
+        "vehicles_with_published_delay": len(_dly),
+        "coverage_pct": (round(100.0 * len(_dly) / len(_all_v), 1) if _all_v else None),
+        "median_delay_s": (_dly_sorted[len(_dly_sorted) // 2] if _dly else None),
+        "median_delay_min": (round(_dly_sorted[len(_dly_sorted) // 2] / 60.0, 1)
+                             if _dly else None),
+        "source": td.get("source"),
+        "as_of": td.get("as_of"),
+        "stale": td.get("stale"),
+        "basis": tripdelay.BASIS,
+        "basis_note": tripdelay.BASIS_NOTE,
+        "absent_note": tripdelay.ABSENT_NOTE,
+    }
 
     placed_total = sum(x["n_vehicles"] for x in out_dirs)
     now = int(time.time())
@@ -1447,6 +1589,8 @@ def _ladder_payload(route_id: str, direction: int | None) -> dict[str, Any]:
                 "counted here, never guessed onto the ladder."
             ),
         },
+        "crowding": crowding,
+        "mta_delay": mta_delay,
         "directions": out_dirs,
         "direction_labelling": (
             "Directions are GTFS direction_id. MTA's own destination-sign text "
@@ -1484,6 +1628,305 @@ async def autostats_ladder(route: str, direction: int | None = None) -> JSONResp
 
 
 # --------------------------------------------------------------------------- #
+# 7) /api/autostats/spacing — CORRIDOR STOP SPACING
+#
+# Measuring two stops answers one question. Seeing EVERY consecutive gap along a
+# route at once answers the question underneath it: where is this route's spacing
+# wrong? Same projection W11 stage 2 uses (stop_offsets against the canonical
+# shape), so a gap here and the along-route number on a stop card are the same
+# arithmetic on the same floats.
+#
+# STATIC GEOMETRY, NOT OBSERVATION. Nothing here touches the observed archive, so
+# nothing here is limited by archive depth. Stop coordinates are surveyed points
+# (6 decimals, ~0.3-0.4 ft) — this is one of the few places this platform may
+# claim precision, and it does, rounded to the nearest 10 ft because a stop
+# coordinate is one point standing for a ~40 ft kerbside zone.
+# --------------------------------------------------------------------------- #
+SPACING_FENCE_K = _envf("NYCV_AS_SPACING_FENCE_K", 1.5)   # Tukey multiplier on the IQR
+SPACING_MIN_GAPS = _envi("NYCV_AS_SPACING_MIN_GAPS", 5)   # below this, no outlier flagging
+
+_SPACING_METHOD = (
+    "Each stop is projected onto the direction's canonical GTFS shape (the shape most "
+    "trips use) and the gap is the difference of two cumulative along-shape offsets in "
+    "EPSG:2263 feet — the same projection the stop card's along-route distance uses, not "
+    "a straight line and never a live vehicle position."
+)
+
+
+def _quantile(sorted_vals: list[float], q: float) -> float:
+    """Linear-interpolated quantile. `sorted_vals` must be sorted and non-empty."""
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    pos = q * (len(sorted_vals) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = pos - lo
+    return sorted_vals[lo] * (1.0 - frac) + sorted_vals[hi] * frac
+
+
+def _round10(x: float | None) -> int | None:
+    return None if x is None else int(round(x / 10.0) * 10)
+
+
+def _spacing_dir(route_id: str, direction: int, stops: list[dict[str, Any]],
+                 shape_id: str, shape_len_ft: float) -> dict[str, Any]:
+    gaps: list[dict[str, Any]] = []
+    raw: list[float] = []
+    for i in range(1, len(stops)):
+        a, b = stops[i - 1], stops[i]
+        ft = float(b["offset_ft"]) - float(a["offset_ft"])
+        if ft <= 0:
+            # Two stops at the same projected offset (a shared pole, or a shape that
+            # doubles back). Reported, never silently dropped and never negative.
+            ft = 0.0
+        raw.append(ft)
+        gaps.append({
+            "index": i - 1,
+            "from_stop_id": a["stop_id"], "from_stop_name": a["name"],
+            "from_stop_seq": a["stop_seq"],
+            "to_stop_id": b["stop_id"], "to_stop_name": b["name"],
+            "to_stop_seq": b["stop_seq"],
+            "from_offset_ft": _round10(a["offset_ft"]),
+            "to_offset_ft": _round10(b["offset_ft"]),
+            "spacing_ft": _round10(ft),
+            "spacing_miles": round(ft / 5280.0, 3),
+        })
+
+    stats: dict[str, Any] = {"n_gaps": len(raw)}
+    fences: dict[str, Any] = {
+        "rule": (
+            f"Tukey fences on THIS direction's own gaps: a gap is flagged long above "
+            f"q3 + {SPACING_FENCE_K:g}xIQR and short below q1 - {SPACING_FENCE_K:g}xIQR. "
+            f"The comparison is to the rest of this route in this direction — not to any "
+            f"external spacing standard, which this platform does not hold."
+        ),
+        "min_gaps_to_flag": SPACING_MIN_GAPS,
+        "applied": False,
+    }
+    if raw:
+        s = sorted(raw)
+        q1, med, q3 = _quantile(s, 0.25), _quantile(s, 0.5), _quantile(s, 0.75)
+        iqr = q3 - q1
+        stats.update({
+            "median_ft": _round10(med), "median_miles": round(med / 5280.0, 3),
+            "mean_ft": _round10(sum(s) / len(s)),
+            "min_ft": _round10(s[0]), "max_ft": _round10(s[-1]),
+            "p10_ft": _round10(_quantile(s, 0.10)),
+            "q1_ft": _round10(q1), "q3_ft": _round10(q3),
+            "p90_ft": _round10(_quantile(s, 0.90)),
+            "iqr_ft": _round10(iqr),
+            "total_ft": _round10(sum(s)),
+            "total_miles": round(sum(s) / 5280.0, 2),
+        })
+        if len(raw) >= SPACING_MIN_GAPS and iqr > 0:
+            lo_f, hi_f = q1 - SPACING_FENCE_K * iqr, q3 + SPACING_FENCE_K * iqr
+            fences.update({"applied": True,
+                           # A lower fence at or below zero is arithmetically fine and
+                           # practically meaningless — no gap can be shorter than nothing.
+                           # Report it as absent with the reason rather than printing a
+                           # negative distance a planner would have to decode.
+                           "short_below_ft": (_round10(lo_f) if lo_f > 0 else None),
+                           "short_fence_note": (
+                               None if lo_f > 0 else
+                               "This direction's gaps are dispersed enough that the lower "
+                               "Tukey fence falls at or below zero, so no gap here is "
+                               "flagged short. The shortest gaps are still listed."),
+                           "long_above_ft": _round10(hi_f)})
+            for g, ft in zip(gaps, raw):
+                g["flag"] = "long" if ft > hi_f else ("short" if ft < lo_f else "typical")
+                g["deviation_from_median_ft"] = _round10(ft - med)
+        else:
+            for g, ft in zip(gaps, raw):
+                g["flag"] = "not_flagged"
+                g["deviation_from_median_ft"] = _round10(ft - med)
+            fences["not_applied_reason"] = (
+                f"only {len(raw)} gap(s) in this direction"
+                if len(raw) < SPACING_MIN_GAPS else
+                "every gap in this direction is the same length (zero IQR)")
+
+    counts = {"long": 0, "short": 0, "typical": 0, "not_flagged": 0}
+    for g in gaps:
+        counts[g.get("flag", "not_flagged")] = counts.get(g.get("flag", "not_flagged"), 0) + 1
+
+    return {
+        "direction_id": direction,
+        "shape_id": shape_id,
+        "shape_length_ft": _round10(shape_len_ft),
+        "n_stops": len(stops),
+        "stats": stats,
+        "fences": fences,
+        "flag_counts": counts,
+        "longest": sorted(gaps, key=lambda g: -(g["spacing_ft"] or 0))[:5],
+        "shortest": sorted(gaps, key=lambda g: (g["spacing_ft"] or 0))[:5],
+        "gaps": gaps,
+    }
+
+
+def _spacing_payload(route_id: str, direction: int | None) -> dict[str, Any]:
+    t0 = time.time()
+    meta = _route_meta(route_id)
+    lut = busshapes.get_lut()
+    dirs = [d for d in (lut["route_dirs"].get(route_id) or []) if (route_id, d) in lut["shapes"]]
+    if direction is not None:
+        dirs = [d for d in dirs if d == direction]
+    if not dirs:
+        return {"route": route_id, "meta": meta,
+                "error": "no canonical GTFS shape for this route",
+                "directions": []}
+
+    con = _con()
+    try:
+        out_dirs = []
+        for d in sorted(dirs):
+            entry = lut["shapes"][(route_id, d)]
+            shape_id = entry["shape_id"]
+            stops = _shape_stops(con, shape_id)
+            out_dirs.append(_spacing_dir(route_id, d, stops, shape_id,
+                                         float(entry.get("shape_len_ft") or 0.0)))
+    finally:
+        con.close()
+
+    return {
+        "route": route_id,
+        "meta": meta,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "basis": "gtfs_static_geometry",
+        "method": _SPACING_METHOD,
+        "per_direction_note": (
+            "Spacing is reported per GTFS direction and is NEVER averaged across "
+            "directions: the two directions of a route do not use the same stops, and an "
+            "average would describe neither."
+        ),
+        "precision_note": (
+            "Stop coordinates are surveyed static geometry (6 decimals, about 0.3-0.4 ft), "
+            "so these distances are genuinely precise — unlike anything derived from live "
+            "vehicle positions, whose floor is about 160-200 ft. Rounded to the nearest "
+            "10 ft because one coordinate stands for a roughly 40 ft kerbside zone."
+        ),
+        "depth_note": (
+            "This view uses no observed archive data, so archive depth does not limit it. "
+            "The observed statistics on a stop card are a separate, depth-limited thing."
+        ),
+        "directions": out_dirs,
+        "elapsed_ms": round((time.time() - t0) * 1000, 1),
+    }
+
+
+def _spacing_prov(payload: dict[str, Any]) -> list[str]:
+    m = payload.get("meta") or {}
+    return [
+        "NYC Visualizer — corridor stop spacing",
+        f"generated {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
+        f"route: {m.get('route_id')} ({m.get('short_name')}) {m.get('long_name')}".rstrip(),
+        f"source: GTFS static stop geometry projected onto each direction's canonical shape",
+        f"method: {payload.get('method')}",
+        f"per direction: {payload.get('per_direction_note')}",
+        f"precision: {payload.get('precision_note')}",
+        f"depth: {payload.get('depth_note')}",
+        "blank cells are NOT zero.",
+    ]
+
+
+def _spacing_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for d in payload.get("directions") or []:
+        for g in d.get("gaps") or []:
+            rows.append({
+                "route_id": payload.get("route"),
+                "direction_id": d.get("direction_id"),
+                "shape_id": d.get("shape_id"),
+                "gap_index": g.get("index"),
+                "from_stop_id": g.get("from_stop_id"),
+                "from_stop_name": g.get("from_stop_name"),
+                "from_stop_sequence": g.get("from_stop_seq"),
+                "to_stop_id": g.get("to_stop_id"),
+                "to_stop_name": g.get("to_stop_name"),
+                "to_stop_sequence": g.get("to_stop_seq"),
+                "spacing_ft": g.get("spacing_ft"),
+                "spacing_miles": g.get("spacing_miles"),
+                "deviation_from_direction_median_ft": g.get("deviation_from_median_ft"),
+                "flag": g.get("flag"),
+                "direction_median_ft": (d.get("stats") or {}).get("median_ft"),
+                "direction_n_gaps": (d.get("stats") or {}).get("n_gaps"),
+                "flag_rule": (d.get("fences") or {}).get("rule"),
+            })
+    return rows
+
+
+@router.get("/spacing")
+async def autostats_spacing(route: str, direction: int | None = None,
+                            format: str = "json"):
+    """Every consecutive stop gap along a route, in order, per direction.
+
+    Assembled SERVER-SIDE (W13.2): the client renders a table it was handed, it never
+    assembles one from geometry it had to hold. Cost is O(1) requests per route, not
+    O(stops) of client state.
+    """
+    if format not in ("json", "csv", "xlsx", "parquet", "clipboard"):
+        return JSONResponse(
+            {"error": "format must be json, csv, xlsx, parquet or clipboard "
+                      "(a JSON *download* is deliberately not offered)"}, status_code=400)
+    key = f"spacing|{route}|{direction}"
+    payload = _cached(key, 900, lambda: _spacing_payload(route, direction))
+    if format == "json":
+        return JSONResponse(payload)
+    if payload.get("error"):
+        return JSONResponse(payload, status_code=404)
+
+    rows = _spacing_rows(payload)
+    prov = _spacing_prov(payload)
+    stamp = time.strftime("%Y%m%d_%H%M", time.gmtime())
+    name = f"stop_spacing_{route}_{stamp}"
+
+    if format == "clipboard":
+        lines = ["# " + p for p in prov]
+        if rows:
+            cols = list(rows[0].keys())
+            lines.append("\t".join(cols))
+            for r in rows:
+                lines.append("\t".join("" if r.get(c) is None else str(r.get(c)) for c in cols))
+        return Response("\n".join(lines), media_type="text/plain; charset=utf-8")
+
+    if format == "csv":
+        buf = io.StringIO()
+        for line in prov:
+            buf.write("# " + line + "\n")
+        if rows:
+            cols = list(rows[0].keys())
+            w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+            w.writeheader()
+            for r in rows:
+                w.writerow({k: ("" if r.get(k) is None else r.get(k)) for k in cols})
+        return Response(buf.getvalue().encode("utf-8"), media_type="text/csv;charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+
+    import pandas as pd
+
+    if format == "parquet":
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        tbl = pa.Table.from_pandas(pd.DataFrame(rows), preserve_index=False)
+        md = dict(tbl.schema.metadata or {})
+        md[b"nycvisualizer_provenance"] = "\n".join(prov).encode("utf-8")
+        b = io.BytesIO()
+        pq.write_table(tbl.replace_schema_metadata(md), b, compression="snappy")
+        return Response(b.getvalue(), media_type="application/vnd.apache.parquet",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="{name}.parquet"'})
+
+    b = io.BytesIO()
+    with pd.ExcelWriter(b, engine="xlsxwriter") as xl:
+        pd.DataFrame(rows).to_excel(xl, sheet_name="Spacing", index=False)
+        pd.DataFrame({"About this file": prov}).to_excel(
+            xl, sheet_name="Provenance", index=False)
+    return Response(
+        b.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'})
+
+
+# --------------------------------------------------------------------------- #
 # index
 # --------------------------------------------------------------------------- #
 @router.get("")
@@ -1509,6 +1952,12 @@ async def autostats_index() -> JSONResponse:
             {"path": "/api/autostats/ladder",
              "what": "THE ROUTE LADDER: ordered stops with live buses interleaved",
              "params": {"route": "route_id (required)", "direction": "0|1 (default: both)"}},
+            {"path": "/api/autostats/spacing",
+             "what": "corridor stop spacing: every consecutive stop gap along the route, "
+                     "in order, per direction, with distribution-relative outlier flags. "
+                     "Static GTFS geometry — not limited by archive depth.",
+             "params": {"route": "route_id (required)", "direction": "0|1 (default: both)",
+                        "format": "json (default) | csv | xlsx | parquet | clipboard"}},
         ],
         "archive": _archive_meta(),
         "coverage": _coverage_stamp(),

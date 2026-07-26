@@ -93,6 +93,13 @@ def filter_bbox(payload: dict[str, Any], list_key: str, bbox: Optional[BBox]) ->
     out[list_key] = kept
     out["count"] = len(kept)
     out["bbox_filtered"] = True
+    # ECHO THE WINDOW. A clipped payload is not evidence about anything outside this
+    # rectangle, and the consumer needs to know where the evidence stops — the motion
+    # engine used to treat "absent from a viewport payload" as "no longer running" and
+    # retired every off-screen vehicle mid-pan. Echoing the applied bbox means no client
+    # has to remember what it asked for, and the (deliberately unfiltered) SSE stream
+    # simply carries neither key.
+    out["bbox"] = [min_lon, min_lat, max_lon, max_lat]
     return out
 
 

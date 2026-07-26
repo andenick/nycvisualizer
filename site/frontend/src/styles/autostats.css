@@ -1,0 +1,265 @@
+/* autostats.css — styles for the three /api/autostats surfaces:
+   ArchiveCompletenessBanner · TimeOfDayProfile · BoroughRollups.
+   Namespaced `.as-*` so nothing here can collide with index.css, which is owned
+   elsewhere. Imported by the three components (Vite dedupes the import).
+
+   RULES THIS FILE OBEYS
+   - Everything that can overflow (the day x hour coverage grid, every table) scrolls
+     INSIDE its own container; the page body never scrolls horizontally.
+   - One column under 768px. No new always-on chrome: the completeness banner is one
+     line plus a disclosure the reader opens.
+   - Status is encoded by LIGHTNESS + TEXTURE, never by hue alone. `ok` and `partial`
+     are the same blue at two lightnesses (a data-presence ramp), and the three
+     "excluded" states carry a hatch or a dashed outline. This is deliberate: the
+     borough palette in lib/boroughs.ts was rebuilt in W2.5 precisely because a
+     red/green pair is invisible to ~6% of men, and a five-colour hue ramp here would
+     have reintroduced that. The hatch survives dichromat simulation and greyscale.
+*/
+
+/* ---------------------------------------------------------------- shared ---- */
+.as-block { margin: 1.2rem 0; }
+.as-block h2 { font-size: 1.25rem; margin: 0 0 0.35rem; }
+.as-block h3 { font-size: 1rem; margin: 1rem 0 0.35rem; }
+
+/* Section head: title left, actions (download) right — same shape as LeaguesPage. */
+.as-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* Verbatim server prose (borough_note / normalisation_note / rollup_statistic /
+   suppression.rule / profile note). Quiet, but never hidden behind a toggle. */
+.as-caption {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.78;
+  margin: 0.45rem 0 0;
+  max-width: 78ch;
+}
+.as-caption + .as-caption { margin-top: 0.3rem; }
+.as-caption b { font-weight: 600; opacity: 0.9; }
+
+/* "as of" chip. Copied in behaviour from the OpsWallPage Stamp: when the payload is
+   stale the LABEL IS REPLACED by "STALE — N old", never decorated, so a fresh-sounding
+   word can never sit on top of an old number. */
+.as-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.as-stamp .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ark-accent, #2563eb);
+}
+.as-stamp.stale { opacity: 1; color: #b45309; font-weight: 600; }
+.as-stamp.stale .dot { background: #b45309; }
+@media (prefers-color-scheme: dark) {
+  .as-stamp.stale { color: #fcd34d; }
+  .as-stamp.stale .dot { background: #fcd34d; }
+}
+
+/* Small stat row (n headways, hours published, worst/best hour). */
+.as-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.4rem;
+  margin: 0.6rem 0 0.2rem;
+}
+.as-stat { display: flex; flex-direction: column; gap: 0.1rem; }
+.as-stat-k { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.6; }
+.as-stat-v { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.as-stat-v small { font-weight: 400; font-size: 0.75rem; opacity: 0.7; }
+
+.as-empty { opacity: 0.5; }
+
+/* The one disclosure control the banner adds. */
+.as-toggle {
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--ark-border, #d1d5db);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ark-accent, #2563eb);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.as-toggle:hover { border-color: var(--ark-accent, #2563eb); }
+
+/* --------------------------------------------- archive-completeness banner ---- */
+.as-banner {
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-left: 3px solid var(--ark-accent, #2563eb);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin: 0.8rem 0 1.2rem;
+  background: var(--ark-surface, #fff);
+}
+.as-banner-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.as-headline { font-size: 0.92rem; font-weight: 600; margin: 0; }
+.as-banner-detail { margin-top: 0.7rem; border-top: 1px solid var(--ark-border, #e5e7eb); padding-top: 0.7rem; }
+
+/* not_supported — named, not apologised for. */
+.as-ns { margin: 0.5rem 0 0; }
+.as-ns-strip { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; }
+.as-ns-lead { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.65; }
+.as-ns-pill {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px dashed var(--ark-border, #c8ccd2);
+  border-radius: 999px;
+  opacity: 0.9;
+}
+.as-ns-pill b { font-weight: 700; letter-spacing: 0.02em; }
+.as-ns-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.as-ns-item {
+  border-left: 2px solid var(--ark-border, #d4d8dd);
+  padding: 0.1rem 0 0.35rem 0.6rem;
+  margin: 0 0 0.5rem;
+}
+.as-ns-metric { font-size: 0.84rem; font-weight: 600; }
+.as-ns-status { font-size: 0.7rem; letter-spacing: 0.04em; opacity: 0.7; margin-left: 0.35rem; }
+.as-ns-reason { font-size: 0.78rem; opacity: 0.82; margin: 0.15rem 0 0; max-width: 78ch; }
+.as-ns-unblock { font-size: 0.74rem; opacity: 0.68; margin: 0.15rem 0 0; }
+
+/* --- the day x hour coverage grid --- */
+.as-scroll { overflow-x: auto; max-width: 100%; padding-bottom: 0.2rem; }
+.as-grid { display: table; border-spacing: 1px; font-variant-numeric: tabular-nums; }
+.as-grow { display: table-row; }
+.as-glab, .as-gcell, .as-ghour {
+  display: table-cell;
+  vertical-align: middle;
+}
+.as-glab {
+  font-size: 0.72rem;
+  white-space: nowrap;
+  padding-right: 0.5rem;
+  text-align: right;
+}
+.as-glab .as-eq { opacity: 0.6; }
+.as-ghour { font-size: 0.6rem; opacity: 0.55; text-align: center; width: 15px; }
+.as-gcell { width: 15px; }
+.as-cell {
+  display: block;
+  width: 14px;
+  height: 13px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+/* data-presence ramp (same hue, two lightnesses) */
+.as-cell--ok { background: #4e79a7; }
+.as-cell--partial { background: #a8c3da; }
+/* excluded states: texture, not hue */
+.as-cell--missing {
+  background: repeating-linear-gradient(
+    45deg, rgba(225, 87, 89, 0.55) 0 2px, transparent 2px 4px
+  );
+  border-color: rgba(225, 87, 89, 0.55);
+}
+.as-cell--known_gap {
+  background: repeating-linear-gradient(
+    -45deg, rgba(120, 128, 140, 0.55) 0 2px, transparent 2px 4px
+  );
+  border-color: rgba(120, 128, 140, 0.5);
+}
+.as-cell--in_progress { background: transparent; border: 1px dashed var(--ark-accent, #2563eb); }
+.as-cell--unknown { background: transparent; border: 1px solid var(--ark-border, #d4d8dd); }
+
+/* Status legend — collapsible content inside the banner's disclosure, NOT the legacy
+   always-on `.nyc-legend` (the recorded mobile defect). Five rows, under the ≤8 pact. */
+.as-legend { margin: 0.6rem 0 0; }
+.as-legend-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  margin: 0.18rem 0;
+}
+.as-legend-row .as-cell { flex: 0 0 auto; margin-top: 0.15rem; }
+.as-legend-k { font-weight: 600; }
+.as-legend-v { opacity: 0.8; }
+
+/* ------------------------------------------------- time-of-day profile ------- */
+.as-tod-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0.2rem 0 0.4rem;
+}
+.as-chip {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 999px;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.as-sup-note { font-size: 0.78rem; opacity: 0.8; margin: 0.5rem 0 0.2rem; }
+
+/* ------------------------------------------------------ borough rollups ------ */
+.as-boro-name { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+.as-sw {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+.as-bunch-list { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.as-bunch-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--ark-border, #eee);
+}
+.as-bunch-routes { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.as-bunch-route {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--ark-border, #d4d8dd);
+  border-radius: 6px;
+}
+.as-bunch-route span { opacity: 0.65; margin-left: 0.25rem; }
+
+/* --------------------------------------------------------------- mobile ------ */
+@media (max-width: 768px) {
+  .as-stats { gap: 0.5rem 1rem; }
+  .as-stat-v { font-size: 0.92rem; }
+  .as-banner { padding: 0.55rem 0.65rem; }
+  .as-headline { font-size: 0.86rem; }
+  .as-caption { font-size: 0.74rem; }
+  /* one column: every flex row is already wrap-enabled, so this only tightens the
+     coverage grid, which keeps its own horizontal scroller. */
+  .as-cell { width: 11px; height: 11px; }
+  .as-gcell, .as-ghour { width: 12px; }
+  .as-glab { font-size: 0.66rem; }
+  .as-bunch-row { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .as-cell--ok { background: #5b87b6; }
+  .as-cell--partial { background: #35506b; }
+  .as-sw { border-color: rgba(255, 255, 255, 0.3); }
+}
