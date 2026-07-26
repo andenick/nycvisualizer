@@ -79,6 +79,46 @@ export const NYC_BOUNDS: L.LatLngBoundsExpression = [
  *  runtime by flipping `rule.visible` (see `gateStreetNumbers`). */
 export const STREET_NUMBER_MIN_ZOOM = 17;
 
+/** W14 (2026-07-25) — HOUSE NUMBERS ARE NOW OPT-IN, AND DEFAULT OFF.
+ *
+ *  Reported by the user the day after W3 shipped them: *"remove the census tract
+ *  numbers — when you zoom in too much the screen is too crowded with all the numbers
+ *  on each building. I don't want that information on the map."*
+ *
+ *  The description is exact and the diagnosis is ours: these are W3's OSM house numbers,
+ *  not census tracts (a repo-wide search found no tract/GEOID label rule on any layer —
+ *  there is nothing else that draws a number on a building). ~45 % of NYC building
+ *  features carry `addr_housenumber`, so a dense block at z17-19 fills with them and the
+ *  map stops being a map. W3 was verified as "do the numbers render?" — they did,
+ *  correctly, at every zoom tested. The check nobody ran was **aggregate legibility**:
+ *  not "does the label draw" but "is the map still readable once they all draw."
+ *
+ *  Raising the gate to z18/z19 was considered and rejected: it moves the wall one zoom
+ *  level deeper and the reader hits it again on the next scroll. The capability stays,
+ *  behind a legend toggle that remembers your choice — the same pattern and the same
+ *  persistence as the bus-arrow toggle. */
+const HOUSE_NUMBERS_KEY = "nycv-house-numbers";
+const HOUSE_NUMBERS_EVENT = "nycv:housenumbers";
+
+/** Is the reader asking for house numbers? Default FALSE. */
+export function houseNumbersOn(): boolean {
+  try {
+    return localStorage.getItem(HOUSE_NUMBERS_KEY) === "1";
+  } catch {
+    return false; // storage blocked -> the quiet map, which is the default anyway
+  }
+}
+
+/** Flip the preference and tell every mounted basemap about it. */
+export function setHouseNumbers(on: boolean): void {
+  try {
+    localStorage.setItem(HOUSE_NUMBERS_KEY, on ? "1" : "0");
+  } catch {
+    /* storage blocked — the toggle still works for this session */
+  }
+  document.dispatchEvent(new CustomEvent(HOUSE_NUMBERS_EVENT, { detail: { on } }));
+}
+
 export interface BasemapInfo {
   mode: "pmtiles" | "raster";
   attribution: string;
@@ -111,8 +151,9 @@ export interface BasemapOptions extends BasemapGuardHooks {
    *  (an explicit choice always wins). The thematic-overlay maps pass "focus" so the
    *  DATA carries the colour budget (ARKMAP §7: one hot encoding per view). */
   theme?: MapThemeChoice;
-  /** Render OSM house numbers at display zoom >= STREET_NUMBER_MIN_ZOOM. Default true.
-   *  Costs nothing below that zoom (the rule is not evaluated). */
+  /** Build the house-number rule at all. Default true — but the rule only becomes
+   *  VISIBLE when the reader has opted in (see houseNumbersOn) AND the display zoom is
+   *  past STREET_NUMBER_MIN_ZOOM. Costs nothing otherwise. */
   streetNumbers?: boolean;
   /** Called on mount and again whenever the applied theme changes, so a legend can
    *  name the theme honestly instead of guessing. */
@@ -361,7 +402,9 @@ export function addBasemap(map: L.Map, opts?: BasemapOptions): BasemapInfo {
   // Only fires on an actual crossing — at most a couple of relayouts per session.
   const gateStreetNumbers = (): void => {
     if (!addrRule || engaged || !mapAlive(map)) return;
-    const want = map.getZoom() >= STREET_NUMBER_MIN_ZOOM;
+    // W14: BOTH conditions. Zoom alone is not enough any more — the reader has to have
+    // asked for the numbers, and the default is that they have not.
+    const want = houseNumbersOn() && map.getZoom() >= STREET_NUMBER_MIN_ZOOM;
     if (want === addrRule.visible) return;
     addrRule.visible = want;
     try {
@@ -372,6 +415,16 @@ export function addBasemap(map: L.Map, opts?: BasemapOptions): BasemapInfo {
     }
   };
   map.on("zoomend", gateStreetNumbers);
+  // The preference is global, so every mounted map reacts to a change on any of them.
+  // Self-cleaning: the first event after the map is gone removes the listener.
+  const onHouseNumberPref = (): void => {
+    if (!mapAlive(map)) {
+      document.removeEventListener(HOUSE_NUMBERS_EVENT, onHouseNumberPref);
+      return;
+    }
+    gateStreetNumbers();
+  };
+  document.addEventListener(HOUSE_NUMBERS_EVENT, onHouseNumberPref);
   gateStreetNumbers();
 
   // ---- W4: live theme changes ------------------------------------------------------

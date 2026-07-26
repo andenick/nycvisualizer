@@ -22,7 +22,7 @@
 // (full page load), and a per-row expandable detail drawer that reuses /api/obs/dossier
 // headline fields (buses) / active alerts (lines) — no new data claims.
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -32,7 +32,6 @@ import {
   NYC_CENTER,
   NYC_BOUNDS,
   MAP_MAX_ZOOM,
-  STREET_NUMBER_MIN_ZOOM,
   type BasemapInfo,
 } from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
@@ -47,7 +46,11 @@ import {
   getStations,
   getAlerts,
   getDossier,
+  getStopCard,
+  getStopsAlong,
   streamVehicles,
+  type AlongResponse,
+  type StopCardResponse,
   streamSubway,
   type Vehicle,
   type ObsRoute,
@@ -65,6 +68,7 @@ import { BOROUGH_LEGEND_NOTE, boroughColor, boroughLabel, routeGroup } from "../
 import { VehicleFlowLayer } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch } from "../components/MapLegend";
 import MapThemePicker from "../components/MapThemePicker";
+import HouseNumberToggle from "../components/HouseNumberToggle";
 import StopTray, { type MeasureLeg } from "../components/StopTray";
 import MapContextMenu, { type ContextTarget } from "../components/MapContextMenu";
 import {
@@ -848,18 +852,28 @@ export default function WorkstationPage() {
   /** Add a stop, or remove it if it is already selected. Click-a-point-to-remove is the
    *  strongest convention in the study — Google and MapLibre reached it independently —
    *  and here it doubles as "close this card", so there is one rule, not two. */
-  const toggleStop = (s: SnapStop) => setSelStops((prev) => toggleCapped(prev, s, CARD_CAP));
-  const removeStop = (key: string) => setSelStops((prev) => prev.filter((x) => x.key !== key));
-  const undoStop = () => setSelStops((prev) => prev.slice(0, -1));
-  const clearStops = () => setSelStops([]);
+  // Every one of these is a STABLE identity, so the memoised StopTray is not defeated by
+  // a fresh arrow function on each of the page's ~30 s live re-renders.
+  const toggleStop = useCallback(
+    (s: SnapStop) => setSelStops((prev) => toggleCapped(prev, s, CARD_CAP)), []);
+  const removeStop = useCallback(
+    (key: string) => setSelStops((prev) => prev.filter((x) => x.key !== key)), []);
+  const undoStop = useCallback(() => setSelStops((prev) => prev.slice(0, -1)), []);
+  const clearStops = useCallback(() => setSelStops([]), []);
+  const toggleMeasure = useCallback(() => setMeasuring((v) => !v), []);
+  const clearAllStops = useCallback(() => {
+    setSelStops([]);
+    setMeasuring(false);
+  }, []);
 
-  // On a phone the route selector is itself a bottom sheet, and two bottom sheets cannot
+  // On a phone or small tablet (<= 768 px, the workstation bottom-sheet band) the route
+  // selector is itself a bottom sheet, and two bottom sheets cannot
   // both own the bottom of the screen. Opening a stop card closes the selector — the
   // planner has finished choosing routes by the time they are clicking stops, and the
   // ▶ toggle brings it straight back.
   useEffect(() => {
     if (!selStops.length) return;
-    if (typeof window !== "undefined" && window.innerWidth <= 700) setPanelOpen(false);
+    if (typeof window !== "undefined" && window.innerWidth <= 768) setPanelOpen(false);
   }, [selStops.length]);
 
   // ---- the snap index: built ONCE per selection change, from data already in memory ----
@@ -1046,34 +1060,114 @@ export default function WorkstationPage() {
     }
   }, [busArrows]);
 
+  // ---- stop-card detail: FETCHED ON CLICK, one request per newly-selected stop --------
+  // Never eagerly, and never for the selection as a whole: 57 routes is thousands of
+  // stops, and a fan-out over all of them is the exact shape of the defect this page has
+  // already had once. Results are memoised for the session; the key space is a finite,
+  // static set of stop ids.
+  const cardCache = useRef<Map<string, StopCardResponse>>(new Map());
+  const cardLoading = useRef<Set<string>>(new Set());
+  const [cardTick, setCardTick] = useState(0);
+  useEffect(() => {
+    for (const s of selStops) {
+      if (s.kind !== "bus") continue; // the endpoint is bus-stop shaped; stations say so
+      if (cardCache.current.has(s.stopId) || cardLoading.current.has(s.stopId)) continue;
+      cardLoading.current.add(s.stopId);
+      getStopCard(s.stopId, selRoutesRef.current)
+        .then((d) => cardCache.current.set(s.stopId, d))
+        .catch(() => {
+          /* the card still shows everything the browser holds; detail is additive */
+        })
+        .finally(() => {
+          cardLoading.current.delete(s.stopId);
+          setCardTick((t) => t + 1);
+        });
+    }
+  }, [selStops]);
+  const detailFor = useCallback(
+    (key: string): StopCardResponse | "loading" | undefined => {
+      const s = selStopsRef.current.find((x) => x.key === key);
+      if (!s || s.kind !== "bus") return undefined;
+      return (
+        cardCache.current.get(s.stopId) ??
+        (cardLoading.current.has(s.stopId) ? "loading" : undefined)
+      );
+    },
+    // cardTick is the dependency ON PURPOSE: the data lives in a ref, so a new identity
+    // for this callback is what tells the memoised tray that a fetched card has landed.
+    [cardTick],
+  );
+
+  // ---- along-route distance: ONE request per selection change, debounced -------------
+  // Debounced 250 ms so a burst of clicks costs one round-trip, with the in-flight
+  // request abandoned rather than raced. Never fires below two stops, and never fires
+  // for a chain that includes a subway station (the offsets are bus-shape offsets).
+  const [along, setAlong] = useState<AlongResponse | null>(null);
+  const alongSeq = useRef(0);
+  useEffect(() => {
+    const busStops = selStops.filter((s) => s.kind === "bus");
+    if (busStops.length < 2 || busStops.length !== selStops.length) {
+      setAlong(null);
+      return;
+    }
+    const seq = ++alongSeq.current;
+    const t = setTimeout(() => {
+      getStopsAlong(busStops.map((s) => s.stopId), selRoutesRef.current)
+        .then((d) => {
+          if (alongSeq.current === seq) setAlong(d);
+        })
+        .catch(() => {
+          if (alongSeq.current === seq) setAlong(null);
+        });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [selStops]);
+
   // ---- straight-line legs (client-side, instant, geodesic) ---------------------------
   const legs: MeasureLeg[] = useMemo(() => {
     const out: MeasureLeg[] = [];
     for (let i = 1; i < selStops.length; i++) {
       const a = selStops[i - 1];
       const b = selStops[i];
+      // Match the server's leg by stop-id pair, never by index: the client chain can
+      // contain a subway station the along-route request deliberately skipped, and an
+      // index-aligned join would then attach one leg's route distance to another leg.
+      const srv = along?.legs.find((l) => l.from_stop === a.stopId && l.to_stop === b.stopId);
       out.push({
         fromKey: a.key,
         toKey: b.key,
         fromName: a.name,
         toName: b.name,
         straightFt: feetBetween([a.lat, a.lon], [b.lat, b.lon]),
+        alongFt: srv?.along_ft ?? null,
+        alongRoute: srv?.route_id ?? null,
+        alongDirLabel: srv?.direction_label ?? null,
+        alongNote: srv?.note ?? null,
       });
     }
     return out;
-  }, [selStops]);
+  }, [selStops, along]);
+  const alongNote = useMemo(() => {
+    if (selStops.length < 2) return null;
+    if (selStops.some((s) => s.kind === "subway"))
+      return "along-route distance is a bus-route measurement — remove the subway station to see it";
+    return along?.note ?? "…";
+  }, [selStops, along]);
   const totalStraightFt = useMemo(
     () => chainFeet(selStops.map((s) => [s.lat, s.lon] as [number, number])),
     [selStops],
   );
 
-  const stopColorFor = (s: SnapStop): string => {
-    if (s.kind === "subway") {
-      const k = selLines.find((x) => s.routes.some((r) => lineKey(r) === x));
-      return k ? subwayColor(k) : "#6b7280";
-    }
-    return routeColor.get(s.routes[0]) ?? "#6b7280";
-  };
+  const stopColorFor = useCallback(
+    (s: SnapStop): string => {
+      if (s.kind === "subway") {
+        const k = selLines.find((x) => s.routes.some((r) => lineKey(r) === x));
+        return k ? subwayColor(k) : "#6b7280";
+      }
+      return routeColor.get(s.routes[0]) ?? "#6b7280";
+    },
+    [selLines, routeColor],
+  );
 
   const copyCoords = (lat: number, lon: number) => {
     try {
@@ -1653,17 +1747,17 @@ export default function WorkstationPage() {
         measuring={measuring}
         legs={legs}
         totalStraightFt={totalStraightFt}
-        totalAlongFt={null}
-        totalAlongNote="not measured in this build"
+        totalAlongFt={along?.total_along_ft ?? null}
+        totalAlongRoute={along?.route_id ?? null}
+        totalAlongDirLabel={along?.direction_label ?? null}
+        totalAlongNote={alongNote}
         hoverName={measuring ? hoverName : null}
         colorFor={stopColorFor}
-        onToggleMeasure={() => setMeasuring((v) => !v)}
+        onToggleMeasure={toggleMeasure}
         onRemove={removeStop}
         onUndo={undoStop}
-        onClear={() => {
-          clearStops();
-          setMeasuring(false);
-        }}
+        onClear={clearAllStops}
+        detailFor={detailFor}
       />
 
       {/* ---- W11: the map context menu (right-click). Leads with WHAT you clicked. ---- */}
@@ -1754,12 +1848,7 @@ export default function WorkstationPage() {
         ]}
         details={[
           <MapThemePicker id="wsMapTheme" />,
-          <span>
-            Zoom past z{STREET_NUMBER_MIN_ZOOM} and OSM <strong>house numbers</strong> appear on buildings.
-            Coverage is volunteered and patchy — roughly 0.8&ndash;1.6 numbered points per
-            mapped building, denser in Manhattan and Brooklyn than in Queens or Staten Island,
-            and the tiles carry the number only, never the street name.
-          </span>,
+          <HouseNumberToggle id="wsHouseNums" />,
         ]}
         stamps={
           <>

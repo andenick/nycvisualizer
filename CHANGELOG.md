@@ -12,6 +12,98 @@ All notable changes to nycvisualizer are recorded here.
 > work, that citation (e.g. NBER w33584, arXiv:2606.17530) is unchanged and remains
 > the reader's referent.
 
+## 2026-07-25 — Distance along the bus route · the phone breakpoint that was a device · house numbers become opt-in
+
+Three things, one deploy. Stage 2 of the measure feature plus two defects a user hit in
+real use the same day.
+
+### Distance along the route (`/api/stops/along`, `/api/stops/card`)
+
+The measure readout now answers a second question, and it is the one Google structurally
+cannot: **how far the bus actually travels between two stops**, as opposed to how far
+apart they are. On a real Bx12 pair those differ by 11 % — 2,850 ft straight line against
+3,170 ft along the route — and for a planner the second number is the one that matters.
+
+Nothing is estimated. `stop_offsets` already carries, for every (shape, stop), the
+cumulative distance of that stop from the start of the shape in EPSG:2263 US survey feet;
+the answer is a subtraction of two floats. 36,895 rows, covering **683 of the 683**
+canonical (route, direction) shapes with no gaps.
+
+The label **names the route and the direction** — *"Along the Bx12, toward Orchard
+Beach"* — because "along the route" in the abstract is meaningless. And three rules are
+enforced in code rather than left to care:
+
+- **Per direction, always; never averaged across directions.** Service is not symmetric
+  and a mean of the two describes no bus.
+- **A headline only when one route and direction carries a bus across every leg**, in the
+  direction the stops were picked. A chain that changes route gets no along-route total,
+  because summing two routes' offsets is a distance nothing travels — it says so instead.
+- **Picked against the direction of travel?** It says that too, and offers the figure the
+  other way rather than silently flipping the sign.
+
+The **stop card** now fills in from the same request-on-click endpoint: per route and
+direction, the observed and scheduled gap, bunching, the worst hour, the stop's sequence
+number, and the spacing to the stops before and after it; plus the stop's accessibility
+index, shelter, curb ramps, sidewalk area, and the people and jobs within 400 m. Every
+field we do not hold reads **`not captured` with the reason** — the NYC bus feeds publish
+no `stop_code` (the id shown *is* the code riders text), no `wheelchair_boarding`, and no
+stop-level ridership. The "worst hour" callout will not name an hour backed by fewer than
+20 observed gaps; a 2 a.m. cell with three of them is noise wearing the clothes of a
+finding.
+
+Both endpoints are fetched **on click, never eagerly** — one request per newly-opened
+card, one per selection change — and cached. 57 selected routes is thousands of stops, and
+a fan-out over all of them is a defect this page has had once already.
+
+### The mobile breakpoint was a device, not a breakpoint
+
+Reported by a user on their phone. The Workstation's bottom-sheet layout was gated at
+`max-width: 390px` — the CSS width of an iPhone 12/13/14 and of nothing else. An iPhone
+14/15/16 Pro is 393. A Pixel 7 is 412. A Pro Max is 430. Every one of them fell through to
+the **desktop** layout: a 300x766 px panel floating over the map, overlapping the data
+rail by ~43,600 px², with "Selection data" rendering transparently on top of "Routes &
+lines" and the map reduced to about 18 % of the screen.
+
+Measured on the live site, before: at 390 the panel is 52 % of the viewport with one
+trivial 92x25 px overlap; at 393 it is **90 %** with **four** overlapping pairs and
+~101,000 px² of occlusion. After: 393, 412, 430 and 768 all engage the sheet, occlusion
+drops to the same 3,835 px² of pre-existing corner furniture, and 834 and 1440 are
+unchanged. The layout was already proven good at 390 — this extends it to a real
+phone/small-tablet bound rather than inventing one.
+
+This is a hotfix, not the mobile redesign. Even where the layout now engages correctly,
+chrome still covers about 87 % of a phone screen and most controls are under the 40 px tap
+minimum. That is honest and it is separate work.
+
+### House numbers are now off by default
+
+Reported the day after they shipped: *"when you zoom in too much the screen is too crowded
+with all the numbers on each building. I don't want that information on the map."*
+
+The description is exact. About 45 % of NYC building features carry `addr_housenumber`, so
+a Park Slope block at z18 draws hundreds of them and the street names underneath are
+nearly buried. They are now behind a **legend toggle, default off**, remembered like the
+other map preferences — on every map surface, since they all share one basemap module.
+
+Raising the zoom gate to z18 or z19 was considered and rejected: it moves the same wall one
+zoom level deeper and the reader hits it on the next scroll.
+
+(The report said "census tract numbers". A repo-wide search found **no** census-tract or
+GEOID label rule on any layer — there is nothing else on these maps that draws a number on
+a building, so the house numbers were the whole of it.)
+
+**Street *names* are untouched** and still render at every zoom; they come from a different
+layer.
+
+**What the original verification missed, recorded because the lesson generalises:** the
+house numbers were checked as *"do they render?"* — and they did, correctly, at every zoom
+tested. The check nobody ran was **aggregate legibility**: not "does the label draw" but
+"is the map still readable once they all draw." The basemap canary now asserts both the
+data contract (the tiles must keep carrying the numbers, or the toggle would switch on an
+empty layer) **and** the shipped default (that the gate requires an opt-in), 15 checks to
+16. Deleting the first would have stopped protecting the layer underneath; keeping only the
+first would have let the default silently flip back.
+
 ## 2026-07-25 — Workstation: stop cards you can keep, and a measure tool that snaps to stops
 
 Stage 1 of the measure feature. Client-only: no API change, no container but

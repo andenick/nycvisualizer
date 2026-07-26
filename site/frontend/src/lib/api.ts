@@ -215,6 +215,103 @@ export const getArrivals = (stopId: string) =>
     `/api/stops/${encodeURIComponent(stopId)}/arrivals`,
   );
 
+// ---------------------------------------------------------------------------
+// W11 — stop cards + distance ALONG the bus route (/api/stops/*)
+//
+// Both are FETCH-ON-CLICK, never eager: 57 selected routes is thousands of stops, and
+// pre-fetching detail for all of them is the shape of defect this page has already had
+// once. `routes` narrows the answer to the planner's current selection.
+// ---------------------------------------------------------------------------
+
+export interface StopCardDirection {
+  route_id: string;
+  direction_id: number | null;
+  direction_label: string | null;
+  stop_seq: number | null;
+  offset_ft: number | null;
+  prev_stop_name: string | null;
+  prev_spacing_ft: number | null;
+  next_stop_name: string | null;
+  next_spacing_ft: number | null;
+  observed_headway_min: number | null;
+  scheduled_headway_min: number | null;
+  headway_deviation_min: number | null;
+  bunching_index: number | null;
+  worst_hour: number | null;
+  worst_hour_deviation_min: number | null;
+  n_headways: number | null;
+  observed_days: number | null;
+  preliminary: boolean | null;
+}
+export interface StopCardSai {
+  sai: number | null;
+  sai_pctile: number | null;
+  sheltered: boolean | null;
+  ramps_150ft: number | null;
+  sidewalk_sqft_400m: number | null;
+  people_400m: number | null;
+  jobs_400m: number | null;
+  safety: number | null;
+  comfort: number | null;
+  borough: string | null;
+}
+export interface StopCardResponse {
+  stop_id: string;
+  stop_name: string | null;
+  borough: string | null;
+  directions: StopCardDirection[];
+  sai: StopCardSai | null;
+  wheelchair_boarding: string | null;
+  active_changes: string[] | null;
+  /** field name -> why it is absent. Rendered verbatim, never hidden. */
+  not_captured: Record<string, string>;
+  archive_depth_days: number | null;
+  as_of: string | null;
+  rounding_ft: number;
+}
+export const getStopCard = (stopId: string, routes?: string[]) => {
+  const p = new URLSearchParams();
+  p.set("stop_id", stopId);
+  if (routes && routes.length) p.set("routes", routes.join(","));
+  return getJSON<StopCardResponse>("/api/stops/card?" + p.toString());
+};
+
+export interface AlongLeg {
+  from_stop: string;
+  to_stop: string;
+  from_name: string | null;
+  to_name: string | null;
+  along_ft: number | null;
+  route_id: string | null;
+  direction_id: number | null;
+  direction_label: string | null;
+  stops_between: number | null;
+  opposite_direction_ft?: number | null;
+  note: string | null;
+}
+export interface AlongResponse {
+  stops: string[];
+  stop_names: Record<string, string>;
+  legs: AlongLeg[];
+  /** Non-null ONLY when one route+direction carries a bus across every leg, in the
+   *  direction the stops were picked. Never a sum across different routes. */
+  total_along_ft: number | null;
+  route_id: string | null;
+  direction_id: number | null;
+  direction_label: string | null;
+  note: string | null;
+  opposite_direction_total_ft?: number | null;
+  opposite_route_id?: string | null;
+  basis: string;
+  rounding_ft: number;
+}
+export const getStopsAlong = (stopIds: string[], routes?: string[]) => {
+  const p = new URLSearchParams();
+  p.set("stops", stopIds.join(","));
+  if (routes && routes.length) p.set("routes", routes.join(","));
+  return getJSON<AlongResponse>("/api/stops/along?" + p.toString());
+};
+
 export const getSubway = (bbox?: string) =>
   getJSON<SubwayResponse>("/api/rt/subway" + bboxQuery(bbox));
 export const getStations = () => getJSON<StationInfo[]>("/api/stations");

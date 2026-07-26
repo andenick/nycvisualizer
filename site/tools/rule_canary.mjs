@@ -91,6 +91,27 @@ function maxDataZoom() {
 // rebuild could silently drop it and every other guard would stay green (roads still
 // paint, pixels still count, the rules still match). So assert the data is there, and
 // read the layer/kind/property names out of the app rather than restating them.
+//
+// W14 (2026-07-25): the numbers are now OPT-IN and default OFF (a dense block drew
+// hundreds of them and the map stopped being readable). The data contract above is
+// UNCHANGED and still asserted — the tiles must keep carrying the numbers, or the
+// toggle would switch on an empty layer. A SECOND check is added beside it asserting
+// the shipped DEFAULT: that `gateStreetNumbers` requires the reader's opt-in and does
+// not fire on zoom alone. Deleting the first check would have stopped protecting the
+// layer underneath; asserting only the first would have let the default silently flip
+// back. Both, or neither is worth having.
+function houseNumberDefaultOff() {
+  const src = fs.readFileSync(BASEMAP_TS, "utf8");
+  // The gate must consult the reader's preference, not the zoom alone.
+  const gate = src.match(/const gateStreetNumbers[\s\S]*?\n  };/);
+  const optIn = !!gate && /houseNumbersOn\(\)\s*&&/.test(gate[0]);
+  // ... and the preference itself must default to false when unset or unreadable.
+  const pref = src.match(/export function houseNumbersOn\(\)[\s\S]*?\n}/);
+  const defaultsOff =
+    !!pref && /=== "1"/.test(pref[0]) && /catch\s*{[\s\S]*?return false/.test(pref[0]);
+  return { optIn, defaultsOff, found: !!gate && !!pref };
+}
+
 function streetNumberContract() {
   const src = fs.readFileSync(BASEMAP_TS, "utf8");
   // The rule body, so a `dataLayer:` somewhere else in the file cannot be picked up.
@@ -450,6 +471,16 @@ async function main() {
       withNum.length > 0,
       `street numbers: '${sn.kind}' features in '${sn.dataLayer}' carry ${sn.prop}`,
       `${withNum.length} numbered of ${addr.length} address points, in ${pool.length} ${sn.dataLayer} features`,
+    ]);
+    // W14: the data is there; the DEFAULT must be that it is not drawn.
+    const hn = houseNumberDefaultOff();
+    report.houseNumbers = hn;
+    checks.push([
+      hn.found && hn.optIn && hn.defaultsOff,
+      "house numbers are opt-in and default OFF (W14)",
+      hn.found
+        ? `gate requires houseNumbersOn(): ${hn.optIn}; preference defaults off: ${hn.defaultsOff}`
+        : "could not find gateStreetNumbers / houseNumbersOn in basemap.ts",
     ]);
   }
 

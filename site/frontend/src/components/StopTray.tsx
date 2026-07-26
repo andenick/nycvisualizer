@@ -25,9 +25,10 @@
 // COST: this is ordinary React DOM, bounded by the selection cap (see CARD_CAP in
 // WorkstationPage). It never touches the map, the flow engine, or the stop markers.
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import type { SnapStop } from "../lib/stopGeo";
 import { fmtDistance, fmtFeet } from "../lib/stopGeo";
+import type { StopCardResponse } from "../lib/api";
 
 export interface MeasureLeg {
   fromKey: string;
@@ -54,7 +55,11 @@ export interface StopTrayProps {
   measuring: boolean;
   legs: MeasureLeg[];
   totalStraightFt: number;
+  /** Non-null ONLY when one route+direction genuinely carries a bus across every leg,
+   *  in the direction the stops were picked. Otherwise the note says why, in words. */
   totalAlongFt: number | null;
+  totalAlongRoute?: string | null;
+  totalAlongDirLabel?: string | null;
   totalAlongNote: string | null;
   /** null = no stop is under the cursor right now. */
   hoverName: string | null;
@@ -74,48 +79,7 @@ export interface StopTrayProps {
 
 /** Server-side stop detail (Stage 2). Every field is nullable and every null is
  *  rendered as `not captured` — the honesty contract, not a formatting choice. */
-export interface StopDetail {
-  stop_id: string;
-  stop_name: string | null;
-  borough: string | null;
-  /** One row per (route, direction) the stop is served by. */
-  directions: {
-    route_id: string;
-    direction_id: number | null;
-    direction_label: string | null;
-    stop_seq: number | null;
-    offset_ft: number | null;
-    prev_stop_name: string | null;
-    prev_spacing_ft: number | null;
-    next_stop_name: string | null;
-    next_spacing_ft: number | null;
-    observed_headway_min: number | null;
-    scheduled_headway_min: number | null;
-    headway_deviation_min: number | null;
-    bunching_index: number | null;
-    worst_hour: number | null;
-    worst_hour_deviation_min: number | null;
-    n_headways: number | null;
-    observed_days: number | null;
-    preliminary: boolean | null;
-  }[];
-  sai: {
-    sai: number | null;
-    sai_pctile: number | null;
-    sheltered: boolean | null;
-    ramps_150ft: number | null;
-    sidewalk_sqft_400m: number | null;
-    walkshed_population: number | null;
-    safety: number | null;
-    comfort: number | null;
-  } | null;
-  wheelchair_boarding: string | null;
-  active_changes: string[] | null;
-  /** Field name -> why it is absent. Rendered verbatim. */
-  not_captured: Record<string, string>;
-  archive_depth_days: number | null;
-  as_of: string | null;
-}
+export type StopDetail = StopCardResponse;
 
 const NC = <span className="stray-nc">not captured</span>;
 
@@ -219,7 +183,9 @@ function DetailBlock({ d }: { d: StopDetail }) {
         <span>Sidewalk ≤400 m</span>
         {d.sai ? num(d.sai.sidewalk_sqft_400m, " sq ft", 0) : NC}
         <span>People ≤400 m</span>
-        {d.sai ? num(d.sai.walkshed_population, "", 0) : NC}
+        {d.sai ? num(d.sai.people_400m, "", 0) : NC}
+        <span>Jobs ≤400 m</span>
+        {d.sai ? num(d.sai.jobs_400m, "", 0) : NC}
         <span>Wheelchair boarding</span>
         {d.wheelchair_boarding ? <span className="stray-v">{d.wheelchair_boarding}</span> : NC}
       </div>
@@ -228,19 +194,36 @@ function DetailBlock({ d }: { d: StopDetail }) {
           Recent service changes: {d.active_changes.slice(0, 2).join(" · ")}
         </div>
       )}
-      {Object.keys(d.not_captured).length > 0 && (
+      {/* `not captured` is spelled out, with the reason. A planner has to be able to tell
+          "none" from "unknown", and the reason is usually a fact about the feed rather
+          than about the stop. */}
+      {Object.keys(d.not_captured ?? {}).length > 0 && (
         <div className="stray-line stray-dim">
+          <em>not captured</em> —{" "}
           {Object.entries(d.not_captured)
-            .slice(0, 3)
             .map(([k, why]) => `${k}: ${why}`)
             .join(" · ")}
         </div>
       )}
+      <div className="stray-line stray-dim">
+        Service figures from {d.archive_depth_days ?? "—"} observed day
+        {d.archive_depth_days === 1 ? "" : "s"} of our own archive
+        {d.as_of ? `, to ${d.as_of}` : ""}. Spacing and stop order are GTFS static.
+      </div>
     </div>
   );
 }
 
-export default function StopTray(p: StopTrayProps) {
+// MEMOISED, and the props it is given are stabilised by the caller.
+//
+// This is not a micro-optimisation. The workstation re-renders on every live vehicle
+// frame (~30 s) and on every bbox-filtered poll a pan triggers, and with a few cards
+// open the tray is the largest DOM subtree on the page. Measured on the live site at
+// 54 routes, Bronx z14, 4x CPU throttle: reconciling it on every one of those updates
+// took a drag-pan from 535 ms to 1,132 ms and the mean frame from 19.9 ms to 30.6 ms.
+// Memoised, the tray re-renders only when the selection, the mode or a fetched detail
+// actually changes.
+function StopTrayInner(p: StopTrayProps) {
   const n = p.stops.length;
   if (n === 0 && !p.measuring) return null;
 
@@ -302,17 +285,24 @@ export default function StopTray(p: StopTrayProps) {
               {n < 2 ? <span className="stray-dash">—</span> : fmtDistance(p.totalStraightFt)}
             </span>
           </div>
+          {/* The label NAMES THE ROUTE AND DIRECTION. "Along the route" in the abstract is
+              meaningless; "Along the Bx12, toward Orchard Beach" is a planner's sentence.
+              When there is no single route+direction across the whole chain there is no
+              number here at all — only the reason, because a sum across two routes is a
+              distance nothing travels. */}
           <div className="stray-mrow">
             <span className="stray-mlbl">
-              {p.totalAlongFt != null && last?.alongRoute
-                ? `Along the ${last.alongRoute}${last.alongDirLabel ? ", " + last.alongDirLabel : ""}`
+              {p.totalAlongFt != null && p.totalAlongRoute
+                ? `Along the ${p.totalAlongRoute}${p.totalAlongDirLabel ? ", " + p.totalAlongDirLabel : ""}`
                 : "Along the route"}
             </span>
             <span className="stray-mval">
-              {p.totalAlongFt != null ? (
+              {n < 2 ? (
+                <span className="stray-dash">—</span>
+              ) : p.totalAlongFt != null ? (
                 fmtDistance(p.totalAlongFt)
               ) : (
-                <span className="stray-mnote">{p.totalAlongNote ?? "not measured in this build"}</span>
+                <span className="stray-mnote">{p.totalAlongNote ?? "…"}</span>
               )}
             </span>
           </div>
@@ -423,3 +413,5 @@ export default function StopTray(p: StopTrayProps) {
     </div>
   );
 }
+
+export default memo(StopTrayInner);

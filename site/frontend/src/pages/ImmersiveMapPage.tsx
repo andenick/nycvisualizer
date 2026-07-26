@@ -25,7 +25,6 @@ import {
   NYC_CENTER,
   NYC_BOUNDS,
   MAP_MAX_ZOOM,
-  STREET_NUMBER_MIN_ZOOM,
   type BasemapInfo,
 } from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
@@ -59,6 +58,7 @@ import {
 import { VehicleFlowLayer, type FlowSelection } from "../components/VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "../components/MapLegend";
 import MapThemePicker from "../components/MapThemePicker";
+import HouseNumberToggle from "../components/HouseNumberToggle";
 import FlowControls, { type FollowInfo, type FocusInfo } from "../components/FlowControls";
 
 // Representative trunk bullets for the subway "official line colors" legend row.
@@ -1002,12 +1002,7 @@ export default function ImmersiveMapPage({ mode }: { mode: ImmersiveMode }) {
         }
         details={[
           <MapThemePicker id="immMapTheme" />,
-          <span>
-            Zoom past z{STREET_NUMBER_MIN_ZOOM} and OSM <strong>house numbers</strong> appear on
-            buildings. Coverage is volunteered and patchy — roughly 0.8&ndash;1.6 numbered points per
-            mapped building, denser in Manhattan and Brooklyn than in Queens or Staten Island, and the
-            tiles carry the number only, never the street name.
-          </span>,
+          <HouseNumberToggle id="immHouseNums" />,
         ]}
         stamps={
           <>

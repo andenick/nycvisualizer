@@ -7,7 +7,6 @@ import {
   NYC_CENTER,
   NYC_BOUNDS,
   MAP_MAX_ZOOM,
-  STREET_NUMBER_MIN_ZOOM,
   type BasemapInfo,
 } from "../lib/basemap";
 import { RouteShapeCache } from "../lib/shapeCache";
@@ -35,6 +34,7 @@ import { subwayColor, subwayTextColor, subwayLabel } from "../lib/subwayColors";
 import { VehicleFlowLayer, type FlowSelection } from "./VehicleFlowLayer";
 import MapLegend, { Swatch, Bullet } from "./MapLegend";
 import MapThemePicker from "./MapThemePicker";
+import HouseNumberToggle from "./HouseNumberToggle";
 import {
   BOROUGH_GROUP_ORDER,
   BOROUGH_LEGEND,
@@ -834,12 +834,7 @@ export default function BusMap() {
             </span>
           ) : null,
           <MapThemePicker id="busMapTheme" />,
-          <span>
-            Zoom past z{STREET_NUMBER_MIN_ZOOM} and OSM <strong>house numbers</strong> appear on buildings.
-            Coverage is volunteered and patchy — roughly 0.8&ndash;1.6 numbered points per
-            mapped building, denser in Manhattan and Brooklyn than in Queens or Staten Island,
-            and the tiles carry the number only, never the street name.
-          </span>,
+          <HouseNumberToggle id="busHouseNums" />,
         ]}
         stamps={
           <>

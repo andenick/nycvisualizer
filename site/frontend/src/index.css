@@ -1844,8 +1844,19 @@ i.obs-hw-obs.key { border-radius: 50%; }
 /* nudge the bottom-right clock left so it clears the rail's lower edge cleanly */
 .ws-clock { z-index: 1100; }
 
-/* ---- 390px: panel collapses to a bottom sheet; rail rides the top full-width ---- */
-@media (max-width: 390px) {
+/* ---- PHONES: panel collapses to a bottom sheet; rail rides the top full-width ----
+   THE BREAKPOINT WAS A DEVICE, NOT A BREAKPOINT (fixed 2026-07-25, from a live user on
+   a phone). This block was gated at `max-width: 390px`, which is the CSS width of an
+   iPhone 12/13/14 and of nothing else. An iPhone 14/15/16 Pro is 393, a Pixel 7 is 412,
+   a Pro Max is 430 — one to forty pixels wider, and every one of them fell through to
+   the DESKTOP layout: a 300x766 px panel floating over the map, overlapping the data
+   rail by ~43,600 px², with "Selection data" rendering transparently on top of
+   "Routes & lines" and the map reduced to ~18 % of the screen. Measured: at 390 the
+   panel is 52 % of the viewport and there is one trivial 92x25 px overlap; at 391 it is
+   90 % and there are four overlapping pairs.
+   768 px is a real phone/small-tablet bound. This EXTENDS the layout that was already
+   proven good at 390 — it does not invent one. */
+@media (max-width: 768px) {
   .ws-panel {
     top: auto; left: 0; right: 0; width: auto;
     bottom: 0; border-radius: 14px 14px 0 0;
@@ -1879,7 +1890,7 @@ i.obs-hw-obs.key { border-radius: 50%; }
    164x56 px over the rail — hiding the "Selection data" title — and 64x56 px over the
    panel head, hiding "Clear all"). In that band the chip drops to the bottom corridor
    between the left panel and the bottom-right chip column (clock · legend · ⓘ). */
-@media (min-width: 391px) and (max-width: 1329px) {
+@media (min-width: 769px) and (max-width: 1329px) {
   .ws-asof {
     top: auto;
     bottom: calc(env(safe-area-inset-bottom) + 0.7rem + 5.3rem);
@@ -1935,11 +1946,19 @@ i.obs-hw-obs.key { border-radius: 50%; }
   max-height: min(58dvh, 560px);
   display: flex; flex-direction: column;
   border-radius: 12px; overflow: hidden;
-  background: color-mix(in srgb, var(--ark-bg-soft, #161b22) 92%, transparent);
-  backdrop-filter: blur(9px) saturate(1.1);
-  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  background: var(--ark-bg-soft, #161b22);
   border: 1px solid color-mix(in srgb, var(--ark-line, #2a313b) 85%, transparent);
   box-shadow: var(--ark-shadow, 0 6px 22px -12px rgba(0, 0, 0, 0.4));
+  /* PROMOTED TO ITS OWN COMPOSITOR LAYER, and opaque. The tray is the largest overlay
+     on this page (~642x386 at 1440), and it sits directly over a map that transforms on
+     every frame of a pan. Left translucent and unpromoted, the browser re-blended and
+     re-rastered that whole area every frame: measured at 54 routes, Bronx z14, 4x CPU
+     throttle, the main thread spent 11.1 s of task time over ten drag gestures against
+     5.4 s with no cards open, while script, layout and style time all went DOWN — the
+     cost was paint, not JavaScript. Opaque + `will-change` + `contain` lets the
+     compositor scroll the map underneath without touching the tray. */
+  will-change: transform;
+  contain: layout paint;
 }
 .stray-head {
   display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
@@ -2128,7 +2147,7 @@ i.obs-hw-obs.key { border-radius: 50%; }
    band and the rail SHORTENS while it is open. Shortening the rail is deliberate: a
    panel that covers the lower half of a data table hides content silently, and the
    whole point of the rail is that its numbers are findable. */
-@media (max-width: 1329px) {
+@media (min-width: 769px) and (max-width: 1329px) {
   .stray {
     left: max(0.5rem, env(safe-area-inset-left));
     right: max(0.5rem, env(safe-area-inset-right));
@@ -2147,21 +2166,26 @@ i.obs-hw-obs.key { border-radius: 50%; }
 /* <= 700 px: touch. Bigger tap targets; the provenance paragraph folds away (it is
    restated in the legend). Hover affordances do not exist here at all, which is
    exactly why Undo and tap-to-remove are real buttons and not conveniences. */
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   .stray-btn { min-height: 34px; padding: 0.35rem 0.6rem; }
   .stray-card { flex-basis: 190px; min-width: 190px; }
   .stray-mprov { display: none; }
 }
 
-/* <= 390 px: every piece of chrome has to be placed by hand, because the left panel is
+/* <= 768 px (phones and small tablets): every piece of chrome is placed by hand, because the left panel is
    itself a bottom sheet, the rail rides the top, and the as-of chip already lives in the
    band between them. With the tray open the bottom 40dvh is the tray's, the rail
    shortens to 22dvh, and the four corner chips stack upward in their established order
    (as-of · clock · legend · info) so none of them lands on another. The as-of chip stops
    being full-width here so the zoom control keeps a berth on the left. Every offset below
    was measured against the rendered rects, not guessed. */
-@media (max-width: 390px) {
-  .stray { bottom: 3.1rem; max-height: 40dvh; border-radius: 12px; }
+@media (max-width: 768px) {
+  .stray {
+    left: max(0.5rem, env(safe-area-inset-left));
+    right: max(0.5rem, env(safe-area-inset-right));
+    transform: none; width: auto;
+    bottom: 3.1rem; max-height: 40dvh; border-radius: 12px;
+  }
   .ws-hastray .ws-rail { max-height: 22dvh; }
   .ws-hastray .ws-asof {
     bottom: calc(40dvh + 3.9rem); top: auto;
@@ -2172,5 +2196,4 @@ i.obs-hw-obs.key { border-radius: 50%; }
   .ws-hastray .maplegend--imm.ws-legend { bottom: calc(40dvh + 3.9rem + 6.3rem); }
   .ws-hastray .imm-info { bottom: calc(40dvh + 3.9rem + 8.7rem); }
   .ws-hastray .leaflet-bottom.leaflet-left { bottom: calc(40dvh + 3.9rem); }
-}
 }
