@@ -593,3 +593,354 @@ async def stop_card(stop_id: str, routes: str | None = None) -> JSONResponse:
     rset = {r.strip() for r in routes.split(",") if r.strip()} if routes else None
     key = f"card|{stop_id}|{routes or ''}"
     return JSONResponse(_cached(key, 600, lambda: _card_payload(stop_id, rset)))
+
+
+# =========================================================================== #
+# W11 STAGE 3 — walking distance, and the selection leaving the browser
+# =========================================================================== #
+import asyncio  # noqa: E402
+import io  # noqa: E402
+import math  # noqa: E402
+
+from fastapi import Response  # noqa: E402
+
+from . import isochrone  # noqa: E402  (reuses its OTPUnavailable honesty contract)
+
+
+@lru_cache(maxsize=1)
+def _stop_coords() -> dict[str, tuple[float, float]]:
+    """stop_id -> (lat, lon), from the six bus feeds' GTFS `stops.txt`.
+
+    Needed because derive2's `stops.parquet` carries names only. Built once; the stop set
+    is finite and static per feed vintage.
+    """
+    out: dict[str, tuple[float, float]] = {}
+    con = _con()
+    try:
+        for feed in BUS_FEEDS:
+            f = config.GTFS_STATIC_ROOT / feed / "gtfs" / "stops.txt"
+            if not f.exists():
+                continue
+            rows = con.execute(
+                f"""SELECT stop_id, CAST(TRIM(stop_lat) AS DOUBLE), CAST(TRIM(stop_lon) AS DOUBLE)
+                    FROM read_csv_auto({_q(f.as_posix())}, header=true, all_varchar=true)"""
+            ).fetchall()
+            for sid, lat, lon in rows:
+                if sid not in out and lat is not None and lon is not None:
+                    out[sid] = (float(lat), float(lon))
+    finally:
+        con.close()
+    return out
+
+
+def _straight_ft(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """The same local-radius WGS84 reduction the client uses, so the two never disagree.
+    A spherical haversine would be off by up to ~0.3 % — 22 ft on a 7,500 ft leg, which
+    is worse than the data these numbers are computed from."""
+    rad = math.pi / 180.0
+    A, E2 = 6378137.0, 0.00669437999014
+    phi = ((a[0] + b[0]) / 2) * rad
+    s = math.sin(phi)
+    w2 = 1 - E2 * s * s
+    w = math.sqrt(w2)
+    n_rad = A / w
+    m_rad = (A * (1 - E2)) / (w2 * w)
+    dy = m_rad * (b[0] - a[0]) * rad
+    dx = n_rad * math.cos(phi) * (b[1] - a[1]) * rad
+    return math.hypot(dx, dy) / 0.3048
+
+
+def _otp_walk(a: tuple[float, float], b: tuple[float, float]) -> dict[str, Any]:
+    """One WALK itinerary from OpenTripPlanner. Raises OTPUnavailable on ANY failure.
+
+    The honesty contract is `isochrone.py`'s, deliberately reused: on failure the caller
+    returns 503 and the UI says walking is unavailable. It NEVER falls back to the
+    straight-line figure wearing a walking label — a walking distance that is secretly a
+    crow-flies distance is the single worst thing this feature could ship.
+    """
+    if not config.OTP_URL:
+        raise isochrone.OTPUnavailable(
+            "the routing engine is not configured on this deployment")
+    import httpx
+
+    url = f"{config.OTP_URL}/otp/routers/default/plan"
+    params = {
+        "fromPlace": f"{a[0]},{a[1]}",
+        "toPlace": f"{b[0]},{b[1]}",
+        "mode": "WALK",
+        "arriveBy": "false",
+        "numItineraries": 1,
+    }
+    try:
+        r = httpx.get(url, params=params, timeout=config.OTP_TIMEOUT_S)
+    except Exception as e:
+        raise isochrone.OTPUnavailable(f"routing engine unreachable: {e}") from e
+    if r.status_code != 200:
+        raise isochrone.OTPUnavailable(f"routing engine returned HTTP {r.status_code}")
+    try:
+        j = r.json()
+    except Exception as e:
+        raise isochrone.OTPUnavailable(f"routing engine returned non-JSON: {e}") from e
+    its = ((j.get("plan") or {}).get("itineraries") or [])
+    if not its:
+        raise isochrone.OTPUnavailable(
+            "the routing engine found no walking route between these two points")
+    it = its[0]
+    metres = float(it.get("walkDistance") or 0.0)
+    seconds = float(it.get("duration") or 0.0)
+    streets: list[str] = []
+    for leg in it.get("legs", []):
+        for st in (leg.get("steps") or []):
+            name = (st.get("streetName") or "").strip()
+            if name and name not in streets:
+                streets.append(name)
+    return {
+        "walk_ft": _round10(metres / 0.3048),
+        "walk_minutes": round(seconds / 60.0, 1),
+        "streets": streets[:8],
+        "engine": "OpenTripPlanner",
+        "basis": ("routed over the OpenStreetMap pedestrian network (sidewalks, paths and "
+                  "steps); accuracy is OSM's sidewalk completeness, not ours"),
+    }
+
+
+@router.get("/walk")
+async def stops_walk(from_stop: str, to_stop: str) -> JSONResponse:
+    """Walking distance between two stops. An EXPLICIT per-leg action, never automatic:
+    it is a server round-trip and a planner asks for it deliberately."""
+    coords = _stop_coords()
+    a, b = coords.get(from_stop), coords.get(to_stop)
+    if a is None or b is None:
+        missing = from_stop if a is None else to_stop
+        return JSONResponse(
+            {"error": f"no coordinates on file for stop {missing}"}, status_code=404)
+    key = f"walk|{from_stop}|{to_stop}"
+    hit = _ttl.get(key)
+    if hit is not None and (time.time() - hit[0]) < 86400:
+        return JSONResponse(hit[1])
+    try:
+        data = await asyncio.to_thread(_otp_walk, a, b)
+    except isochrone.OTPUnavailable as e:
+        return JSONResponse(
+            {"error": "Walking distance is unavailable right now — this endpoint never "
+                      "substitutes a straight-line distance for a walked one.",
+             "detail": str(e)},
+            status_code=503,
+        )
+    data.update({"from_stop": from_stop, "to_stop": to_stop,
+                 "straight_ft": _round10(_straight_ft(a, b))})
+    # Stop pairs are a finite, static key space, so this caches far better than an
+    # isochrone origin does.
+    _ttl[key] = (time.time(), data)
+    return JSONResponse(data)
+
+
+# --------------------------------------------------------------------------- #
+# /api/stops/export — the selection leaves the browser
+# --------------------------------------------------------------------------- #
+def _provenance(dates: list[str]) -> list[str]:
+    arch = _archive_meta(dates)
+    return [
+        "NYC Visualizer — Planner Workstation stop selection",
+        f"generated {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
+        "sources: GTFS static (stop identity, sequence, headsign, spacing) · our own "
+        "observed-headway archive (gap, bunching, worst hour) · Stop Accessibility Index "
+        "(shelter, ramps, sidewalk, population, jobs)",
+        f"observed archive depth: {arch.get('archive_depth_days')} qualifying service "
+        f"day(s), through {dates[-1] if dates else 'n/a'}"
+        + (" — PRELIMINARY (under 14 days)" if arch.get("preliminary") else ""),
+        f"gap note: {arch.get('gap_note')}",
+        "distances: measured between SURVEYED STOP POSITIONS, never from live vehicle "
+        "positions; geodesic (WGS84 local radius), rounded to the nearest 10 ft because a "
+        "stop coordinate is one surveyed point for a ~40 ft kerbside zone",
+        "along-route distance is per (route, direction) and is NEVER averaged across "
+        "directions; it is blank wherever two stops do not share one route and direction",
+        "blank cells are NOT zero. The NYC bus feeds publish no stop_code (the stop_id IS "
+        "the code riders text and BusTime uses), no wheelchair_boarding, and no "
+        "stop-level ridership.",
+    ]
+
+
+def _export_tables(stop_ids: list[str], routes: set[str] | None):
+    """(stop rows, pair rows, provenance lines).
+
+    ONE ROW PER STOP PER DIRECTION — never one row per stop with the two directions
+    averaged together. Service is not symmetric and the average describes no bus.
+    """
+    dates = _qualifying_dates()
+    coords = _stop_coords()
+    stop_rows: list[dict[str, Any]] = []
+    for sid in stop_ids:
+        card = _card_payload(sid, routes)
+        latlon = coords.get(sid)
+        base = {
+            "stop_id": sid,
+            "stop_name": card.get("stop_name"),
+            "borough": card.get("borough"),
+            "lat": latlon[0] if latlon else None,
+            "lon": latlon[1] if latlon else None,
+        }
+        sai = card.get("sai") or {}
+        env = {
+            "sai": sai.get("sai"), "sai_pctile": sai.get("sai_pctile"),
+            "sheltered": sai.get("sheltered"), "curb_ramps_150ft": sai.get("ramps_150ft"),
+            "sidewalk_sqft_400m": sai.get("sidewalk_sqft_400m"),
+            "people_400m": sai.get("people_400m"), "jobs_400m": sai.get("jobs_400m"),
+            "archive_depth_days": card.get("archive_depth_days"),
+            "preliminary": card.get("preliminary"),
+        }
+        blank = {
+            "stop_sequence": None, "offset_along_route_ft": None, "prev_stop": None,
+            "spacing_from_prev_ft": None, "next_stop": None, "spacing_to_next_ft": None,
+            "observed_gap_min": None, "scheduled_gap_min": None, "gap_deviation_min": None,
+            "bunching_index": None, "worst_hour_local": None,
+            "worst_hour_gap_deviation_min": None, "observed_gaps_n": None,
+            "observed_days": None,
+        }
+        if not card.get("directions"):
+            stop_rows.append({**base, "route_id": None, "direction_id": None,
+                              "direction": None, **blank, **env})
+            continue
+        for d in card["directions"]:
+            stop_rows.append({
+                **base,
+                "route_id": d.get("route_id"),
+                "direction_id": d.get("direction_id"),
+                "direction": d.get("direction_label"),
+                "stop_sequence": d.get("stop_seq"),
+                "offset_along_route_ft": d.get("offset_ft"),
+                "prev_stop": d.get("prev_stop_name"),
+                "spacing_from_prev_ft": d.get("prev_spacing_ft"),
+                "next_stop": d.get("next_stop_name"),
+                "spacing_to_next_ft": d.get("next_spacing_ft"),
+                "observed_gap_min": d.get("observed_headway_min"),
+                "scheduled_gap_min": d.get("scheduled_headway_min"),
+                "gap_deviation_min": d.get("headway_deviation_min"),
+                "bunching_index": d.get("bunching_index"),
+                "worst_hour_local": d.get("worst_hour"),
+                "worst_hour_gap_deviation_min": d.get("worst_hour_deviation_min"),
+                "observed_gaps_n": d.get("n_headways"),
+                "observed_days": d.get("observed_days"),
+                **env,
+            })
+
+    # EVERY pair, not just consecutive ones — with several stops selected the planner's
+    # question is usually "how far is each of these from each of the others".
+    con = _con()
+    try:
+        offs = _offsets_for(con, stop_ids)
+    finally:
+        con.close()
+    pair_rows: list[dict[str, Any]] = []
+    for i, a in enumerate(stop_ids):
+        for b in stop_ids[i + 1:]:
+            ca, cb = coords.get(a), coords.get(b)
+            fwd, _bwd = _leg_candidates(a, b, offs, routes)
+            best = max(fwd.values(), key=lambda c: c["n_trips"]) if fwd else None
+            lbl = _label(best) if best else None
+            pair_rows.append({
+                "from_stop_id": a,
+                "from_stop_name": next((r["stop_name"] for r in stop_rows
+                                        if r["stop_id"] == a), None),
+                "to_stop_id": b,
+                "to_stop_name": next((r["stop_name"] for r in stop_rows
+                                      if r["stop_id"] == b), None),
+                "straight_line_ft": _round10(_straight_ft(ca, cb)) if ca and cb else None,
+                "along_route_ft": lbl["along_ft"] if lbl else None,
+                "along_route_id": lbl["route_id"] if lbl else None,
+                "along_direction": lbl["direction_label"] if lbl else None,
+                "stops_between": lbl["stops_between"] if lbl else None,
+                "along_route_note": None if lbl else (
+                    "these two stops do not share one route in this direction"),
+            })
+    return stop_rows, pair_rows, _provenance(dates)
+
+
+def _csv_bytes(rows: list[dict], prov: list[str]) -> bytes:
+    import csv as _csv
+
+    buf = io.StringIO()
+    for line in prov:
+        buf.write("# " + line + "\n")
+    if rows:
+        cols = list(rows[0].keys())
+        w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: ("" if r.get(k) is None else r.get(k)) for k in cols})
+    return buf.getvalue().encode("utf-8")
+
+
+@router.get("/export")
+async def stops_export(
+    stops: str,
+    format: str = "csv",
+    routes: str | None = None,
+    table: str = "stops",
+):
+    """CSV / XLSX / Parquet of the selected stops. **No JSON** — that is this estate's
+    download standard, and a JSON download is not a table a planner can open.
+
+    Assembled SERVER-SIDE so collecting forty stops costs the browser nothing, and
+    carrying its own provenance, because an exported table outlives the page that made it.
+    """
+    ids = [s.strip() for s in stops.split(",") if s.strip()][:40]
+    if not ids:
+        return JSONResponse({"error": "pass at least one stop id"}, status_code=400)
+    if format not in ("csv", "xlsx", "parquet", "clipboard"):
+        return JSONResponse(
+            {"error": "format must be csv, xlsx or parquet (JSON is deliberately not offered)"},
+            status_code=400)
+    rset = {r.strip() for r in routes.split(",") if r.strip()} if routes else None
+    stop_rows, pair_rows, prov = await asyncio.to_thread(_export_tables, ids, rset)
+    rows = pair_rows if table == "pairs" else stop_rows
+    stamp = time.strftime("%Y%m%d_%H%M", time.gmtime())
+    name = f"planner_stops_{stamp}"
+
+    if format == "clipboard":
+        # Tab-separated: what pastes cleanly into an email or a spreadsheet's cell grid.
+        # A download is the wrong verb for three stops.
+        lines = ["# " + p for p in prov]
+        if rows:
+            cols = list(rows[0].keys())
+            lines.append("\t".join(cols))
+            for r in rows:
+                lines.append("\t".join("" if r.get(c) is None else str(r.get(c)) for c in cols))
+        return Response("\n".join(lines), media_type="text/plain; charset=utf-8")
+
+    if format == "csv":
+        return Response(
+            _csv_bytes(rows, prov),
+            media_type="text/csv;charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+
+    import pandas as pd
+
+    if format == "parquet":
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        tbl = pa.Table.from_pandas(pd.DataFrame(rows), preserve_index=False)
+        # Provenance rides in the file's own key-value metadata, so it survives the file
+        # being moved, renamed and reopened months later.
+        md = dict(tbl.schema.metadata or {})
+        md[b"nycvisualizer_provenance"] = "\n".join(prov).encode("utf-8")
+        buf = io.BytesIO()
+        pq.write_table(tbl.replace_schema_metadata(md), buf, compression="snappy")
+        return Response(
+            buf.getvalue(),
+            media_type="application/vnd.apache.parquet",
+            headers={"Content-Disposition": f'attachment; filename="{name}.parquet"'})
+
+    # xlsx — both tables plus a readable provenance sheet, because a spreadsheet is the
+    # one format where the caveats can travel beside the numbers instead of above them.
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as xl:
+        pd.DataFrame(stop_rows).to_excel(xl, sheet_name="Stops", index=False)
+        pd.DataFrame(pair_rows).to_excel(xl, sheet_name="Distances", index=False)
+        pd.DataFrame({"About this file": prov}).to_excel(
+            xl, sheet_name="Provenance", index=False)
+    return Response(
+        buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'})

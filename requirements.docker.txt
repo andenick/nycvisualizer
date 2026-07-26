@@ -1,0 +1,2 @@
+# W11 stage 3: the collect/export table needs an XLSX writer (writer-only; no reader).
+XlsxWriter>=3.2

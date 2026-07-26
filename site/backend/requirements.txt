@@ -9,3 +9,6 @@ protobuf>=4.25
 h3>=4.0  # isochrone origin-snapping (res-9 cache key)
 numpy>=1.26  # motion model (busshapes/motion) + obs
 pyproj>=3.6  # W1 motion model: project bus GPS onto route shapes in EPSG:2263 feet
+pandas>=2.2  # W11 stage 3: the collect/export table (CSV/XLSX/Parquet, no JSON)
+pyarrow>=16  # parquet writer for the same
+XlsxWriter>=3.2  # xlsx writer for the same (writer-only; no reader dependency)

@@ -12,6 +12,79 @@ All notable changes to nycvisualizer are recorded here.
 > work, that citation (e.g. NBER w33584, arXiv:2606.17530) is unchanged and remains
 > the reader's referent.
 
+## 2026-07-25 — Walking distance, the selection as a file or a link, and three numbers that finally disagree
+
+Stage 3, and the point of the whole feature: a planner can now put two bus stops on
+screen and read **three honestly different answers** to "how far apart are these".
+Measured live between two real Bx12 stops on Fordham Road:
+
+| | |
+|---|---|
+| Straight line | **2,850 ft** (0.54 mi) |
+| Along the Bx12, toward Inwood Bway-207 St via Pelham via Fordhm | **3,170 ft** (0.60 mi) |
+| Walking | **3,180 ft** (0.60 mi) · **14 min** |
+
+They differ by 11 %, and each is labelled for what it physically is. That is the feature.
+Google Maps can give this audience exactly one of these three.
+
+### Walking (`/api/stops/walk`)
+
+Routed over the OpenStreetMap pedestrian network — sidewalks, paths and steps — by the
+OpenTripPlanner instance already on the box. Median response about 0.6 s, cached by stop
+pair, which is a small and static key space.
+
+It is an **explicit per-leg action**, never automatic: it is a round-trip to a routing
+engine and a planner asks for it deliberately. And it inherits the isochrone endpoint's
+honesty contract exactly — if the engine is unreachable the response is a 503 and the
+readout says *"walking service is unavailable"* and shows **no number**. It will never
+fall back to the straight-line figure wearing a walking label. A walking distance that is
+secretly a crow-flies distance is the single worst thing this feature could have shipped.
+
+### The selection leaves the browser (`/api/stops/export`)
+
+**CSV, XLSX and Parquet — no JSON**, per this estate's download standard, because a JSON
+download is not a table anyone can open. Assembled **server-side**, so collecting forty
+stops costs the browser nothing.
+
+- **One row per stop per direction.** Never one row per stop with the two directions
+  averaged: service is not symmetric and the average describes no bus.
+- A second table of **every pair** of selected stops — straight line always, along-route
+  wherever the two genuinely share a route and direction, and a plain sentence where they
+  do not. With several stops up, "how far is each of these from each of the others" is
+  usually the actual question.
+- **Provenance travels with the file**: sources, the observed archive depth and whether it
+  is preliminary, the known poller gap, the rounding rule and why, and — stated outright —
+  that blank cells are not zeros and which fields the feeds simply do not publish. In CSV
+  it is a comment header, in XLSX its own sheet, in Parquet the file's key-value metadata,
+  so it survives the file being renamed and reopened months later. An exported table
+  outlives the page that made it.
+- **Copy to clipboard** as well as download, as tab-separated text. A download is the
+  wrong verb for three stops; planners paste into email.
+
+### A measurement is a link
+
+The workstation already round-tripped its route selection through the URL. The **stop
+selection** and the **measure mode** now ride along, so a measurement can be sent to a
+colleague as a link — cheaper and more useful than a file, and it opens showing the same
+stops and the same line. Stops named in a link that have not loaded yet are held until
+their route's geometry arrives rather than silently dropped, because dropping one would
+make the link lie about what it carried.
+
+### A note on where the cost is
+
+Measured live at 54 Bronx routes, Bronx z14, 4x CPU throttle, ten drag gestures: with
+nothing selected a pan takes 616 ms and frames sit at 16.7 ms — unchanged from before any
+of this work. With four stop cards open a pan takes about 960 ms while the frame rate
+stays at 16.7 ms and the 95th-percentile frame is *better* than the empty page's.
+
+That extra pan cost is real and it is **paint**, not JavaScript: over the same ten
+gestures the main thread's script, layout and style time all go DOWN while total task time
+roughly doubles. It is the cost of holding a large opaque panel over a map that transforms
+every frame — the same cost the existing route rail and route selector already carry — and
+it applies only while cards are open, which is a deliberate act, bounded by the ten-card
+cap. It was reduced (memoising the tray, dropping its backdrop blur, promoting it to its
+own compositor layer) but not eliminated, and it is recorded here rather than rounded off.
+
 ## 2026-07-25 — Distance along the bus route · the phone breakpoint that was a device · house numbers become opt-in
 
 Three things, one deploy. Stage 2 of the measure feature plus two defects a user hit in

@@ -312,6 +312,54 @@ export const getStopsAlong = (stopIds: string[], routes?: string[]) => {
   return getJSON<AlongResponse>("/api/stops/along?" + p.toString());
 };
 
+export interface WalkResponse {
+  from_stop: string;
+  to_stop: string;
+  walk_ft: number;
+  walk_minutes: number;
+  straight_ft: number;
+  streets: string[];
+  engine: string;
+  basis: string;
+}
+/** Walking distance over the real sidewalk network. An EXPLICIT per-leg action: it is a
+ *  server round-trip to a routing engine, and a planner asks for it deliberately.
+ *  Throws on 503 — the endpoint never substitutes a straight line for a walked route,
+ *  and neither does the caller. */
+export const getStopsWalk = (fromStop: string, toStop: string) => {
+  const p = new URLSearchParams();
+  p.set("from_stop", fromStop);
+  p.set("to_stop", toStop);
+  return getJSON<WalkResponse>("/api/stops/walk?" + p.toString());
+};
+
+/** The selection, assembled SERVER-SIDE, as a real table. CSV / XLSX / Parquet — no
+ *  JSON, per the estate's download standard. `clipboard` returns tab-separated text for
+ *  pasting into an email or a spreadsheet, because a download is the wrong verb for
+ *  three stops. */
+export const stopsExportUrl = (
+  stopIds: string[],
+  format: "csv" | "xlsx" | "parquet" | "clipboard",
+  routes?: string[],
+  table: "stops" | "pairs" = "stops",
+) => {
+  const p = new URLSearchParams();
+  p.set("stops", stopIds.join(","));
+  p.set("format", format);
+  p.set("table", table);
+  if (routes && routes.length) p.set("routes", routes.join(","));
+  return API_BASE + "/api/stops/export?" + p.toString();
+};
+export const getStopsClipboard = async (
+  stopIds: string[],
+  routes?: string[],
+  table: "stops" | "pairs" = "stops",
+) => {
+  const r = await fetch(stopsExportUrl(stopIds, "clipboard", routes, table));
+  if (!r.ok) throw new Error(`export -> HTTP ${r.status}`);
+  return r.text();
+};
+
 export const getSubway = (bbox?: string) =>
   getJSON<SubwayResponse>("/api/rt/subway" + bboxQuery(bbox));
 export const getStations = () => getJSON<StationInfo[]>("/api/stations");

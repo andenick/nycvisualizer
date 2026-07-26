@@ -48,6 +48,9 @@ import {
   getDossier,
   getStopCard,
   getStopsAlong,
+  getStopsClipboard,
+  getStopsWalk,
+  stopsExportUrl,
   streamVehicles,
   type AlongResponse,
   type StopCardResponse,
@@ -172,9 +175,17 @@ interface InitState {
   zoom: number | null;
   routes: string[]; // bus route ids, IN ORDER (drives palette colour assignment)
   lines: string[]; // subway line keys, IN ORDER
+  /** W11 stage 3 — the selected stops, IN CLICK ORDER (the measure chain IS this list).
+   *  A link is how a planner sends a measurement to a colleague, and it is cheaper and
+   *  more useful than a file. Namespaced keys ("b:100014" / "s:R16") so a bus stop id
+   *  can never be read as a station id. */
+  stops: string[];
+  /** Was the sender MEASURING? A link that carried a measurement should arrive as one;
+   *  restoring the stops but not the line would be a small lie about what was shared. */
+  measuring: boolean;
 }
 function parseUrlState(): InitState {
-  const out: InitState = { center: null, zoom: null, routes: [], lines: [] };
+  const out: InitState = { center: null, zoom: null, routes: [], lines: [], stops: [], measuring: false };
   try {
     const p = new URLSearchParams(window.location.search);
     const ll = p.get("ll");
@@ -192,6 +203,20 @@ function parseUrlState(): InitState {
         if (k && !seen.has(k)) {
           seen.add(k);
           out.routes.push(k);
+        }
+      }
+    }
+    out.measuring = p.get("measure") === "1";
+    const rawStops = p.get("stops");
+    if (rawStops) {
+      const seen = new Set<string>();
+      for (const tok of rawStops.split(",")) {
+        const k = tok.trim();
+        // Only the two shapes we mint. An unrecognised token is dropped rather than
+        // trusted — this list drives fetches.
+        if (k && (k.startsWith("b:") || k.startsWith("s:")) && !seen.has(k)) {
+          seen.add(k);
+          out.stops.push(k);
         }
       }
     }
@@ -359,7 +384,7 @@ export default function WorkstationPage() {
   const [selStops, setSelStops] = useState<SnapStop[]>([]);
   const selStopsRef = useRef(selStops);
   selStopsRef.current = selStops;
-  const [measuring, setMeasuring] = useState(false);
+  const [measuring, setMeasuring] = useState(init.current.measuring);
   const measuringRef = useRef(measuring);
   measuringRef.current = measuring;
   const [hoverName, setHoverName] = useState<string | null>(null);
@@ -369,6 +394,12 @@ export default function WorkstationPage() {
   const snapIndex = useRef<StopSnapIndex>(EMPTY_SNAP_INDEX);
   /** Bumped whenever a route shape lands, so the snap index rebuilds off real data. */
   const [shapesTick, setShapesTick] = useState(0);
+  /** Stop keys that arrived in the URL and are waiting for their route's shape to land
+   *  (a shared link names stops we cannot resolve until the geometry is in memory). */
+  const pendingStops = useRef<string[]>(init.current.stops);
+  const [walkTick, setWalkTick] = useState(0);
+  const walkCache = useRef<Map<string, { ft: number | null; min: number | null; note: string | null; state: "loading" | "done" | "unavailable" }>>(new Map());
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   // ---- W11.7: bus direction arrows (legend toggle, persisted with the other map prefs) ----
   const [busArrows, setBusArrows] = useState<boolean>(() => {
@@ -447,6 +478,10 @@ export default function WorkstationPage() {
     }
     if (selRoutesRef.current.length) p.set("routes", selRoutesRef.current.join(","));
     if (selLinesRef.current.length) p.set("lines", selLinesRef.current.join(","));
+    // W11 stage 3: the stop selection round-trips too, so a measurement is a link.
+    if (selStopsRef.current.length)
+      p.set("stops", selStopsRef.current.map((s) => s.key).join(","));
+    if (measuringRef.current) p.set("measure", "1");
     // Preserve ?perf. This effect is declared BEFORE the map-init effect, so on mount it
     // ran first and rewrote the URL without `perf` — and map init then read
     // `window.location.search`, found no flag, and never installed the `__nycvFlow` /
@@ -459,7 +494,7 @@ export default function WorkstationPage() {
   useEffect(() => {
     writeUrl.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selRoutes, selLines]);
+  }, [selRoutes, selLines, selStops, measuring]);
 
   // ---- map init ----
   useEffect(() => {
@@ -886,6 +921,26 @@ export default function WorkstationPage() {
       stationsAll.current,
       lineKey,
     );
+    // A shared link names stops before their geometry exists. Resolve whatever the new
+    // index can now answer for, and keep waiting on the rest — silently dropping a stop
+    // the sender could see would make the link lie about what it carried.
+    if (pendingStops.current.length) {
+      const still: string[] = [];
+      const found: SnapStop[] = [];
+      for (const key of pendingStops.current) {
+        const hit = snapIndex.current.get(key);
+        if (hit) found.push(hit);
+        else still.push(key);
+      }
+      pendingStops.current = still;
+      if (found.length) {
+        setSelStops((prev) => {
+          const have = new Set(prev.map((s) => s.key));
+          const next = [...prev, ...found.filter((s) => !have.has(s.key))];
+          return next.length > CARD_CAP ? next.slice(next.length - CARD_CAP) : next;
+        });
+      }
+    }
     if (perfVisible()) {
       // eslint-disable-next-line no-console
       console.info(
@@ -1133,6 +1188,7 @@ export default function WorkstationPage() {
       // contain a subway station the along-route request deliberately skipped, and an
       // index-aligned join would then attach one leg's route distance to another leg.
       const srv = along?.legs.find((l) => l.from_stop === a.stopId && l.to_stop === b.stopId);
+      const walk = walkCache.current.get(a.stopId + ">" + b.stopId);
       out.push({
         fromKey: a.key,
         toKey: b.key,
@@ -1143,10 +1199,16 @@ export default function WorkstationPage() {
         alongRoute: srv?.route_id ?? null,
         alongDirLabel: srv?.direction_label ?? null,
         alongNote: srv?.note ?? null,
+        walkFt: walk?.ft ?? null,
+        walkMin: walk?.min ?? null,
+        walkNote: walk?.note ?? null,
+        walkState: walk?.state ?? "idle",
       });
     }
     return out;
-  }, [selStops, along]);
+    // walkTick is a dependency ON PURPOSE — the walk results live in a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selStops, along, walkTick]);
   const alongNote = useMemo(() => {
     if (selStops.length < 2) return null;
     if (selStops.some((s) => s.kind === "subway"))
@@ -1168,6 +1230,77 @@ export default function WorkstationPage() {
     },
     [selLines, routeColor],
   );
+
+  // ---- W11 stage 3: walking, collecting, sharing --------------------------------
+  //
+  // Walking is an EXPLICIT per-leg action. It is a round-trip to a routing engine, the
+  // planner asks for it deliberately, and if the engine is unreachable the line says so
+  // and shows NO number — a walking distance that is secretly a straight line is the
+  // worst thing this feature could ship.
+  const requestWalk = useCallback(
+    (legIndex: number) => {
+      const chain = selStopsRef.current;
+      const a = chain[legIndex];
+      const b = chain[legIndex + 1];
+      if (!a || !b) return;
+      const key = a.stopId + ">" + b.stopId;
+      const cur = walkCache.current.get(key);
+      if (cur && cur.state !== "unavailable") return;
+      walkCache.current.set(key, { ft: null, min: null, note: null, state: "loading" });
+      setWalkTick((x) => x + 1);
+      getStopsWalk(a.stopId, b.stopId)
+        .then((d) =>
+          walkCache.current.set(key, {
+            ft: d.walk_ft, min: d.walk_minutes, note: null, state: "done",
+          }),
+        )
+        .catch(() =>
+          walkCache.current.set(key, {
+            ft: null, min: null,
+            note: "walking service is unavailable",
+            state: "unavailable",
+          }),
+        )
+        .finally(() => setWalkTick((x) => x + 1));
+    },
+    [],
+  );
+
+  // The selection leaves the browser. Assembled server-side (W13.2), so collecting forty
+  // stops costs this page nothing, and carrying its own provenance, because an exported
+  // table outlives the page that made it.
+  const busIds = useMemo(
+    () => selStops.filter((s) => s.kind === "bus").map((s) => s.stopId),
+    [selStops],
+  );
+  const doExport = useCallback(
+    (fmt: "csv" | "xlsx" | "parquet") => {
+      if (!busIds.length) return;
+      window.location.href = stopsExportUrl(busIds, fmt, selRoutesRef.current);
+      setExportNote(null);
+    },
+    [busIds],
+  );
+  const copyTable = useCallback(() => {
+    if (!busIds.length) return;
+    getStopsClipboard(busIds, selRoutesRef.current)
+      .then(async (text) => {
+        await navigator.clipboard?.writeText(text);
+        setExportNote(`Copied ${busIds.length} stop${busIds.length === 1 ? "" : "s"} as a table — paste into an email or a spreadsheet.`);
+      })
+      .catch(() => setExportNote("Could not copy — your browser blocked clipboard access. Use ↓ CSV instead."));
+  }, [busIds]);
+  const shareLink = useCallback(() => {
+    // The workstation already round-trips its route selection through the URL; the stop
+    // selection now rides along, so a measurement is a link rather than a file.
+    const url = window.location.href;
+    try {
+      void navigator.clipboard?.writeText(url);
+      setExportNote("Link copied — it carries your routes, your stops and this view.");
+    } catch {
+      setExportNote("Could not copy the link — it is in the address bar.");
+    }
+  }, []);
 
   const copyCoords = (lat: number, lon: number) => {
     try {
@@ -1758,6 +1891,11 @@ export default function WorkstationPage() {
         onUndo={undoStop}
         onClear={clearAllStops}
         detailFor={detailFor}
+        onWalk={requestWalk}
+        onCopyTable={busIds.length ? copyTable : undefined}
+        onExport={busIds.length ? doExport : undefined}
+        onShare={shareLink}
+        exportNote={exportNote}
       />
 
       {/* ---- W11: the map context menu (right-click). Leads with WHAT you clicked. ---- */}

@@ -1983,7 +1983,8 @@ i.obs-hw-obs.key { border-radius: 50%; }
   background: color-mix(in srgb, #e11d48 22%, transparent);
   border-color: #e11d48; color: #ffa6bd;
 }
-.stray-exp { display: inline-flex; gap: 0.25rem; }
+.stray-exp { display: inline-flex; gap: 0.25rem; align-items: center; }
+.stray-exp-lbl { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; font-weight: 700; }
 .stray-x { margin-left: auto; }
 
 /* ---- the docked measure readout — CONSTANT SIZE, never a growing list ---- */

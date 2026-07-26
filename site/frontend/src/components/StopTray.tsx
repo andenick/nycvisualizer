@@ -256,10 +256,15 @@ function StopTrayInner(p: StopTrayProps) {
             ⧉ Copy
           </button>
         )}
+        {/* Labelled "Download" rather than repeating the rail's "↓ CSV" — two controls
+            with the same words on one screen is a control whose meaning depends on where
+            you happened to look. The rail downloads the ROUTE table; this downloads the
+            STOP table, and they are different questions. */}
         {p.onExport && (
           <span className="stray-exp">
+            <span className="stray-exp-lbl">Download</span>
             <button type="button" className="stray-btn" onClick={() => p.onExport?.("csv")}>
-              ↓ CSV
+              CSV
             </button>
             <button type="button" className="stray-btn" onClick={() => p.onExport?.("xlsx")}>
               XLSX
