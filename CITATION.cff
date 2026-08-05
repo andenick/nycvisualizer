@@ -10,7 +10,8 @@ abstract: >-
 type: software
 authors:
   - family-names: Anderson
-    given-names: Nick
+    given-names: Nicholas
+    website: "https://www.nickanderson.us/"
 repository-code: "https://github.com/andenick/nycvisualizer"
 url: "https://nycvisualizer.com"
 license: MIT
