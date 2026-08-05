@@ -1,4 +1,4 @@
-"""Shared helpers for the Jane NYC-Platform bus analysis suite (B5.2).
+"""Shared helpers for the nycvisualizer NYC Platform bus analysis suite.
 
 Connection to jane_geo.duckdb (read-only), borough-from-route-prefix SQL,
 and standardized output writers (Parquet + ONE-sheet XLSX per file).

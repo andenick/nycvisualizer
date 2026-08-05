@@ -23,7 +23,8 @@ Four stages: **acquire → lake → database → analyze** (plus a continuously-
 The heavy artifacts (`data/`, `realtime/archive/`, `db/*.duckdb`, `outputs/`) are
 **gitignored and regenerable** — this repo ships the code that produces them, not the data.
 All paths default to the repo layout and are overridable via environment variables
-(`NYCV_PIPELINE_ROOT`, `JANE_GEO_DB`, `NYCV_OUTPUTS`, `DATA_ROOT`, `OUTPUTS_ROOT`).
+(`NYCV_PIPELINE_ROOT`, `JANE_GEO_DB`, `NYCV_OUTPUTS`, `NYCV_KB_ROOT`, `DATA_ROOT`,
+`OUTPUTS_ROOT`).
 
 ---
 

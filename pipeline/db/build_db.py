@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-build_db.py -- Jane NYC Platform (B4, Pass 1)
+build_db.py -- nycvisualizer NYC Platform
 
 Regenerate db/jane_geo.duckdb FRESH from the GeoParquet/Parquet lake.
 

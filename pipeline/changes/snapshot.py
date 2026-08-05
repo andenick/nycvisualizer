@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-S3 GTFS snapshot engine (Jane / nycvisualizer NYC Platform).
+S3 GTFS snapshot engine (nycvisualizer NYC Platform).
 
 Fetches the DYNAMIC GTFS static feeds (supplemented subway + 6 NYCT/MTA bus feeds),
 computes a LOGICAL content hash, and stores a snapshot ONLY when that hash differs

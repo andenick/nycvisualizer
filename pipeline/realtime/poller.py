@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jane / nycvisualizer NYC Platform — Realtime GTFS-RT / GBFS poller.
+nycvisualizer NYC Platform — Realtime GTFS-RT / GBFS poller.
 
 A single asyncio scheduler service (MASTER_PLAN B3). It polls every NYC realtime
 transit feed on its own cadence, parses GTFS-RT protobuf / GBFS JSON, and appends

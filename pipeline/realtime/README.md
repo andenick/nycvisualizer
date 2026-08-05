@@ -2,7 +2,7 @@
 
 Single-process asyncio poller that harvests every NYC realtime transit feed and
 archives it to an hourly-partitioned Parquet lake, plus the **derive2** derivation engine.
-Part of the Jane / **nycvisualizer** NYC Granular Mapping Platform (MASTER_PLAN B3).
+Part of the **nycvisualizer** NYC Granular Mapping Platform.
 
 ```
 realtime/

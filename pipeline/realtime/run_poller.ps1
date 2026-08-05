@@ -1,4 +1,4 @@
-# Supervisor wrapper for the Jane NYC realtime poller.
+# Supervisor wrapper for the nycvisualizer NYC realtime poller.
 # Restarts poller.py if it ever exits (restart-if-dead). The poller's own
 # single-instance guard (port 47654 + poller.lock) makes overlapping launches
 # impossible, so a stale restart simply exits until the port frees.

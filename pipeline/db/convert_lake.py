@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-convert_lake.py -- Jane NYC Platform (B4, Pass 1)
+convert_lake.py -- nycvisualizer NYC Platform
 
 Convert LANDED raw datasets -> GeoParquet/Parquet lake at
   data/parquet/<category>/<slug>[.parquet | / (hive dir for giants)]

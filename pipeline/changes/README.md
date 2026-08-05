@@ -1,7 +1,7 @@
 # S3 — GTFS Snapshot + Diff Engine
 
 Content-hashed GTFS static snapshots + a structured schedule-change differ for the
-Jane / nycvisualizer NYC Platform. Answers "what changed in the published schedule, and
+nycvisualizer NYC Platform. Answers "what changed in the published schedule, and
 when" — routes, headways, stops, service spans, trip counts, routings.
 
 ## What's here

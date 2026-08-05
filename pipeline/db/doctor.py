@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-doctor.py -- Jane NYC Platform (B4, Pass 1) health gate for jane_geo.duckdb + lake.
+doctor.py -- nycvisualizer NYC Platform health gate for jane_geo.duckdb + lake.
 
 Checks (PASS/FAIL per check, plus overall):
   1. ROWCOUNTS   -- every lake table/view matches its PROVENANCE-derived expected

@@ -1,4 +1,4 @@
-# Bus Service & Ridership — METHODS (Jane NYC-Platform, B5.2)
+# Bus Service & Ridership — METHODS (nycvisualizer NYC Platform)
 
 All analyses are scripted and reproducible against `jane_geo.duckdb`
 (regenerable query layer over the parquet lake). The scripts live in

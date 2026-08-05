@@ -75,6 +75,16 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Outputs[\\/]NYCPlatform"), "internal workspace output path"),
     (re.compile(r"Technical[\\/]NYCPlatform"), "internal workspace source path"),
     (re.compile(r"[\\/]Council[\\/]"), "internal Council directory"),
+    # -- SEGMENT-FORM workspace paths (added 2026-08-04) ------------------------------
+    # Every pattern above matches a path written as ONE string ("Outputs/NYCPlatform").
+    # Python code that composes the same path out of pathlib segments --
+    #     PLATFORM.parents[1] / "Projects" / "USSR" / "Technical" / "RobertDB"
+    # -- contains no slash between the segments, so a slash-anchored pattern cannot see
+    # it. That is the exact evasion class that let private-tree defaults survive a
+    # repo-wide sweep reported PASS. Match the quoted segment followed by a `/` operator.
+    (re.compile(r"""['"]Projects['"]\s*/"""), "workspace path composed from segments"),
+    (re.compile(r"""['"]Technical['"]\s*/"""), "workspace path composed from segments"),
+    (re.compile(r"""['"]Knowledge_Base['"]"""), "KB artefact path (quoted segment)"),
     # -- knowledge-base artefacts (CODE_DATA_FIRST_STANDARD s4.2) --------------------
     (re.compile(r"Knowledge_Base[\\/]"), "KB artefact path"),
     (re.compile(r"(?<![\w.])/KB/"), "KB artefact path"),
@@ -92,7 +102,14 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bchunk_\d+"), "chunk-marker residue"),
     (re.compile(r"\bBATCH_\d{3,}"), "extraction batch id"),
     (re.compile(r"\bHDARP\b|\bSPHDARP\b"), "internal extraction-method name"),
-    (re.compile(r"Jane KB|Jane Knowledge Base"), "internal corpus codename"),
+    # The internal project codename, in ANY standalone use -- not just "Jane KB". It was
+    # sitting in 22 tracked files (module docstrings, a pathlib variable, .env.example, a
+    # published data-package attribution field, and three pre-rendered public HTML titles)
+    # while the narrower two-phrase pattern reported clean. The negative lookahead keeps
+    # Jane Jacobs -- a real person quoted in the site's own content -- passing; she is
+    # product content, not a codename. The JaneNYC* job names below stay allowed because
+    # `Jane` there is not followed by a word boundary.
+    (re.compile(r"\bJane\b(?!\s+Jacobs)"), "internal project codename"),
     # NO trailing \b. The ids occur bare (DOC0343) AND suffixed with the extraction hash
     # (DOC0359_b11c320e); requiring a word boundary matched only the bare form, which is
     # how 15 suffixed ids survived in a publicly-served JSON audit trail.
@@ -120,6 +137,16 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
 #       archive ids). A job name that explains "this dataset is rebuilt every six hours" is
 #       the opposite: meaningful to the reader and revealing of nothing. It is not a path,
 #       not a credential, not a host, and not an archive reference. Leave them.
+#
+#   jane_geo.duckdb, JANE_GEO_DB
+#       -- the query-layer database FILENAME and the env var that points at it. A rename
+#       would break every analysis script, every scheduled job and every operator runbook
+#       that names it, and would buy nothing: it is a local filename, not a path into a
+#       private tree. The `\bJane\b` pattern deliberately does not match either form.
+#
+#   Jane Jacobs
+#       -- a real, quoted author in src/content/kb_callouts.json. The codename pattern
+#       carries an explicit negative lookahead for her. She is the site's subject matter.
 #
 # If you are tempted to forbid a string, ask the test these allowances pass: does removing
 # it protect anything, or does it only cost the reader an explanation?

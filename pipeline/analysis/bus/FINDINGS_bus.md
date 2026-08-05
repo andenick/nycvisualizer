@@ -1,4 +1,4 @@
-# Bus Service & Ridership — Best-Answers Brief (Jane NYC-Platform, B5.2)
+# Bus Service & Ridership — Best-Answers Brief (nycvisualizer NYC Platform)
 
 Flagship #1. Each claim carries a caveat and a pointer to the exact output/query.
 All figures trace to a query on `jane_geo.duckdb`; nothing is fabricated.

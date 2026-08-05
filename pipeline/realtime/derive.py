@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Jane / nycvisualizer NYC Platform — Realtime derivations (batch; run manually/hourly).
+nycvisualizer NYC Platform — Realtime derivations (batch; run manually/hourly).
 
 Reads the vehicle-position / trip-update Parquet lake written by poller.py under
 realtime/archive/ and produces derived analysis tables in realtime/derived/:

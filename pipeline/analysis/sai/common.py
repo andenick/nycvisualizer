@@ -1,4 +1,4 @@
-"""Shared helpers for the Jane NYC-Platform Stop Accessibility Index (SAI) suite (B5.2 item 4 + B5.3).
+"""Shared helpers for the nycvisualizer NYC Platform Stop Accessibility Index (SAI) suite.
 
 Connection to jane_geo.duckdb (read-only), standardized writers (Parquet + one-sheet XLSX),
 and small geometry/scoring utilities. Every number a writer serializes came from a real query —

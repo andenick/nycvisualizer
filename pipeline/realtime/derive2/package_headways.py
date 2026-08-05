@@ -130,7 +130,7 @@ def build(min_headways: int = 2) -> dict:
         "licenses": [{"name": "CC-BY-4.0",
                       "path": "https://creativecommons.org/licenses/by/4.0/",
                       "title": "Creative Commons Attribution 4.0"}],
-        "attribution": "Jane / nycvisualizer. Underlying realtime feed (c) MTA (BusTime GTFS-rt).",
+        "attribution": "nycvisualizer. Underlying realtime feed (c) MTA (BusTime GTFS-rt).",
         "temporal_coverage": sorted(per_day),
         "archive_depth_days": depth,
         "status": "PRELIMINARY" if preliminary else "OK",
@@ -219,7 +219,7 @@ def _write_readme(dp: dict, per_day: dict, depth: int, preliminary: bool) -> Non
         f"- **Archive depth:** {depth} day(s). "
         + ("Reliability figures are **PRELIMINARY** until ≥14 days of archive."
            if preliminary else "Sufficient depth (≥14 days)."),
-        "- **License:** CC-BY 4.0. Attribution: Jane / nycvisualizer; underlying feed © MTA.",
+        "- **License:** CC-BY 4.0. Attribution: nycvisualizer; underlying feed © MTA.",
         "- **Update cadence:** daily.",
         f"- **Grain:** {dp['row_grain']}.",
         "",

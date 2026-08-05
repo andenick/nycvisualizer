@@ -73,6 +73,14 @@ Report row label (any vintage)                    -> canonical bucket
 
 A "-" cell (mode absent from a sector) parses as 0.
 
+CONFIGURATION
+-------------
+Both roots are env-parameterized so this runs outside the authoring environment:
+  NYCV_KB_ROOT   -- the extracted-report corpus this reads
+                    (default <pipeline>/data/extracted_reports)
+  OUTPUTS_ROOT   -- the analysis-outputs tree this writes
+                    (default <pipeline>/outputs)
+
 OUTPUT
 ------
 Written under the configured analysis outputs root (see OUTPUTS_ROOT), in cordon/:
@@ -88,16 +96,19 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from pathlib import Path
 
 import pandas as pd
 
 HERE = Path(__file__).resolve()
-PLATFORM = HERE.parents[2]                       # .../NYCPlatform
-JANE = PLATFORM.parents[1]                       # .../Jane
-KB = JANE / "Knowledge_Base"
-OUT = JANE / "Outputs" / "NYCPlatform" / "cordon"
+PLATFORM = HERE.parents[2]                       # the pipeline root
+# Configurable roots -- no walk out into the authoring machine's directory
+# layout. Fallbacks are repo-relative so an outside reproducer can point these
+# at their own copies of the published NYMTC reports.
+DATA_ROOT = Path(os.environ.get("NYCV_KB_ROOT") or PLATFORM / "data" / "extracted_reports")
+OUT = Path(os.environ.get("OUTPUTS_ROOT") or PLATFORM / "outputs") / "cordon"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # year -> the folder of that year's extracted report in our research archive. Only the
@@ -213,7 +224,7 @@ def main() -> None:
     long_rows = []
     audits = []
     for year in sorted(YEAR_DOC):
-        doc_dir = KB / YEAR_DOC[year]
+        doc_dir = DATA_ROOT / YEAR_DOC[year]
         totals, audit = parse_year(year, doc_dir)
         audits.append(audit)
         for bucket in CANON:
