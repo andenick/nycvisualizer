@@ -77,8 +77,9 @@ PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"[\\/]Council[\\/]"), "internal Council directory"),
     # -- SEGMENT-FORM workspace paths (added 2026-08-04) ------------------------------
     # Every pattern above matches a path written as ONE string ("Outputs/NYCPlatform").
-    # Python code that composes the same path out of pathlib segments --
-    #     PLATFORM.parents[1] / "Projects" / "USSR" / "Technical" / "RobertDB"
+    # Python code that composes the same path out of pathlib segments -- a `.parents[N]`
+    # walk followed by quoted directory names joined with the `/` operator (the literals
+    # are deliberately not restated here; a gate should not republish what it forbids)
     # -- contains no slash between the segments, so a slash-anchored pattern cannot see
     # it. That is the exact evasion class that let private-tree defaults survive a
     # repo-wide sweep reported PASS. Match the quoted segment followed by a `/` operator.

@@ -154,7 +154,7 @@ def main():
     # ---- report ----
     con.close()
     print("=" * 72)
-    print("JANE NYC PLATFORM -- jane_geo.duckdb DOCTOR")
+    print("NYCVISUALIZER NYC PLATFORM -- jane_geo.duckdb DOCTOR")
     print("=" * 72)
     order = ["ROWCOUNTS","CRS","GEOID_JOIN","GEOMVALID","VIEWS","SKIPPED"]
     hard_fail = 0
