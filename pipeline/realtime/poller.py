@@ -60,6 +60,9 @@ FLUSH_MAX_ROWS = 200_000   # safety flush if a buffer grows past this
 BUFFER_HARD_CAP = 1_000_000  # drop rows above this if archiving is disabled (anti-OOM)
 STALE_SECONDS = 300        # header timestamp unchanged longer than this -> warn
 HEARTBEAT_SECONDS = 15     # POLLER_STATUS.json write cadence
+# POLLER_STATUS.json publish is a rename that a Windows reader can lock (WinError 5).
+# Retry with these backoffs, then skip the tick NON-FATALLY (see write_status()).
+STATUS_REPLACE_BACKOFF = (0.1, 0.25, 0.5)   # seconds between retries; worst case 0.85 s
 MIN_BUS_GAP = 31.0         # HARD floor between ANY two BusTime HTTP calls
 HTTP_TIMEOUT = 25
 BACKOFF_BASE = 2.0
@@ -187,6 +190,7 @@ PID = os.getpid()
 ARCHIVING_ENABLED = True
 DISK_FREE_GB = None
 BUS_LAST_CALL = 0.0   # monotonic time of last BusTime HTTP call (any bus feed)
+STATUS_WRITE_FAILURES = 0  # status ticks skipped because the file was locked by a reader
 
 def log(msg: str):
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -631,6 +635,7 @@ async def maintenance_loop():
         await asyncio.sleep(HEARTBEAT_SECONDS)
 
 def write_status():
+    global STATUS_WRITE_FAILURES
     feeds = {}
     for st in STATE.values():
         feeds[st.name] = dict(
@@ -650,11 +655,44 @@ def write_status():
         disk_floor_gb=DISK_FLOOR_GB,
         bus_key_present=bool(BUS_KEY),
         total_rows_archived=sum(s.rows_archived for s in STATE.values()),
+        status_write_skips=STATUS_WRITE_FAILURES,
         feeds=feeds,
     )
     tmp = STATUS_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(doc, indent=2), encoding="utf-8")
-    os.replace(tmp, STATUS_FILE)
+    try:
+        tmp.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    except OSError as e:
+        STATUS_WRITE_FAILURES += 1
+        log(f"WARN write_status: could not write {tmp.name} ({type(e).__name__}: {e}) — "
+            f"skipping this status tick (total skipped: {STATUS_WRITE_FAILURES})")
+        return
+    # Atomic publish, guarded. On Windows os.replace raises PermissionError
+    # (WinError 5) whenever a READER holds POLLER_STATUS.json open — the watchdog
+    # (it reads the whole file to age-check the heartbeat), a canary, an uptime
+    # probe, or an AV scanner. Unguarded, that exception propagated out of
+    # maintenance_loop through asyncio.gather and exited the process: every one of
+    # the 7 Windows FATALs up to 2026-08-06 was THIS call, and each took all 25
+    # feeds down with it (the container never hits it — POSIX rename ignores
+    # readers). A status file that is one tick (~15 s) stale is acceptable; the
+    # watchdog only reports "hung" above 300 s of staleness. Losing the poller is
+    # not acceptable. So: retry briefly, then give up NON-FATALLY and keep polling.
+    last_err = None
+    for delay in (None,) + STATUS_REPLACE_BACKOFF:
+        if delay is not None:
+            time.sleep(delay)
+        try:
+            os.replace(tmp, STATUS_FILE)
+            if last_err is not None:
+                log(f"write_status: os.replace succeeded after retry "
+                    f"(first error was {type(last_err).__name__}: {last_err})")
+            return
+        except OSError as e:
+            last_err = e
+    STATUS_WRITE_FAILURES += 1
+    log(f"WARN write_status: os.replace({tmp.name} -> {STATUS_FILE.name}) failed after "
+        f"{1 + len(STATUS_REPLACE_BACKOFF)} attempts ({type(last_err).__name__}: {last_err}) — "
+        f"status file left stale for this tick; polling continues "
+        f"(total skipped: {STATUS_WRITE_FAILURES})")
 
 # ------------------------------------------------------------------ single-instance
 def acquire_single_instance():

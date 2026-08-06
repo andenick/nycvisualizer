@@ -80,7 +80,8 @@ is impossible. If you get "ANOTHER INSTANCE IS RUNNING", one is already up (chec
 
 Rewritten atomically every ~15 s. Top level: `pid`, `started_at`, `updated_at`,
 `archiving_enabled`, `disk_free_gb`, `disk_floor_gb`, `bus_key_present`,
-`total_rows_archived`. Per feed under `feeds.<name>`:
+`total_rows_archived`, `status_write_skips` (status ticks skipped because a reader held
+the file — see Crash-safety below). Per feed under `feeds.<name>`:
 
 | field | meaning |
 |---|---|
@@ -123,6 +124,14 @@ departure_delay, schedule_relationship`. GBFS: per-station availability counts.
   suspended (loud log), polling continues, buffers are dropped above a 1M-row cap to
   avoid OOM (`rows_dropped` counts them); it auto-resumes when space returns.
 - **Crash-safety**: `POLLER_STATUS.json` is written atomically (temp + `os.replace`).
+  On Windows that rename fails with `PermissionError` (WinError 5) while a reader holds
+  the file open (the watchdog, the canary, an uptime probe, an AV scanner). The publish
+  is therefore retried (100 / 250 / 500 ms) and, if it still fails, **skipped
+  non-fatally**: the status file stays one tick (~15 s) stale, a `WARN write_status`
+  line is logged, `status_write_skips` counts it, and polling continues. Staleness is
+  only reported as "hung" above 300 s, so a skipped tick is invisible to monitoring.
+  (Before 2026-08-06 this call was unguarded and every one of the 7 recorded Windows
+  FATALs was this rename taking all 25 feeds down with it.)
   Task Scheduler restarts the process on failure/reboot; on restart the poller simply
   resumes polling (in-memory buffers since the last 5-min flush are lost — acceptable
   for snapshot data).

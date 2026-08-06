@@ -12,6 +12,25 @@ All notable changes to nycvisualizer are recorded here.
 > work, that citation (e.g. NBER w33584, arXiv:2606.17530) is unchanged and remains
 > the reader's referent.
 
+## 2026-08-06 — The poller stops dying over its own status file
+
+Every recorded Windows FATAL of the realtime poller — seven of them — was one line:
+the `os.replace()` that publishes `POLLER_STATUS.json`. On Windows that rename raises
+`PermissionError` (WinError 5) whenever anything else has the file open, and the
+things that read it are exactly the things meant to keep the poller healthy: the
+watchdog, a canary, an uptime probe, an antivirus scanner. Unguarded, the exception
+left `write_status()`, left `maintenance_loop()`, cancelled the `asyncio.gather()` that
+holds every feed task, and exited the process — so a monitor reading a 4 KB status file
+could take **all 25 feeds** down. The containerised poller never hit it once, because a
+POSIX rename does not care who is reading.
+
+The publish is now retried (100 / 250 / 500 ms) and, if the file is still locked,
+**skipped without raising**: a `WARN write_status` line, a `status_write_skips` counter
+in the status document, and polling continues. A status file one heartbeat (~15 s) stale
+is invisible to monitoring, which only calls a poller hung above 300 s of staleness. The
+atomic temp-file-then-rename pattern is unchanged — a reader still never sees a partial
+document; it may now see a slightly old one, which is the correct trade.
+
 ## 2026-07-25 — Walking distance, the selection as a file or a link, and three numbers that finally disagree
 
 Stage 3, and the point of the whole feature: a planner can now put two bus stops on
